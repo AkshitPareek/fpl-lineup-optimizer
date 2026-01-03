@@ -1,0 +1,14 @@
+@import "tailwindcss";
+
+/* Custom FPL theme colors */
+@theme {
+  --color-fpl-purple: #37003c;
+  --color-fpl-green: #00ff87;
+  --color-fpl-pink: #e90052;
+  --color-fpl-cyan: #00ff85;
+}
+
+body {
+  background-color: var(--color-gray-900);
+  color: white;
+}
