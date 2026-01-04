@@ -40,6 +40,7 @@ class TransferPlan:
     explanation: str
     xp_gain: float = 0.0  # Total xP gain from transfers
     hit_worth_it: bool = True  # Is the hit worth it? (xP gain > 6 threshold)
+    alternatives: List[Dict[str, Any]] = field(default_factory=list)  # Top N alternatives per position
 
 
 @dataclass
@@ -66,6 +67,7 @@ class MultiPeriodSolution:
     banked_transfers_after: int
     chips_remaining: List[str]
     optimization_time_seconds: float
+    chip_suggestion: Optional[Dict[str, Any]] = None  # Post-optimization chip recommendation
 
 
 class MultiPeriodFPLOptimizer:
@@ -298,6 +300,7 @@ class MultiPeriodFPLOptimizer:
                                excluded_players: List[int] = [],
                                banked_transfers: int = 1,
                                chips_used: List[str] = [],
+                               chip_to_use: Optional[Tuple[str, int]] = None,  # (chip_name, gameweek)
                                robust: bool = False,
                                uncertainty_budget: float = 0.3,
                                strategy: str = "standard",
@@ -422,18 +425,51 @@ class MultiPeriodFPLOptimizer:
         # Plus small incentive to use free transfers when beneficial
         FREE_TRANSFER_INCENTIVE = 0.5  # Small bonus for using FTs productively
         
+        # Parse chip to use
+        active_chip = None
+        chip_gw = None
+        if chip_to_use:
+            active_chip, chip_gw = chip_to_use
+        
         objective_terms = []
         for t in horizon:
             gw_col = f'xp_gw{t}'
+            
+            # Check if this GW has active chip
+            is_triple_captain = active_chip == 'triple_captain' and t == chip_gw
+            is_bench_boost = active_chip == 'bench_boost' and t == chip_gw
+            is_wildcard = active_chip == 'wildcard' and t == chip_gw
+            is_free_hit = active_chip == 'free_hit' and t == chip_gw
+            
             for j in player_ids:
                 xp = get_attr(j, gw_col)
                 if robust:
                     # Use lower bound for worst-case
                     xp = xp * (1 - uncertainty_budget)
+                
+                # Starter points
                 objective_terms.append(xp * starter[(j, t)])
-                objective_terms.append(xp * captain[(j, t)])  # Captain bonus
-            # Subtract hit costs
-            objective_terms.append(-self.TRANSFER_PENALTY * hits[t])
+                
+                # Captain bonus (2x for normal, 3x total for Triple Captain)
+                if is_triple_captain:
+                    objective_terms.append(2 * xp * captain[(j, t)])  # 3x total (1x starter + 2x TC bonus)
+                else:
+                    objective_terms.append(xp * captain[(j, t)])  # 2x total (1x starter + 1x captain bonus)
+                
+                # Bench points
+                if is_bench_boost:
+                    # Full points for bench (squad - starter)
+                    objective_terms.append(xp * (squad[(j, t)] - starter[(j, t)]))
+                else:
+                    # Minimal bench value (0.1x for tie-breaking)
+                    objective_terms.append(0.1 * xp * (squad[(j, t)] - starter[(j, t)]))
+            
+            # Hit costs (waived for Wildcard and Free Hit)
+            if is_wildcard or is_free_hit:
+                pass  # No penalty for unlimited transfers
+            else:
+                objective_terms.append(-self.TRANSFER_PENALTY * hits[t])
+            
             # Add small incentive to use free transfers (encourages 1 FT per week)
             objective_terms.append(FREE_TRANSFER_INCENTIVE * ft_used[t])
         
@@ -628,6 +664,16 @@ class MultiPeriodFPLOptimizer:
             # Hit is worth it if xP gain > hit cost + 2 (buffer for safety)
             hit_worth_it = bool(hits_taken == 0 or xp_gain > (hit_cost + 2))
             
+            # Generate alternatives for this gameweek
+            gw_squad_ids = [p['id'] for p in gw_squad]
+            gw_alternatives = self.generate_transfer_alternatives(
+                gw=t,
+                current_squad_ids=gw_squad_ids,
+                budget=budget,
+                predictions_df=predictions,
+                top_n=3
+            )
+            
             transfer_plan = TransferPlan(
                 gameweek=t,
                 transfers_in=gw_transfers_in,
@@ -637,8 +683,21 @@ class MultiPeriodFPLOptimizer:
                 hit_cost=hit_cost,
                 explanation=self._generate_transfer_explanation(gw_transfers_in, gw_transfers_out),
                 xp_gain=round(xp_gain, 1),
-                hit_worth_it=hit_worth_it
+                hit_worth_it=hit_worth_it,
+                alternatives=gw_alternatives
             )
+            
+            # Determine if chip was used this gameweek
+            gw_chip_used = None
+            if chip_to_use and chip_to_use[1] == t:
+                chip_name = chip_to_use[0]
+                chip_map = {
+                    'triple_captain': Chip.TRIPLE_CAPTAIN,
+                    'bench_boost': Chip.BENCH_BOOST,
+                    'free_hit': Chip.FREE_HIT,
+                    'wildcard': Chip.WILDCARD
+                }
+                gw_chip_used = chip_map.get(chip_name)
             
             gameweek_plans.append(GameweekPlan(
                 gameweek=t,
@@ -647,7 +706,7 @@ class MultiPeriodFPLOptimizer:
                 captain_id=gw_captain_id,
                 vice_captain_id=gw_starters[1]['id'] if len(gw_starters) > 1 else None,
                 expected_points=gw_xp,
-                chip_used=None,
+                chip_used=gw_chip_used,
                 transfers=transfer_plan
             ))
             
@@ -660,6 +719,43 @@ class MultiPeriodFPLOptimizer:
         total_xp = sum(gp.expected_points for gp in gameweek_plans)
         total_hits = sum(ts.hit_cost for ts in transfer_summary)
         
+        # Analyze chip opportunities across the horizon
+        chip_suggestion = None
+        if not chip_to_use:  # Only suggest if no chip already being used
+            best_chip_value = 0
+            available_chips = [c for c in ['triple_captain', 'bench_boost', 'free_hit', 'wildcard'] if c not in chips_used]
+            
+            for gp in gameweek_plans:
+                gw = gp.gameweek
+                
+                # Triple Captain: extra captain points (1x more)
+                if 'triple_captain' in available_chips:
+                    captain = next((p for p in gp.starting_xi if p.get('is_captain')), None)
+                    if captain:
+                        captain_xp = captain.get(f'xp_gw{gw}', captain.get('ep_next', 5))
+                        tc_gain = captain_xp  # 3x instead of 2x = +1x
+                        if tc_gain > best_chip_value:
+                            best_chip_value = tc_gain
+                            chip_suggestion = {
+                                'chip': 'triple_captain',
+                                'gameweek': gw,
+                                'estimated_gain': round(tc_gain, 1),
+                                'reason': f"Captain {captain.get('web_name', 'player')} projected {captain_xp:.1f} pts"
+                            }
+                
+                # Bench Boost: bench players at full value
+                if 'bench_boost' in available_chips:
+                    bench_xp = sum(p.get(f'xp_gw{gw}', p.get('ep_next', 2)) for p in gp.bench)
+                    bb_gain = bench_xp * 0.9  # Currently at 0.1x, so gain is 0.9x
+                    if bb_gain > best_chip_value:
+                        best_chip_value = bb_gain
+                        chip_suggestion = {
+                            'chip': 'bench_boost',
+                            'gameweek': gw,
+                            'estimated_gain': round(bb_gain, 1),
+                            'reason': f"Bench projected {bench_xp:.1f} pts total"
+                        }
+        
         return MultiPeriodSolution(
             status='Optimal',
             squad=final_squad,
@@ -668,7 +764,8 @@ class MultiPeriodFPLOptimizer:
             transfer_summary=transfer_summary,
             banked_transfers_after=int(ft_banked[horizon[-1]].value() or 0),
             chips_remaining=[c for c in ['wildcard', 'freehit', 'triple_captain', 'bench_boost'] if c not in chips_used],
-            optimization_time_seconds=end_time - start_time
+            optimization_time_seconds=end_time - start_time,
+            chip_suggestion=chip_suggestion
         )
     
     def _generate_transfer_explanation(self, 
@@ -691,8 +788,66 @@ class MultiPeriodFPLOptimizer:
             transfers_out=transfers_out,
             current_gw=self.current_gw
         )
+    
+    def generate_transfer_alternatives(self, 
+                                        gw: int,
+                                        current_squad_ids: List[int],
+                                        budget: float,
+                                        predictions_df: pd.DataFrame,
+                                        top_n: int = 3) -> List[Dict[str, Any]]:
+        """
+        Generate top N transfer alternatives per position for a given gameweek.
         
-        return f"IN: {in_str} | OUT: {out_names}"
+        Args:
+            gw: Gameweek number
+            current_squad_ids: IDs of players currently in squad
+            budget: Available budget
+            predictions_df: Predictions dataframe with xp_gw columns
+            top_n: Number of alternatives per position (default 3)
+            
+        Returns:
+            List of dicts, one per position, each containing ranked alternatives
+        """
+        alternatives = []
+        position_names = {1: 'GKP', 2: 'DEF', 3: 'MID', 4: 'FWD'}
+        xp_col = f'xp_gw{gw}'
+        
+        for pos in [1, 2, 3, 4]:
+            # Find affordable players not in current squad
+            candidates = predictions_df[
+                (predictions_df['element_type'] == pos) &
+                (~predictions_df['id'].isin(current_squad_ids)) &
+                (predictions_df['now_cost'] / 10.0 <= budget)
+            ].copy()
+            
+            if candidates.empty:
+                continue
+                
+            # Rank by expected points for this GW
+            if xp_col in candidates.columns:
+                top_candidates = candidates.nlargest(top_n, xp_col)
+            else:
+                # Fallback to total_xp if GW-specific column missing
+                top_candidates = candidates.nlargest(top_n, 'total_xp') if 'total_xp' in candidates.columns else candidates.head(top_n)
+            
+            options = []
+            for _, player in top_candidates.iterrows():
+                xp_value = float(player.get(xp_col, player.get('total_xp', 0)))
+                options.append({
+                    'id': int(player['id']),
+                    'name': player['web_name'],
+                    'team': player.get('team_name', ''),
+                    'price': float(player['now_cost'] / 10.0),
+                    'expected_points': round(xp_value, 1)
+                })
+            
+            alternatives.append({
+                'position': position_names[pos],
+                'position_id': pos,
+                'options': options
+            })
+        
+        return alternatives
     
     def to_dict(self, solution: MultiPeriodSolution) -> Dict[str, Any]:
         """Convert solution to JSON-serializable dict."""
@@ -717,7 +872,8 @@ class MultiPeriodFPLOptimizer:
                         'out': gp.transfers.transfers_out if gp.transfers else [],
                         'ft_used': gp.transfers.free_transfers_used if gp.transfers else 0,
                         'hits': gp.transfers.hits_taken if gp.transfers else 0,
-                        'explanation': gp.transfers.explanation if gp.transfers else ""
+                        'explanation': gp.transfers.explanation if gp.transfers else "",
+                        'alternatives': gp.transfers.alternatives if gp.transfers else []
                     }
                 }
                 for gp in solution.gameweek_plans
@@ -732,8 +888,10 @@ class MultiPeriodFPLOptimizer:
                     'hit_cost': tp.hit_cost,
                     'explanation': tp.explanation,
                     'xp_gain': tp.xp_gain,
-                    'hit_worth_it': tp.hit_worth_it
+                    'hit_worth_it': tp.hit_worth_it,
+                    'alternatives': tp.alternatives
                 }
                 for tp in solution.transfer_summary
-            ]
+            ],
+            'chip_suggestion': solution.chip_suggestion
         }
