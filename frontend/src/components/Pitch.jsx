@@ -69,7 +69,7 @@ const Pitch = ({ lineup }) => {
                     </div>
                     {!isBench && (
                         <div className="w-full text-center bg-[#38003c] py-0.5 border-t border-gray-600 flex justify-center items-center gap-1">
-                            <span className="text-[10px] font-bold text-gray-200">{player.expected_points}</span>
+                            <span className="text-[10px] font-bold text-gray-200">{player.expected_points?.toFixed(2)}</span>
                             <span className="text-[8px] text-gray-400">XP</span>
                         </div>
                     )}
