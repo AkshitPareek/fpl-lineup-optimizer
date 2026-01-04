@@ -70,3 +70,52 @@ class FPLService:
 
     def _is_cache_valid(self, key):
         return key in self._cache and time.time() < self._cache_expiry.get(key, 0)
+    
+    def get_manager_chips(self, manager_id: int):
+        """
+        Fetches a manager's chip usage history from FPL API.
+        Returns dict with 'used' and 'available' chips.
+        """
+        all_chips = ['wildcard', 'freehit', 'bboost', 'triple_captain']
+        
+        try:
+            url = f"{self.BASE_URL}/entry/{manager_id}/history/"
+            response = requests.get(url)
+            response.raise_for_status()
+            data = response.json()
+            
+            # 'chips' field contains list of used chips with 'name' and 'event' (GW)
+            used_chips = []
+            for chip in data.get('chips', []):
+                chip_name = chip.get('name', '').lower()
+                used_chips.append({
+                    'name': chip_name,
+                    'gameweek': chip.get('event')
+                })
+            
+            # Map FPL chip names to our names
+            chip_name_map = {
+                'wildcard': 'wildcard',
+                '3xc': 'triple_captain',
+                'bboost': 'bench_boost',
+                'freehit': 'free_hit'
+            }
+            
+            used_names = [c['name'] for c in used_chips]
+            available_chips = [
+                chip_name_map.get(c, c) 
+                for c in all_chips 
+                if c not in used_names
+            ]
+            
+            return {
+                'used': used_chips,
+                'available': available_chips
+            }
+        except requests.RequestException as e:
+            print(f"Error fetching manager chips: {e}")
+            # Return all chips as available if API fails
+            return {
+                'used': [],
+                'available': ['wildcard', 'free_hit', 'bench_boost', 'triple_captain']
+            }

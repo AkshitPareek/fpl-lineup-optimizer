@@ -67,6 +67,7 @@ class MultiPeriodRequest(BaseModel):
     excluded_players: List[int] = []
     banked_transfers: int = Field(default=1, ge=0, le=5, description="Currently banked FTs (0-5)")
     chips_used: List[str] = Field(default=[], description="Already used chips")
+    chip_to_use: Optional[List] = Field(default=None, description="Chip to activate: [chip_name, gameweek]")
     robust: bool = Field(default=False, description="Use robust optimization")
     uncertainty_budget: float = Field(default=0.3, ge=0, le=1, description="Robustness parameter Γ")
     strategy: str = Field(default="standard", description="Strategy: standard, differential, template")
@@ -282,6 +283,11 @@ async def optimize_compare(request: MultiPeriodRequest):
             current_gameweek=current_gw
         )
         
+        # Parse chip_to_use from request
+        chip_to_use = None
+        if request.chip_to_use:
+            chip_to_use = tuple(request.chip_to_use)  # [name, gw] -> (name, gw)
+        
         # Run WITH hits allowed
         solution_with_hits = optimizer.optimize_multi_period(
             budget=actual_budget,
@@ -290,6 +296,7 @@ async def optimize_compare(request: MultiPeriodRequest):
             excluded_players=request.excluded_players,
             banked_transfers=banked_transfers,
             chips_used=request.chips_used,
+            chip_to_use=chip_to_use,
             robust=request.robust,
             uncertainty_budget=request.uncertainty_budget,
             strategy=request.strategy,
@@ -304,6 +311,7 @@ async def optimize_compare(request: MultiPeriodRequest):
             excluded_players=request.excluded_players,
             banked_transfers=banked_transfers,
             chips_used=request.chips_used,
+            chip_to_use=chip_to_use,
             robust=request.robust,
             uncertainty_budget=request.uncertainty_budget,
             strategy=request.strategy,
@@ -943,9 +951,24 @@ async def get_chip_recommendations(request: ChipAdviceRequest):
             chips_used=request.chips_used
         )
         
+        # Determine best chip to use based on urgency/value
+        best_chip = None
+        best_score = 0
+        chip_priority = ['triple_captain', 'bench_boost', 'free_hit', 'wildcard']
+        
+        for chip_name in chip_priority:
+            rec = recommendations.get(chip_name, {})
+            if rec.get('recommended_gw') == current_gw:
+                # Chip recommended for THIS gameweek - high priority
+                score = rec.get('estimated_gain', 0) + 10
+                if score > best_score:
+                    best_score = score
+                    best_chip = {'chip': chip_name, 'gw': current_gw, 'reason': rec.get('reason', '')}
+        
         return {
             "current_gw": current_gw,
-            "recommendations": recommendations
+            "recommendations": recommendations,
+            "best_chip": best_chip  # Auto-suggested chip for this GW, or None
         }
         
     except Exception as e:
@@ -955,7 +978,20 @@ async def get_chip_recommendations(request: ChipAdviceRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/manager-chips/{manager_id}")
+async def get_manager_chips(manager_id: int):
+    """
+    Get a manager's chip availability from FPL API.
+    Returns used chips and available chips.
+    """
+    try:
+        chips_info = fpl_service.get_manager_chips(manager_id)
+        return chips_info
+    except Exception as e:
+        print(f"Error fetching manager chips: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/health")
 def health_check():
     return {"status": "ok", "version": "2.0.0"}
-
