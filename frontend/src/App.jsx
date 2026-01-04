@@ -28,6 +28,11 @@ function App() {
   // Robust Optimization
   const [useRobust, setUseRobust] = useState(false)
 
+  // Chip Activation (for multi-period)
+  const [selectedChip, setSelectedChip] = useState(null) // { chip: 'triple_captain', gw: 20 }
+  const [chipRecommendations, setChipRecommendations] = useState(null)
+  const [managerChips, setManagerChips] = useState(null) // { used: [], available: [] }
+
   // Strategy Comparison
   const [compareData, setCompareData] = useState(null)
   const [selectedHitStrategy, setSelectedHitStrategy] = useState("with_hits") // 'with_hits' or 'no_hits'
@@ -41,7 +46,37 @@ function App() {
     axios.get('/api/data')
       .then(res => setData(res.data))
       .catch(err => console.error("Error fetching data", err))
+
+    // Fetch chip recommendations (POST endpoint)
+    axios.post('/api/chip-recommendations', { manager_id: null, current_squad: [], chips_used: [] })
+      .then(res => {
+        setChipRecommendations(res.data.recommendations)
+        // Auto-apply best chip if available
+        if (res.data.best_chip) {
+          setSelectedChip(res.data.best_chip)
+        }
+      })
+      .catch(err => console.error("Error fetching chip recommendations", err))
   }, [])
+
+  // Fetch manager chips when manager ID changes
+  useEffect(() => {
+    if (managerId) {
+      axios.get(`/api/manager-chips/${managerId}`)
+        .then(res => setManagerChips(res.data))
+        .catch(err => console.error("Error fetching manager chips", err))
+
+      // Also fetch chip recommendations with manager context
+      axios.post('/api/chip-recommendations', { manager_id: parseInt(managerId), current_squad: [], chips_used: [] })
+        .then(res => {
+          setChipRecommendations(res.data.recommendations)
+          if (res.data.best_chip) {
+            setSelectedChip(res.data.best_chip)
+          }
+        })
+        .catch(err => console.error("Error", err))
+    }
+  }, [managerId])
 
   const optimize = async () => {
     setLoading(true)
@@ -74,7 +109,8 @@ function App() {
           banked_transfers: parseInt(bankedTransfers),
           robust: useRobust,
           uncertainty_budget: useRobust ? 0.3 : 0,
-          strategy: strategy
+          strategy: strategy,
+          chip_to_use: selectedChip ? [selectedChip.chip, selectedChip.gw] : null
         })
         setCompareData(response.data)
         // Default to the recommended strategy
@@ -264,6 +300,20 @@ function App() {
                     {strategy === "differential" ? "Boost low-ownership players (<10%)" :
                       strategy === "template" ? "Favor popular, proven picks" :
                         "Maximize expected points"}
+                  </p>
+                </div>
+              )}
+              {mode === "multi" && lineup?.chip_suggestion && (
+                <div className="mb-3 p-3 bg-fpl-cyan/10 border border-fpl-cyan/20 rounded-lg">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-lg">💡</span>
+                    <span className="text-xs font-bold text-fpl-cyan uppercase tracking-wider">Chip Opportunity</span>
+                  </div>
+                  <p className="text-sm font-bold text-white">
+                    Use {lineup.chip_suggestion.chip.replace('_', ' ').toUpperCase()} in GW{lineup.chip_suggestion.gameweek}
+                  </p>
+                  <p className="text-[10px] text-gray-400 mt-1">
+                    +{lineup.chip_suggestion.estimated_gain} pts • {lineup.chip_suggestion.reason}
                   </p>
                 </div>
               )}
@@ -657,6 +707,32 @@ function App() {
                           return <div key={i} className="text-gray-400">{line}</div>;
                         })}
                       </div>
+
+                      {/* Transfer Alternatives */}
+                      {currentData.transfers.alternatives?.length > 0 && (
+                        <div className="mt-4 pt-3 border-t border-gray-700">
+                          <h4 className="text-xs font-bold text-fpl-cyan mb-2 uppercase tracking-wider">🔄 Alternative Options</h4>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                            {currentData.transfers.alternatives.map(alt => (
+                              <div key={alt.position_id} className="bg-gray-800/50 rounded p-2">
+                                <div className="text-[10px] font-bold text-gray-400 mb-1">{alt.position}</div>
+                                <div className="space-y-1">
+                                  {alt.options.slice(0, 3).map((option, i) => (
+                                    <div key={option.id} className="flex items-center justify-between text-xs">
+                                      <span className={`${i === 0 ? 'text-fpl-green font-medium' : 'text-gray-300'}`}>
+                                        {i + 1}. {option.name}
+                                      </span>
+                                      <span className="text-gray-500 text-[10px]">
+                                        {option.expected_points.toFixed(1)} | £{option.price.toFixed(1)}m
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <p className="text-sm text-gray-500">No transfers planned.</p>
