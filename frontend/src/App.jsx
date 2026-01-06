@@ -726,147 +726,151 @@ function App() {
                 )}
 
                 {/* Current Gw View Header */}
-                <div className="flex justify-between items-start mb-6">
-                  <div>
-                    <h3 className="text-2xl font-bold text-white mb-1">
-                      GW {currentData.gameweek || 'Selection'}
-                      <span className="text-fpl-green ml-2">{currentData.points.toFixed(1)} xP</span>
-                    </h3>
-                    {currentData.transfers?.explanation ? (
-                      <div className="text-sm text-gray-300 max-w-2xl bg-gray-900/50 p-3 rounded border-l-2 border-fpl-cyan mt-2">
-                        {/* xP Gain and Hit Analysis */}
-                        <div className="flex items-center gap-4 mb-2 pb-2 border-b border-gray-700">
-                          {currentData.transfers.xp_gain !== undefined && (
-                            <span className={`px-2 py-1 rounded text-xs font-bold ${currentData.transfers.xp_gain >= 0 ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'}`}>
-                              {currentData.transfers.xp_gain >= 0 ? '📈' : '📉'} xP Gain: {currentData.transfers.xp_gain > 0 ? '+' : ''}{currentData.transfers.xp_gain?.toFixed(1)}
-                            </span>
-                          )}
-                          {currentData.transfers.hits > 0 && (
-                            <span className={`px-2 py-1 rounded text-xs font-bold ${currentData.transfers.hit_worth_it ? 'bg-yellow-900/50 text-yellow-400' : 'bg-red-900/50 text-red-400'}`}>
-                              {currentData.transfers.hit_worth_it ? '✅' : '⚠️'} -{currentData.transfers.hits * 4} hit {currentData.transfers.hit_worth_it ? '(Worth it!)' : '(Not recommended)'}
-                            </span>
-                          )}
-                        </div>
-
-
-                        {/* Structured Explanation Display */}
-                        <div className="space-y-3 font-sans text-sm">
-                          {currentData.transfers.explanation.split('\n').map((line, i) => {
-                            // Skip headers
-                            if (line.startsWith('##')) return null;
-                            if (line.startsWith('###')) return <div key={i} className="font-bold text-gray-400 mt-2 border-b border-gray-700 pb-1">{line.replace('### ', '')}</div>;
-
-                            // Sell lines
-                            if (line.includes('**SELL:**')) {
-                              const content = line.replace('**SELL:**', '').trim();
-                              return (
-                                <div key={i} className="flex items-start gap-2 text-red-300 bg-red-900/10 p-1.5 rounded">
-                                  <span className="font-bold text-xs bg-red-900/50 text-red-400 px-1.5 rounded">SELL</span>
-                                  <span>{content}</span>
-                                </div>
-                              );
-                            }
-
-                            // Buy lines 
-                            if (line.includes('**BUY:**')) {
-                              const content = line.replace('**BUY:**', '').trim();
-                              return (
-                                <div key={i} className="flex items-start gap-2 text-green-300 bg-green-900/10 p-1.5 rounded">
-                                  <span className="font-bold text-xs bg-green-900/50 text-green-400 px-1.5 rounded">BUY</span>
-                                  <span>{content}</span>
-                                </div>
-                              );
-                            }
-
-                            // Detail lines (fixtures, risks, expected)
-                            if (line.trim().startsWith('└')) {
-                              return <div key={i} className="ml-10 text-xs text-gray-400">{line.trim()}</div>;
-                            }
-
-                            // Generic bold lines (like multipliers)
-                            if (line.includes('**')) {
-                              return <div key={i} className="font-medium text-gray-300">{line.replace(/\*\*/g, '')}</div>;
-                            }
-
-                            // Empty strings or other text
-                            if (!line.trim()) return null;
-
-                            return <div key={i} className="text-gray-400">{line}</div>;
-                          })}
-                        </div>
-
-                        {/* Transfer Alternatives */}
-                        {currentData.transfers.alternatives?.length > 0 && (
-                          <div className="mt-4 pt-3 border-t border-gray-700">
-                            <h4 className="text-xs font-bold text-fpl-cyan mb-2 uppercase tracking-wider">🔄 Alternative Options</h4>
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                              {currentData.transfers.alternatives.map(alt => (
-                                <div key={alt.position_id} className="bg-gray-800/50 rounded p-2">
-                                  <div className="text-[10px] font-bold text-gray-400 mb-1">{alt.position}</div>
-                                  <div className="space-y-1">
-                                    {alt.options.slice(0, 3).map((option, i) => (
-                                      <div key={option.id} className="flex items-center justify-between text-xs">
-                                        <span className={`${i === 0 ? 'text-fpl-green font-medium' : 'text-gray-300'}`}>
-                                          {i + 1}. {option.name}
-                                        </span>
-                                        <span className="text-gray-500 text-[10px]">
-                                          {option.expected_points.toFixed(1)} | £{option.price.toFixed(1)}m
-                                        </span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              ))}
+                {currentData && (
+                  <>
+                    <div className="flex justify-between items-start mb-6">
+                      <div>
+                        <h3 className="text-2xl font-bold text-white mb-1">
+                          GW {currentData.gameweek || 'Selection'}
+                          <span className="text-fpl-green ml-2">{currentData.points.toFixed(1)} xP</span>
+                        </h3>
+                        {currentData.transfers?.explanation ? (
+                          <div className="text-sm text-gray-300 max-w-2xl bg-gray-900/50 p-3 rounded border-l-2 border-fpl-cyan mt-2">
+                            {/* xP Gain and Hit Analysis */}
+                            <div className="flex items-center gap-4 mb-2 pb-2 border-b border-gray-700">
+                              {currentData.transfers.xp_gain !== undefined && (
+                                <span className={`px-2 py-1 rounded text-xs font-bold ${currentData.transfers.xp_gain >= 0 ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'}`}>
+                                  {currentData.transfers.xp_gain >= 0 ? '📈' : '📉'} xP Gain: {currentData.transfers.xp_gain > 0 ? '+' : ''}{currentData.transfers.xp_gain?.toFixed(1)}
+                                </span>
+                              )}
+                              {currentData.transfers.hits > 0 && (
+                                <span className={`px-2 py-1 rounded text-xs font-bold ${currentData.transfers.hit_worth_it ? 'bg-yellow-900/50 text-yellow-400' : 'bg-red-900/50 text-red-400'}`}>
+                                  {currentData.transfers.hit_worth_it ? '✅' : '⚠️'} -{currentData.transfers.hits * 4} hit {currentData.transfers.hit_worth_it ? '(Worth it!)' : '(Not recommended)'}
+                                </span>
+                              )}
                             </div>
+
+
+                            {/* Structured Explanation Display */}
+                            <div className="space-y-3 font-sans text-sm">
+                              {currentData.transfers.explanation.split('\n').map((line, i) => {
+                                // Skip headers
+                                if (line.startsWith('##')) return null;
+                                if (line.startsWith('###')) return <div key={i} className="font-bold text-gray-400 mt-2 border-b border-gray-700 pb-1">{line.replace('### ', '')}</div>;
+
+                                // Sell lines
+                                if (line.includes('**SELL:**')) {
+                                  const content = line.replace('**SELL:**', '').trim();
+                                  return (
+                                    <div key={i} className="flex items-start gap-2 text-red-300 bg-red-900/10 p-1.5 rounded">
+                                      <span className="font-bold text-xs bg-red-900/50 text-red-400 px-1.5 rounded">SELL</span>
+                                      <span>{content}</span>
+                                    </div>
+                                  );
+                                }
+
+                                // Buy lines 
+                                if (line.includes('**BUY:**')) {
+                                  const content = line.replace('**BUY:**', '').trim();
+                                  return (
+                                    <div key={i} className="flex items-start gap-2 text-green-300 bg-green-900/10 p-1.5 rounded">
+                                      <span className="font-bold text-xs bg-green-900/50 text-green-400 px-1.5 rounded">BUY</span>
+                                      <span>{content}</span>
+                                    </div>
+                                  );
+                                }
+
+                                // Detail lines (fixtures, risks, expected)
+                                if (line.trim().startsWith('└')) {
+                                  return <div key={i} className="ml-10 text-xs text-gray-400">{line.trim()}</div>;
+                                }
+
+                                // Generic bold lines (like multipliers)
+                                if (line.includes('**')) {
+                                  return <div key={i} className="font-medium text-gray-300">{line.replace(/\*\*/g, '')}</div>;
+                                }
+
+                                // Empty strings or other text
+                                if (!line.trim()) return null;
+
+                                return <div key={i} className="text-gray-400">{line}</div>;
+                              })}
+                            </div>
+
+                            {/* Transfer Alternatives */}
+                            {currentData.transfers.alternatives && currentData.transfers.alternatives.length > 0 && (
+                              <div className="mt-4 pt-3 border-t border-gray-700">
+                                <h4 className="text-xs font-bold text-fpl-cyan mb-2 uppercase tracking-wider">🔄 Alternative Options</h4>
+                                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                                  {currentData.transfers.alternatives.map((alt) => (
+                                    <div key={alt.position_id} className="bg-gray-800/50 rounded p-2">
+                                      <div className="text-[10px] font-bold text-gray-400 mb-1">{alt.position}</div>
+                                      <div className="space-y-1">
+                                        {alt.options.slice(0, 3).map((option, i) => (
+                                          <div key={option.id} className="flex items-center justify-between text-xs">
+                                            <span className={i === 0 ? 'text-fpl-green font-medium' : 'text-gray-300'}>
+                                              {i + 1}. {option.name}
+                                            </span>
+                                            <span className="text-gray-500 text-[10px]">
+                                              {option.expected_points.toFixed(1)} | £{option.price.toFixed(1)}m
+                                            </span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </div>
+                        ) : (
+                          <p className="text-sm text-gray-500">No transfers planned.</p>
                         )}
                       </div>
-                    ) : (
-                      <p className="text-sm text-gray-500">No transfers planned.</p>
-                    )}
-                  </div>
 
-                  <div className="flex gap-2">
-                    <button onClick={() => setViewMode("pitch")} className={`px-3 py-1 rounded text-xs uppercase font-bold ${viewMode === 'pitch' ? 'bg-fpl-green text-gray-900' : 'bg-gray-700 text-gray-400'}`}>Pitch</button>
-                    <button onClick={() => setViewMode("list")} className={`px-3 py-1 rounded text-xs uppercase font-bold ${viewMode === 'list' ? 'bg-fpl-green text-gray-900' : 'bg-gray-700 text-gray-400'}`}>List</button>
-                  </div>
-                </div>
-
-                <div className="flex-1 overflow-y-auto">
-                  {viewMode === "pitch" ? <Pitch lineup={currentData.squad} /> : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {currentData.squad.map(player => (
-                        <div key={player.id} className={`p-3 rounded flex justify-between items-center ${player.is_starter ? 'bg-gray-700' : 'bg-gray-700/50 border border-dashed border-gray-600'}`}>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-sm">{player.web_name}</span>
-                              {player.is_captain && <span className="bg-yellow-500 text-black text-[9px] font-bold px-1 rounded">C</span>}
-                              {player.is_vice_captain && <span className="bg-gray-500 text-white text-[9px] font-bold px-1 rounded">V</span>}
-                              {!player.is_starter && <span className="bg-gray-600 text-white text-[9px] font-bold px-1 rounded">BENCH</span>}
-                            </div>
-                            <div className="text-xs text-gray-400 mt-1">{player.team_name} • {player.position}</div>
-                            {player.analytics && (
-                              <div className="flex gap-1 mt-1">
-                                {player.analytics.is_differential && <span className="text-[10px] bg-indigo-500/20 text-indigo-300 px-1 rounded">Diff</span>}
-                                {player.analytics.is_template && <span className="text-[10px] bg-pink-500/20 text-pink-300 px-1 rounded">Templ</span>}
-                                <span className="text-[10px] bg-gray-600 px-1 rounded" title="Ownership">{player.analytics.ownership_pct}% Own</span>
-                              </div>
-                            )}
-                          </div>
-                          <div className="text-right">
-                            <div className="text-fpl-green font-bold">{player.expected_points?.toFixed(1)}</div>
-                            <div className="text-xs text-gray-500">xP</div>
-                            {player.analytics && (
-                              <div className="text-[10px] text-gray-400 mt-1" title="Ceiling">
-                                <span>{player.analytics.ceiling?.toFixed(1)} Clng</span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      ))}
+                      <div className="flex gap-2">
+                        <button onClick={() => setViewMode("pitch")} className={`px-3 py-1 rounded text-xs uppercase font-bold ${viewMode === 'pitch' ? 'bg-fpl-green text-gray-900' : 'bg-gray-700 text-gray-400'}`}>Pitch</button>
+                        <button onClick={() => setViewMode("list")} className={`px-3 py-1 rounded text-xs uppercase font-bold ${viewMode === 'list' ? 'bg-fpl-green text-gray-900' : 'bg-gray-700 text-gray-400'}`}>List</button>
+                      </div>
                     </div>
-                  )}
-                </div>
+
+                    <div className="flex-1 overflow-y-auto">
+                      {viewMode === "pitch" ? <Pitch lineup={currentData.squad} /> : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                          {currentData.squad.map(player => (
+                            <div key={player.id} className={`p-3 rounded flex justify-between items-center ${player.is_starter ? 'bg-gray-700' : 'bg-gray-700/50 border border-dashed border-gray-600'}`}>
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-bold text-sm">{player.web_name}</span>
+                                  {player.is_captain && <span className="bg-yellow-500 text-black text-[9px] font-bold px-1 rounded">C</span>}
+                                  {player.is_vice_captain && <span className="bg-gray-500 text-white text-[9px] font-bold px-1 rounded">V</span>}
+                                  {!player.is_starter && <span className="bg-gray-600 text-white text-[9px] font-bold px-1 rounded">BENCH</span>}
+                                </div>
+                                <div className="text-xs text-gray-400 mt-1">{player.team_name} • {player.position}</div>
+                                {player.analytics && (
+                                  <div className="flex gap-1 mt-1">
+                                    {player.analytics.is_differential && <span className="text-[10px] bg-indigo-500/20 text-indigo-300 px-1 rounded">Diff</span>}
+                                    {player.analytics.is_template && <span className="text-[10px] bg-pink-500/20 text-pink-300 px-1 rounded">Templ</span>}
+                                    <span className="text-[10px] bg-gray-600 px-1 rounded" title="Ownership">{player.analytics.ownership_pct}% Own</span>
+                                  </div>
+                                )}
+                              </div>
+                              <div className="text-right">
+                                <div className="text-fpl-green font-bold">{player.expected_points?.toFixed(1)}</div>
+                                <div className="text-xs text-gray-500">xP</div>
+                                {player.analytics && (
+                                  <div className="text-[10px] text-gray-400 mt-1" title="Ceiling">
+                                    <span>{player.analytics.ceiling?.toFixed(1)} Clng</span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
               </>
             )}
           </div>
