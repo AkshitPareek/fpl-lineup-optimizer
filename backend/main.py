@@ -67,11 +67,13 @@ import os
 origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "https://fploptimize.netlify.app",
+    "https://www.fploptimize.netlify.app",
     os.getenv("FRONTEND_URL", ""),
 ]
 
-# Filter out empty strings if FRONTEND_URL is not set
-origins = [o for o in origins if o]
+# Filter out empty strings and strip trailing slashes
+origins = [o.rstrip("/") for o in origins if o]
 
 app.add_middleware(
     CORSMiddleware,

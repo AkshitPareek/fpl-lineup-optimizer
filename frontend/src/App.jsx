@@ -4,7 +4,7 @@ import Pitch from './components/Pitch'
 import AnalyticsDashboard from './components/analytics/AnalyticsDashboard'
 
 // Production API URL handling
-const API_URL = import.meta.env.VITE_API_URL || '';
+const API_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 axios.defaults.baseURL = API_URL;
 
 function App() {
