@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
 import Pitch from './components/Pitch'
+import AnalyticsDashboard from './components/analytics/AnalyticsDashboard'
 
 function App() {
   const [data, setData] = useState(null)
@@ -48,12 +49,15 @@ function App() {
       .catch(err => console.error("Error fetching data", err))
 
     // Fetch chip recommendations (POST endpoint)
-    axios.post('/api/chip-recommendations', { manager_id: null, current_squad: [], chips_used: [] })
+    axios.post('/api/chip-recommendations', { manager_id: null, current_squad: [], chips_used: [], horizon: 5 })
       .then(res => {
-        setChipRecommendations(res.data.recommendations)
+        setChipRecommendations(res.data)
         // Auto-apply best chip if available
         if (res.data.best_chip) {
-          setSelectedChip(res.data.best_chip)
+          setSelectedChip({
+            chip: res.data.best_chip.chip,
+            gw: res.data.best_chip.recommended_gameweek
+          })
         }
       })
       .catch(err => console.error("Error fetching chip recommendations", err))
@@ -67,16 +71,19 @@ function App() {
         .catch(err => console.error("Error fetching manager chips", err))
 
       // Also fetch chip recommendations with manager context
-      axios.post('/api/chip-recommendations', { manager_id: parseInt(managerId), current_squad: [], chips_used: [] })
+      axios.post('/api/chip-recommendations', { manager_id: parseInt(managerId), current_squad: [], chips_used: [], horizon: parseInt(gameweeks) || 5 })
         .then(res => {
-          setChipRecommendations(res.data.recommendations)
+          setChipRecommendations(res.data)
           if (res.data.best_chip) {
-            setSelectedChip(res.data.best_chip)
+            setSelectedChip({
+              chip: res.data.best_chip.chip,
+              gw: res.data.best_chip.recommended_gameweek
+            })
           }
         })
         .catch(err => console.error("Error", err))
     }
-  }, [managerId])
+  }, [managerId, gameweeks])
 
   const optimize = async () => {
     setLoading(true)
@@ -251,6 +258,7 @@ function App() {
             <button onClick={() => setMode("single")} className={`flex-1 py-2 rounded text-sm font-bold transition ${mode === 'single' ? 'bg-fpl-green text-gray-900' : 'text-gray-400'}`}>Single</button>
             <button onClick={() => setMode("dream")} className={`flex-1 py-2 rounded text-sm font-bold transition ${mode === 'dream' ? 'bg-fpl-cyan text-gray-900' : 'text-gray-400'}`}>Dream</button>
             <button onClick={() => setMode("backtest")} className={`flex-1 py-2 rounded text-sm font-bold transition ${mode === 'backtest' ? 'bg-yellow-500 text-gray-900' : 'text-gray-400'}`}>Test</button>
+            <button onClick={() => setMode("analytics")} className={`flex-1 py-2 rounded text-sm font-bold transition ${mode === 'analytics' ? 'bg-fpl-pink text-white' : 'text-gray-400'}`}>Stats</button>
           </div>
 
           {mode === "backtest" ? (
@@ -303,18 +311,88 @@ function App() {
                   </p>
                 </div>
               )}
-              {mode === "multi" && lineup?.chip_suggestion && (
+              {mode === "multi" && (lineup?.chip_suggestion || lineup?.chip_recommendations?.length > 0) && (
                 <div className="mb-3 p-3 bg-fpl-cyan/10 border border-fpl-cyan/20 rounded-lg">
-                  <div className="flex items-center gap-2 mb-1">
+                  <div className="flex items-center gap-2 mb-2">
                     <span className="text-lg">💡</span>
-                    <span className="text-xs font-bold text-fpl-cyan uppercase tracking-wider">Chip Opportunity</span>
+                    <span className="text-xs font-bold text-fpl-cyan uppercase tracking-wider">Chip Recommendations</span>
+                  </div>
+                  {/* Best Chip */}
+                  {lineup.chip_suggestion && (
+                    <div className="mb-2">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-bold text-white">
+                          Use {lineup.chip_suggestion.chip?.replace('_', ' ').toUpperCase()} in GW{lineup.chip_suggestion.recommended_gameweek}
+                        </p>
+                        {lineup.chip_suggestion.confidence && (
+                          <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase ${lineup.chip_suggestion.confidence === 'high' ? 'bg-green-900/50 text-green-400' :
+                            lineup.chip_suggestion.confidence === 'medium' ? 'bg-yellow-900/50 text-yellow-400' :
+                              'bg-gray-700 text-gray-400'
+                            }`}>
+                            {lineup.chip_suggestion.confidence}
+                          </span>
+                        )}
+                        {lineup.chip_suggestion.is_dgw && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded font-bold uppercase bg-purple-900/50 text-purple-400">DGW</span>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-gray-400 mt-1">
+                        +{lineup.chip_suggestion.estimated_gain} pts • {lineup.chip_suggestion.reason}
+                      </p>
+                    </div>
+                  )}
+                  {/* Other chip options */}
+                  {lineup.chip_recommendations?.length > 1 && (
+                    <div className="mt-2 pt-2 border-t border-gray-700">
+                      <p className="text-[10px] text-gray-500 mb-1">Other options:</p>
+                      <div className="flex flex-wrap gap-1">
+                        {lineup.chip_recommendations.slice(1, 4).map((rec, idx) => (
+                          <span key={idx} className="text-[9px] bg-gray-800 text-gray-300 px-2 py-1 rounded">
+                            {rec.chip?.replace('_', ' ')} GW{rec.recommended_gameweek} (+{rec.estimated_gain})
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+              {/* Captain Recommendation for current GW */}
+              {mode === "multi" && lineup?.gameweek_plans?.[selectedGwIndex]?.captain_recommendation && (
+                <div className="mb-3 p-3 bg-yellow-900/10 border border-yellow-500/20 rounded-lg">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-lg">👑</span>
+                    <span className="text-xs font-bold text-yellow-400 uppercase tracking-wider">Captain Pick</span>
+                    {lineup.gameweek_plans[selectedGwIndex].captain_recommendation.confidence && (
+                      <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase ${lineup.gameweek_plans[selectedGwIndex].captain_recommendation.confidence === 'high' ? 'bg-green-900/50 text-green-400' :
+                        lineup.gameweek_plans[selectedGwIndex].captain_recommendation.confidence === 'medium' ? 'bg-yellow-900/50 text-yellow-400' :
+                          'bg-gray-700 text-gray-400'
+                        }`}>
+                        {lineup.gameweek_plans[selectedGwIndex].captain_recommendation.confidence}
+                      </span>
+                    )}
                   </div>
                   <p className="text-sm font-bold text-white">
-                    Use {lineup.chip_suggestion.chip.replace('_', ' ').toUpperCase()} in GW{lineup.chip_suggestion.gameweek}
+                    {lineup.gameweek_plans[selectedGwIndex].captain_recommendation.player_name}
+                    <span className="text-fpl-green ml-2">
+                      {lineup.gameweek_plans[selectedGwIndex].captain_recommendation.expected_points} xP
+                    </span>
+                    {lineup.gameweek_plans[selectedGwIndex].captain_recommendation.has_dgw && (
+                      <span className="ml-2 text-[9px] px-1.5 py-0.5 rounded bg-purple-900/50 text-purple-400">DGW</span>
+                    )}
                   </p>
                   <p className="text-[10px] text-gray-400 mt-1">
-                    +{lineup.chip_suggestion.estimated_gain} pts • {lineup.chip_suggestion.reason}
+                    {lineup.gameweek_plans[selectedGwIndex].captain_recommendation.fixtures}
                   </p>
+                  {lineup.gameweek_plans[selectedGwIndex].captain_recommendation.alternatives?.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      <span className="text-[9px] text-gray-500">Alt:</span>
+                      {lineup.gameweek_plans[selectedGwIndex].captain_recommendation.alternatives.slice(0, 3).map((alt, idx) => (
+                        <span key={idx} className="text-[9px] bg-gray-800 text-gray-300 px-2 py-0.5 rounded">
+                          {alt.player_name} ({alt.expected_points})
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
               {mode === "single" && (
@@ -359,418 +437,440 @@ function App() {
             </div>
           )}
 
-          <button onClick={optimize} disabled={loading && mode !== 'backtest'} className="w-full bg-gradient-to-r from-fpl-green to-fpl-cyan text-fpl-purple font-bold py-3 rounded-lg hover:opacity-90 transition disabled:opacity-50 mt-4 cursor-pointer">
-            {loading && mode !== 'backtest' ? "Crunching Numbers..." :
-              mode === 'backtest' && loading ? "Simulation Running..." :
-                mode === 'backtest' ? "Run Simulation" :
-                  mode === 'dream' ? "Show Dream Team" :
-                    "Generate Plan"}
-          </button>
+          {mode !== 'analytics' && (
+            <button onClick={optimize} disabled={loading && mode !== 'backtest'} className="w-full bg-gradient-to-r from-fpl-green to-fpl-cyan text-fpl-purple font-bold py-3 rounded-lg hover:opacity-90 transition disabled:opacity-50 mt-4 cursor-pointer">
+              {loading && mode !== 'backtest' ? "Crunching Numbers..." :
+                mode === 'backtest' && loading ? "Simulation Running..." :
+                  mode === 'backtest' ? "Run Simulation" :
+                    mode === 'dream' ? "Show Dream Team" :
+                      "Generate Plan"}
+            </button>
+          )}
 
           {error && <p className="text-red-400 text-xs text-center mt-2">{error}</p>}
         </div>
 
         {/* Results Panel */}
-        <div className="lg:col-span-3 bg-gray-800 rounded-xl p-6 shadow-lg min-h-[600px] flex flex-col">
-          {mode === "backtest" ? (
-            backtestProgress ? (
-              <div className="flex-1 flex flex-col items-center justify-center space-y-6">
-                <div className="w-full max-w-md">
-                  <div className="flex justify-between text-sm text-gray-400 mb-2"><span>{backtestProgress.message}</span><span>{backtestProgress.progress}%</span></div>
-                  <div className="w-full bg-gray-700 rounded-full h-4 overflow-hidden">
-                    <div className="bg-gradient-to-r from-fpl-green to-fpl-cyan h-4 rounded-full transition-all duration-300" style={{ width: `${backtestProgress.progress}%` }}></div>
-                  </div>
-                  <p className="text-center text-xs text-gray-500 mt-4 animate-pulse">Solving complex optimization (MILP) with rolling horizon...</p>
-                </div>
-              </div>
-            ) : backtestResults ? (
-              <div className="space-y-6 animate-fade-in flex flex-col h-full">
-                <h3 className="text-2xl font-bold text-white border-b border-gray-700 pb-2">Simulation Report (GW {startGw} - {endGw})</h3>
-
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div className="bg-gray-700/30 p-4 rounded-lg text-center border border-gray-600">
-                    <p className="text-xs text-gray-400 uppercase tracking-wider">Total Actual</p>
-                    <p className="text-3xl font-bold text-fpl-green">{backtestResults.metrics.total_actual_points}</p>
-                  </div>
-                  <div className="bg-gray-700/30 p-4 rounded-lg text-center border border-gray-600">
-                    <p className="text-xs text-gray-400 uppercase tracking-wider">Predicted</p>
-                    <p className="text-3xl font-bold text-fpl-cyan">{backtestResults.metrics.total_predicted_points.toFixed(0)}</p>
-                  </div>
-                  <div className="bg-gray-700/30 p-4 rounded-lg text-center border border-gray-600">
-                    <p className="text-xs text-gray-400 uppercase tracking-wider">Delta</p>
-                    <p className={`text-3xl font-bold ${backtestResults.metrics.prediction_error > 0 ? 'text-red-400' : 'text-green-400'}`}>{backtestResults.metrics.prediction_error > 0 ? '+' : ''}{backtestResults.metrics.prediction_error.toFixed(0)}</p>
-                  </div>
-                  <div className="bg-gray-700/30 p-4 rounded-lg text-center border border-gray-600">
-                    <p className="text-xs text-gray-400 uppercase tracking-wider">Avg Pts/GW</p>
-                    <p className="text-3xl font-bold text-white">{backtestResults.metrics.avg_points_per_gw.toFixed(1)}</p>
+        {mode === 'analytics' ? (
+          <AnalyticsDashboard />
+        ) : (
+          <div className="lg:col-span-3 bg-gray-800 rounded-xl p-6 shadow-lg min-h-[600px] flex flex-col">
+            {mode === "backtest" ? (
+              backtestProgress ? (
+                <div className="flex-1 flex flex-col items-center justify-center space-y-6">
+                  <div className="w-full max-w-md">
+                    <div className="flex justify-between text-sm text-gray-400 mb-2"><span>{backtestProgress.message}</span><span>{backtestProgress.progress}%</span></div>
+                    <div className="w-full bg-gray-700 rounded-full h-4 overflow-hidden">
+                      <div className="bg-gradient-to-r from-fpl-green to-fpl-cyan h-4 rounded-full transition-all duration-300" style={{ width: `${backtestProgress.progress}%` }}></div>
+                    </div>
+                    <p className="text-center text-xs text-gray-500 mt-4 animate-pulse">Solving complex optimization (MILP) with rolling horizon...</p>
                   </div>
                 </div>
+              ) : backtestResults ? (
+                <div className="space-y-6 animate-fade-in flex flex-col h-full">
+                  <h3 className="text-2xl font-bold text-white border-b border-gray-700 pb-2">Simulation Report (GW {startGw} - {endGw})</h3>
 
-                <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 overflow-hidden">
-                  {/* GW Breakdown Table */}
-                  <div className="lg:col-span-1 overflow-y-auto border border-gray-700 rounded-lg">
-                    <table className="w-full text-sm text-left text-gray-300">
-                      <thead className="text-xs uppercase bg-gray-900 text-gray-400 sticky top-0">
-                        <tr>
-                          <th className="px-4 py-3">GW</th>
-                          <th className="px-4 py-3 text-right">Pts</th>
-                          <th className="px-4 py-3 text-right">xP</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-700">
-                        {backtestResults.weekly_results.map(res => (
-                          <tr
-                            key={res.gameweek}
-                            onClick={() => setSelectedBacktestGw(res.gameweek)}
-                            className={`cursor-pointer hover:bg-gray-700 transition ${selectedBacktestGw === res.gameweek ? 'bg-fpl-green/20 border-l-4 border-fpl-green' : 'bg-gray-800'}`}
-                          >
-                            <td className="px-4 py-3 font-bold text-white">GW {res.gameweek}</td>
-                            <td className="px-4 py-3 text-right text-white font-bold">{res.actual_points}</td>
-                            <td className="px-4 py-3 text-right text-gray-400">{res.predicted_points.toFixed(1)}</td>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="bg-gray-700/30 p-4 rounded-lg text-center border border-gray-600">
+                      <p className="text-xs text-gray-400 uppercase tracking-wider">Total Actual</p>
+                      <p className="text-3xl font-bold text-fpl-green">{backtestResults.metrics.total_actual_points}</p>
+                    </div>
+                    <div className="bg-gray-700/30 p-4 rounded-lg text-center border border-gray-600">
+                      <p className="text-xs text-gray-400 uppercase tracking-wider">Predicted</p>
+                      <p className="text-3xl font-bold text-fpl-cyan">{backtestResults.metrics.total_predicted_points.toFixed(0)}</p>
+                    </div>
+                    <div className="bg-gray-700/30 p-4 rounded-lg text-center border border-gray-600">
+                      <p className="text-xs text-gray-400 uppercase tracking-wider">Delta</p>
+                      <p className={`text-3xl font-bold ${backtestResults.metrics.prediction_error > 0 ? 'text-red-400' : 'text-green-400'}`}>{backtestResults.metrics.prediction_error > 0 ? '+' : ''}{backtestResults.metrics.prediction_error.toFixed(0)}</p>
+                    </div>
+                    <div className="bg-gray-700/30 p-4 rounded-lg text-center border border-gray-600">
+                      <p className="text-xs text-gray-400 uppercase tracking-wider">Avg Pts/GW</p>
+                      <p className="text-3xl font-bold text-white">{backtestResults.metrics.avg_points_per_gw.toFixed(1)}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 overflow-hidden">
+                    {/* GW Breakdown Table */}
+                    <div className="lg:col-span-1 overflow-y-auto border border-gray-700 rounded-lg">
+                      <table className="w-full text-sm text-left text-gray-300">
+                        <thead className="text-xs uppercase bg-gray-900 text-gray-400 sticky top-0">
+                          <tr>
+                            <th className="px-4 py-3">GW</th>
+                            <th className="px-4 py-3 text-right">Pts</th>
+                            <th className="px-4 py-3 text-right">xP</th>
+                            <th className="px-4 py-3 text-right hidden lg:table-cell">Risk</th>
+                            <th className="px-4 py-3 text-right hidden lg:table-cell">Templ%</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                    <p className="text-center text-xs text-gray-500 p-2">Click a row to view lineup</p>
-                  </div>
+                        </thead>
+                        <tbody className="divide-y divide-gray-700">
+                          {backtestResults.weekly_results.map(res => (
+                            <tr
+                              key={res.gameweek}
+                              onClick={() => setSelectedBacktestGw(res.gameweek)}
+                              className={`cursor-pointer hover:bg-gray-700 transition ${selectedBacktestGw === res.gameweek ? 'bg-fpl-green/20 border-l-4 border-fpl-green' : 'bg-gray-800'}`}
+                            >
+                              <td className="px-4 py-3 font-bold text-white">GW {res.gameweek}</td>
+                              <td className="px-4 py-3 text-right text-white font-bold">{res.actual_points}</td>
+                              <td className="px-4 py-3 text-right text-gray-400">{res.predicted_points.toFixed(1)}</td>
+                              <td className="px-4 py-3 text-right text-gray-500 hidden lg:table-cell">{res.squad_risk?.toFixed(1) || '-'}</td>
+                              <td className="px-4 py-3 text-right text-gray-500 hidden lg:table-cell">{res.template_coverage ? `${res.template_coverage.toFixed(0)}%` : '-'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      <p className="text-center text-xs text-gray-500 p-2">Click a row to view lineup</p>
+                    </div>
 
-                  {/* Lineup Visualization */}
-                  <div className="lg:col-span-2 overflow-y-auto bg-gray-900/50 rounded-lg p-2 flex flex-col">
-                    {currentData ? (
-                      <>
-                        <div className="flex justify-between items-center mb-2 px-2">
-                          <h4 className="font-bold text-white">GW {currentData.gameweek} Lineup</h4>
-                          <div className="space-x-2">
-                            <button onClick={() => setViewMode("pitch")} className={`px-2 py-1 rounded text-xs ${viewMode === 'pitch' ? 'bg-fpl-green text-black' : 'bg-gray-700'}`}>Pitch</button>
-                            <button onClick={() => setViewMode("list")} className={`px-2 py-1 rounded text-xs ${viewMode === 'list' ? 'bg-fpl-green text-black' : 'bg-gray-700'}`}>List</button>
-                          </div>
-                        </div>
-                        <div className="flex-1 overflow-y-auto">
-                          {viewMode === 'pitch' ? (
-                            <Pitch lineup={currentData.squad} />
-                          ) : (
-                            <div className="grid grid-cols-2 gap-2">
-                              {currentData.squad.map(p => (
-                                <div key={p.id} className="bg-gray-700 p-2 rounded flex justify-between text-xs">
-                                  <span>{p.web_name} {p.is_captain ? '(C)' : ''}</span>
-                                  <span>{p.expected_points?.toFixed(1)} xP</span>
-                                </div>
-                              ))}
+                    {/* Lineup Visualization */}
+                    <div className="lg:col-span-2 overflow-y-auto bg-gray-900/50 rounded-lg p-2 flex flex-col">
+                      {currentData ? (
+                        <>
+                          <div className="flex justify-between items-center mb-2 px-2">
+                            <h4 className="font-bold text-white">GW {currentData.gameweek} Lineup</h4>
+                            <div className="space-x-2">
+                              <button onClick={() => setViewMode("pitch")} className={`px-2 py-1 rounded text-xs ${viewMode === 'pitch' ? 'bg-fpl-green text-black' : 'bg-gray-700'}`}>Pitch</button>
+                              <button onClick={() => setViewMode("list")} className={`px-2 py-1 rounded text-xs ${viewMode === 'list' ? 'bg-fpl-green text-black' : 'bg-gray-700'}`}>List</button>
                             </div>
-                          )}
-                        </div>
-                      </>
-                    ) : (
-                      <div className="flex items-center justify-center h-full text-gray-500">Select a gameweek</div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="flex-1 flex flex-col items-center justify-center text-gray-500 opacity-50">
-                <div className="text-6xl mb-4">🧪</div>
-                <p>Simulate performance on historical data</p>
-              </div>
-            )) : mode === "dream" ? (
-              dreamTeam ? (
-                <div className="space-y-6 animate-fade-in">
-                  <div className="flex justify-between items-center border-b border-gray-700 pb-4">
-                    <div>
-                      <h3 className="text-2xl font-bold text-white">🌟 Dream Team GW {dreamTeam.gameweek}</h3>
-                      <p className="text-gray-400 text-sm mt-1">Best possible XI with no constraints</p>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-3xl font-bold text-fpl-cyan">{dreamTeam.total_expected_points} xP</div>
-                      <div className="text-sm text-gray-400">Total Cost: £{dreamTeam.total_cost}m</div>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {dreamTeam.dream_team.map(player => (
-                      <div
-                        key={player.id}
-                        className={`p-4 rounded-lg flex justify-between items-center ${player.id === dreamTeam.captain.id
-                          ? 'bg-gradient-to-r from-yellow-500/20 to-yellow-600/10 border border-yellow-500'
-                          : 'bg-gray-700'
-                          }`}
-                      >
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-sm">{player.web_name}</span>
-                            {player.id === dreamTeam.captain.id && (
-                              <span className="bg-yellow-500 text-black text-[9px] font-bold px-1.5 py-0.5 rounded">C</span>
+                          </div>
+                          <div className="flex-1 overflow-y-auto">
+                            {viewMode === 'pitch' ? (
+                              <Pitch lineup={currentData.squad} />
+                            ) : (
+                              <div className="grid grid-cols-2 gap-2">
+                                {currentData.squad.map(p => (
+                                  <div key={p.id} className="bg-gray-700 p-2 rounded flex justify-between text-xs">
+                                    <span>{p.web_name} {p.is_captain ? '(C)' : ''}</span>
+                                    <span>{p.expected_points?.toFixed(1)} xP</span>
+                                  </div>
+                                ))}
+                              </div>
                             )}
                           </div>
-                          <div className="text-xs text-gray-400 mt-1">{player.team_name} • {player.position}</div>
-                          <div className="text-xs text-gray-500 mt-1">£{player.now_cost}m</div>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-fpl-green font-bold text-lg">{player.expected_points}</div>
-                          <div className="text-xs text-gray-500">xP</div>
-                        </div>
-                      </div>
-                    ))}
+                        </>
+                      ) : (
+                        <div className="flex items-center justify-center h-full text-gray-500">Select a gameweek</div>
+                      )}
+                    </div>
                   </div>
                 </div>
               ) : (
                 <div className="flex-1 flex flex-col items-center justify-center text-gray-500 opacity-50">
-                  <div className="text-6xl mb-4">🌟</div>
-                  <p>Dream Team - Best XI with no budget limits</p>
-                  <p className="text-sm mt-2">Click "Show Dream Team" to see the ultimate lineup!</p>
+                  <div className="text-6xl mb-4">🧪</div>
+                  <p>Simulate performance on historical data</p>
                 </div>
-              )
-            ) : loading ? (
-              /* Loading state for non-backtest modes */
-              <div className="flex-1 flex flex-col items-center justify-center space-y-6">
-                <div className="w-full max-w-md">
-                  <div className="flex justify-between text-sm text-gray-400 mb-2">
-                    <span>
-                      {mode === 'dream' ? 'Finding best players...' :
-                        mode === 'multi' ? 'Solving multi-period optimization...' :
-                          'Optimizing lineup...'}
-                    </span>
-                  </div>
-                  <div className="w-full bg-gray-700 rounded-full h-4 overflow-hidden">
-                    <div
-                      className="bg-gradient-to-r from-fpl-green to-fpl-cyan h-4 rounded-full animate-pulse"
-                      style={{ width: '75%' }}
-                    ></div>
-                  </div>
-                  <div className="flex items-center justify-center gap-2 mt-4">
-                    <div className="animate-spin rounded-full h-5 w-5 border-2 border-fpl-cyan border-t-transparent"></div>
-                    <p className="text-xs text-gray-500">
-                      {mode === 'multi' ?
-                        `Planning ${gameweeks} gameweeks with MILP solver...` :
-                        'Crunching numbers...'}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            ) : !lineup ? (
-              <div className="flex-1 flex flex-col items-center justify-center text-gray-500 opacity-50">
-                <div className="text-6xl mb-4">⚽️</div>
-                <p>Ready to optimize for 2025/26</p>
-              </div>
-            ) : (
-            <>
-              {/* Timeline for Multi-Mode */}
-              {mode === "multi" && lineup.gameweek_plans && (
-                <div className="flex gap-2 overflow-x-auto pb-4 mb-4 border-b border-gray-700">
-                  {lineup.gameweek_plans.map((plan, idx) => (
-                    <button
-                      key={plan.gameweek}
-                      onClick={() => setSelectedGwIndex(idx)}
-                      className={`flex-shrink-0 px-4 py-2 rounded-lg text-sm transition ${selectedGwIndex === idx
-                        ? 'bg-fpl-pink text-white font-bold'
-                        : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
-                        }`}
-                    >
-                      <span className="block text-xs opacity-70">GW {plan.gameweek}</span>
-                      <span className="block">{plan.expected_points.toFixed(1)} pts</span>
-                    </button>
-                  ))}
-                  <div className="ml-auto flex flex-col items-end justify-center text-right px-4">
-                    <span className="text-xs text-gray-400">Total Horizon</span>
-                    <span className="text-xl font-bold text-fpl-green">{lineup.total_expected_points.toFixed(0)} pts</span>
-                  </div>
-                </div>
-              )}
-
-              {/* Strategy Comparison Toggle */}
-              {mode === "multi" && compareData && (
-                <div className="bg-gradient-to-r from-gray-900 to-gray-800 p-4 rounded-xl mb-4 border border-gray-700">
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-sm font-bold text-gray-300">📊 Strategy Comparison</span>
-                    <span className="text-xs text-gray-500">{compareData.strategy} optimization</span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    {/* With Hits Option */}
-                    <button
-                      onClick={() => {
-                        setSelectedHitStrategy('with_hits')
-                        setLineup(compareData.with_hits)
-                      }}
-                      className={`p-3 rounded-lg transition ${selectedHitStrategy === 'with_hits'
-                        ? 'bg-yellow-900/50 border-2 border-yellow-500'
-                        : 'bg-gray-800 border border-gray-700 hover:border-gray-600'}`}
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-xs font-bold text-yellow-400">⚡ With Hits</span>
-                        {compareData.comparison.with_hits.recommended && (
-                          <span className="text-[10px] bg-green-900/50 text-green-400 px-1.5 py-0.5 rounded">Recommended</span>
-                        )}
+              )) : mode === "dream" ? (
+                dreamTeam ? (
+                  <div className="space-y-6 animate-fade-in">
+                    <div className="flex justify-between items-center border-b border-gray-700 pb-4">
+                      <div>
+                        <h3 className="text-2xl font-bold text-white">🌟 Dream Team GW {dreamTeam.gameweek}</h3>
+                        <p className="text-gray-400 text-sm mt-1">Best possible XI with no constraints</p>
                       </div>
-                      <div className="text-lg font-bold text-white">{compareData.comparison.with_hits.net_xp} pts</div>
-                      <div className="text-xs text-gray-400">
-                        {compareData.comparison.with_hits.total_xp} xP - {compareData.comparison.with_hits.hit_cost} hits
+                      <div className="text-right">
+                        <div className="text-3xl font-bold text-fpl-cyan">{dreamTeam.total_expected_points} xP</div>
+                        <div className="text-sm text-gray-400">Total Cost: £{dreamTeam.total_cost}m</div>
                       </div>
-                    </button>
-
-                    {/* No Hits Option */}
-                    <button
-                      onClick={() => {
-                        setSelectedHitStrategy('no_hits')
-                        setLineup(compareData.no_hits)
-                      }}
-                      className={`p-3 rounded-lg transition ${selectedHitStrategy === 'no_hits'
-                        ? 'bg-green-900/50 border-2 border-green-500'
-                        : 'bg-gray-800 border border-gray-700 hover:border-gray-600'}`}
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-xs font-bold text-green-400">🛡️ No Hits</span>
-                        {compareData.comparison.no_hits.recommended && (
-                          <span className="text-[10px] bg-green-900/50 text-green-400 px-1.5 py-0.5 rounded">Recommended</span>
-                        )}
-                      </div>
-                      <div className="text-lg font-bold text-white">{compareData.comparison.no_hits.net_xp} pts</div>
-                      <div className="text-xs text-gray-400">
-                        Free transfers only
-                      </div>
-                    </button>
-                  </div>
-                  <div className="mt-2 text-center">
-                    <span className={`text-xs ${compareData.comparison.difference > 0 ? 'text-yellow-400' : 'text-green-400'}`}>
-                      {compareData.comparison.difference > 0
-                        ? `Hits gain +${compareData.comparison.difference} pts`
-                        : `No-hit saves ${Math.abs(compareData.comparison.difference)} pts`}
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {/* Current Gw View Header */}
-              <div className="flex justify-between items-start mb-6">
-                <div>
-                  <h3 className="text-2xl font-bold text-white mb-1">
-                    GW {currentData.gameweek || 'Selection'}
-                    <span className="text-fpl-green ml-2">{currentData.points.toFixed(1)} xP</span>
-                  </h3>
-                  {currentData.transfers?.explanation ? (
-                    <div className="text-sm text-gray-300 max-w-2xl bg-gray-900/50 p-3 rounded border-l-2 border-fpl-cyan mt-2">
-                      {/* xP Gain and Hit Analysis */}
-                      <div className="flex items-center gap-4 mb-2 pb-2 border-b border-gray-700">
-                        {currentData.transfers.xp_gain !== undefined && (
-                          <span className={`px-2 py-1 rounded text-xs font-bold ${currentData.transfers.xp_gain >= 0 ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'}`}>
-                            {currentData.transfers.xp_gain >= 0 ? '📈' : '📉'} xP Gain: {currentData.transfers.xp_gain > 0 ? '+' : ''}{currentData.transfers.xp_gain?.toFixed(1)}
-                          </span>
-                        )}
-                        {currentData.transfers.hits > 0 && (
-                          <span className={`px-2 py-1 rounded text-xs font-bold ${currentData.transfers.hit_worth_it ? 'bg-yellow-900/50 text-yellow-400' : 'bg-red-900/50 text-red-400'}`}>
-                            {currentData.transfers.hit_worth_it ? '✅' : '⚠️'} -{currentData.transfers.hits * 4} hit {currentData.transfers.hit_worth_it ? '(Worth it!)' : '(Not recommended)'}
-                          </span>
-                        )}
-                      </div>
-
-
-                      {/* Structured Explanation Display */}
-                      <div className="space-y-3 font-sans text-sm">
-                        {currentData.transfers.explanation.split('\n').map((line, i) => {
-                          // Skip headers
-                          if (line.startsWith('##')) return null;
-                          if (line.startsWith('###')) return <div key={i} className="font-bold text-gray-400 mt-2 border-b border-gray-700 pb-1">{line.replace('### ', '')}</div>;
-
-                          // Sell lines
-                          if (line.includes('**SELL:**')) {
-                            const content = line.replace('**SELL:**', '').trim();
-                            return (
-                              <div key={i} className="flex items-start gap-2 text-red-300 bg-red-900/10 p-1.5 rounded">
-                                <span className="font-bold text-xs bg-red-900/50 text-red-400 px-1.5 rounded">SELL</span>
-                                <span>{content}</span>
-                              </div>
-                            );
-                          }
-
-                          // Buy lines 
-                          if (line.includes('**BUY:**')) {
-                            const content = line.replace('**BUY:**', '').trim();
-                            return (
-                              <div key={i} className="flex items-start gap-2 text-green-300 bg-green-900/10 p-1.5 rounded">
-                                <span className="font-bold text-xs bg-green-900/50 text-green-400 px-1.5 rounded">BUY</span>
-                                <span>{content}</span>
-                              </div>
-                            );
-                          }
-
-                          // Detail lines (fixtures, risks, expected)
-                          if (line.trim().startsWith('└')) {
-                            return <div key={i} className="ml-10 text-xs text-gray-400">{line.trim()}</div>;
-                          }
-
-                          // Generic bold lines (like multipliers)
-                          if (line.includes('**')) {
-                            return <div key={i} className="font-medium text-gray-300">{line.replace(/\*\*/g, '')}</div>;
-                          }
-
-                          // Empty strings or other text
-                          if (!line.trim()) return null;
-
-                          return <div key={i} className="text-gray-400">{line}</div>;
-                        })}
-                      </div>
-
-                      {/* Transfer Alternatives */}
-                      {currentData.transfers.alternatives?.length > 0 && (
-                        <div className="mt-4 pt-3 border-t border-gray-700">
-                          <h4 className="text-xs font-bold text-fpl-cyan mb-2 uppercase tracking-wider">🔄 Alternative Options</h4>
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                            {currentData.transfers.alternatives.map(alt => (
-                              <div key={alt.position_id} className="bg-gray-800/50 rounded p-2">
-                                <div className="text-[10px] font-bold text-gray-400 mb-1">{alt.position}</div>
-                                <div className="space-y-1">
-                                  {alt.options.slice(0, 3).map((option, i) => (
-                                    <div key={option.id} className="flex items-center justify-between text-xs">
-                                      <span className={`${i === 0 ? 'text-fpl-green font-medium' : 'text-gray-300'}`}>
-                                        {i + 1}. {option.name}
-                                      </span>
-                                      <span className="text-gray-500 text-[10px]">
-                                        {option.expected_points.toFixed(1)} | £{option.price.toFixed(1)}m
-                                      </span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
                     </div>
-                  ) : (
-                    <p className="text-sm text-gray-500">No transfers planned.</p>
-                  )}
-                </div>
 
-                <div className="flex gap-2">
-                  <button onClick={() => setViewMode("pitch")} className={`px-3 py-1 rounded text-xs uppercase font-bold ${viewMode === 'pitch' ? 'bg-fpl-green text-gray-900' : 'bg-gray-700 text-gray-400'}`}>Pitch</button>
-                  <button onClick={() => setViewMode("list")} className={`px-3 py-1 rounded text-xs uppercase font-bold ${viewMode === 'list' ? 'bg-fpl-green text-gray-900' : 'bg-gray-700 text-gray-400'}`}>List</button>
-                </div>
-              </div>
-
-              <div className="flex-1 overflow-y-auto">
-                {viewMode === "pitch" ? <Pitch lineup={currentData.squad} /> : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {currentData.squad.map(player => (
-                      <div key={player.id} className={`p-3 rounded flex justify-between items-center ${player.is_starter ? 'bg-gray-700' : 'bg-gray-700/50 border border-dashed border-gray-600'}`}>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-sm">{player.web_name}</span>
-                            {player.is_captain && <span className="bg-yellow-500 text-black text-[9px] font-bold px-1 rounded">C</span>}
-                            {player.is_vice_captain && <span className="bg-gray-500 text-white text-[9px] font-bold px-1 rounded">V</span>}
-                            {!player.is_starter && <span className="bg-gray-600 text-white text-[9px] font-bold px-1 rounded">BENCH</span>}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {dreamTeam.dream_team.map(player => (
+                        <div
+                          key={player.id}
+                          className={`p-4 rounded-lg flex justify-between items-center ${player.id === dreamTeam.captain.id
+                            ? 'bg-gradient-to-r from-yellow-500/20 to-yellow-600/10 border border-yellow-500'
+                            : 'bg-gray-700'
+                            }`}
+                        >
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-sm">{player.web_name}</span>
+                              {player.id === dreamTeam.captain.id && (
+                                <span className="bg-yellow-500 text-black text-[9px] font-bold px-1.5 py-0.5 rounded">C</span>
+                              )}
+                            </div>
+                            <div className="text-xs text-gray-400 mt-1">{player.team_name} • {player.position}</div>
+                            <div className="text-xs text-gray-500 mt-1">£{player.now_cost}m</div>
                           </div>
-                          <div className="text-xs text-gray-400 mt-1">{player.team_name} • {player.position}</div>
+                          <div className="text-right">
+                            <div className="text-fpl-green font-bold text-lg">{player.expected_points}</div>
+                            <div className="text-xs text-gray-500">xP</div>
+                          </div>
                         </div>
-                        <div className="text-right">
-                          <div className="text-fpl-green font-bold">{player.expected_points?.toFixed(1)}</div>
-                          <div className="text-xs text-gray-500">xP</div>
-                        </div>
-                      </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex-1 flex flex-col items-center justify-center text-gray-500 opacity-50">
+                    <div className="text-6xl mb-4">🌟</div>
+                    <p>Dream Team - Best XI with no budget limits</p>
+                    <p className="text-sm mt-2">Click "Show Dream Team" to see the ultimate lineup!</p>
+                  </div>
+                )
+              ) : loading ? (
+                /* Loading state for non-backtest modes */
+                <div className="flex-1 flex flex-col items-center justify-center space-y-6">
+                  <div className="w-full max-w-md">
+                    <div className="flex justify-between text-sm text-gray-400 mb-2">
+                      <span>
+                        {mode === 'dream' ? 'Finding best players...' :
+                          mode === 'multi' ? 'Solving multi-period optimization...' :
+                            'Optimizing lineup...'}
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-700 rounded-full h-4 overflow-hidden">
+                      <div
+                        className="bg-gradient-to-r from-fpl-green to-fpl-cyan h-4 rounded-full animate-pulse"
+                        style={{ width: '75%' }}
+                      ></div>
+                    </div>
+                    <div className="flex items-center justify-center gap-2 mt-4">
+                      <div className="animate-spin rounded-full h-5 w-5 border-2 border-fpl-cyan border-t-transparent"></div>
+                      <p className="text-xs text-gray-500">
+                        {mode === 'multi' ?
+                          `Planning ${gameweeks} gameweeks with MILP solver...` :
+                          'Crunching numbers...'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : !lineup ? (
+                <div className="flex-1 flex flex-col items-center justify-center text-gray-500 opacity-50">
+                  <div className="text-6xl mb-4">⚽️</div>
+                  <p>Ready to optimize for 2025/26</p>
+                </div>
+              ) : (
+              <>
+                {/* Timeline for Multi-Mode */}
+                {mode === "multi" && lineup.gameweek_plans && (
+                  <div className="flex gap-2 overflow-x-auto pb-4 mb-4 border-b border-gray-700">
+                    {lineup.gameweek_plans.map((plan, idx) => (
+                      <button
+                        key={plan.gameweek}
+                        onClick={() => setSelectedGwIndex(idx)}
+                        className={`flex-shrink-0 px-4 py-2 rounded-lg text-sm transition ${selectedGwIndex === idx
+                          ? 'bg-fpl-pink text-white font-bold'
+                          : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
+                          }`}
+                      >
+                        <span className="block text-xs opacity-70">GW {plan.gameweek}</span>
+                        <span className="block">{plan.expected_points.toFixed(1)} pts</span>
+                      </button>
                     ))}
+                    <div className="ml-auto flex flex-col items-end justify-center text-right px-4">
+                      <span className="text-xs text-gray-400">Total Horizon</span>
+                      <span className="text-xl font-bold text-fpl-green">{lineup.total_expected_points.toFixed(0)} pts</span>
+                    </div>
                   </div>
                 )}
-              </div>
-            </>
-          )}
-        </div>
+
+                {/* Strategy Comparison Toggle */}
+                {mode === "multi" && compareData && (
+                  <div className="bg-gradient-to-r from-gray-900 to-gray-800 p-4 rounded-xl mb-4 border border-gray-700">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-sm font-bold text-gray-300">📊 Strategy Comparison</span>
+                      <span className="text-xs text-gray-500">{compareData.strategy} optimization</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      {/* With Hits Option */}
+                      <button
+                        onClick={() => {
+                          setSelectedHitStrategy('with_hits')
+                          setLineup(compareData.with_hits)
+                        }}
+                        className={`p-3 rounded-lg transition ${selectedHitStrategy === 'with_hits'
+                          ? 'bg-yellow-900/50 border-2 border-yellow-500'
+                          : 'bg-gray-800 border border-gray-700 hover:border-gray-600'}`}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs font-bold text-yellow-400">⚡ With Hits</span>
+                          {compareData.comparison.with_hits.recommended && (
+                            <span className="text-[10px] bg-green-900/50 text-green-400 px-1.5 py-0.5 rounded">Recommended</span>
+                          )}
+                        </div>
+                        <div className="text-lg font-bold text-white">{compareData.comparison.with_hits.net_xp} pts</div>
+                        <div className="text-xs text-gray-400">
+                          {compareData.comparison.with_hits.total_xp} xP - {compareData.comparison.with_hits.hit_cost} hits
+                        </div>
+                      </button>
+
+                      {/* No Hits Option */}
+                      <button
+                        onClick={() => {
+                          setSelectedHitStrategy('no_hits')
+                          setLineup(compareData.no_hits)
+                        }}
+                        className={`p-3 rounded-lg transition ${selectedHitStrategy === 'no_hits'
+                          ? 'bg-green-900/50 border-2 border-green-500'
+                          : 'bg-gray-800 border border-gray-700 hover:border-gray-600'}`}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs font-bold text-green-400">🛡️ No Hits</span>
+                          {compareData.comparison.no_hits.recommended && (
+                            <span className="text-[10px] bg-green-900/50 text-green-400 px-1.5 py-0.5 rounded">Recommended</span>
+                          )}
+                        </div>
+                        <div className="text-lg font-bold text-white">{compareData.comparison.no_hits.net_xp} pts</div>
+                        <div className="text-xs text-gray-400">
+                          Free transfers only
+                        </div>
+                      </button>
+                    </div>
+                    <div className="mt-2 text-center">
+                      <span className={`text-xs ${compareData.comparison.difference > 0 ? 'text-yellow-400' : 'text-green-400'}`}>
+                        {compareData.comparison.difference > 0
+                          ? `Hits gain +${compareData.comparison.difference} pts`
+                          : `No-hit saves ${Math.abs(compareData.comparison.difference)} pts`}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Current Gw View Header */}
+                <div className="flex justify-between items-start mb-6">
+                  <div>
+                    <h3 className="text-2xl font-bold text-white mb-1">
+                      GW {currentData.gameweek || 'Selection'}
+                      <span className="text-fpl-green ml-2">{currentData.points.toFixed(1)} xP</span>
+                    </h3>
+                    {currentData.transfers?.explanation ? (
+                      <div className="text-sm text-gray-300 max-w-2xl bg-gray-900/50 p-3 rounded border-l-2 border-fpl-cyan mt-2">
+                        {/* xP Gain and Hit Analysis */}
+                        <div className="flex items-center gap-4 mb-2 pb-2 border-b border-gray-700">
+                          {currentData.transfers.xp_gain !== undefined && (
+                            <span className={`px-2 py-1 rounded text-xs font-bold ${currentData.transfers.xp_gain >= 0 ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'}`}>
+                              {currentData.transfers.xp_gain >= 0 ? '📈' : '📉'} xP Gain: {currentData.transfers.xp_gain > 0 ? '+' : ''}{currentData.transfers.xp_gain?.toFixed(1)}
+                            </span>
+                          )}
+                          {currentData.transfers.hits > 0 && (
+                            <span className={`px-2 py-1 rounded text-xs font-bold ${currentData.transfers.hit_worth_it ? 'bg-yellow-900/50 text-yellow-400' : 'bg-red-900/50 text-red-400'}`}>
+                              {currentData.transfers.hit_worth_it ? '✅' : '⚠️'} -{currentData.transfers.hits * 4} hit {currentData.transfers.hit_worth_it ? '(Worth it!)' : '(Not recommended)'}
+                            </span>
+                          )}
+                        </div>
+
+
+                        {/* Structured Explanation Display */}
+                        <div className="space-y-3 font-sans text-sm">
+                          {currentData.transfers.explanation.split('\n').map((line, i) => {
+                            // Skip headers
+                            if (line.startsWith('##')) return null;
+                            if (line.startsWith('###')) return <div key={i} className="font-bold text-gray-400 mt-2 border-b border-gray-700 pb-1">{line.replace('### ', '')}</div>;
+
+                            // Sell lines
+                            if (line.includes('**SELL:**')) {
+                              const content = line.replace('**SELL:**', '').trim();
+                              return (
+                                <div key={i} className="flex items-start gap-2 text-red-300 bg-red-900/10 p-1.5 rounded">
+                                  <span className="font-bold text-xs bg-red-900/50 text-red-400 px-1.5 rounded">SELL</span>
+                                  <span>{content}</span>
+                                </div>
+                              );
+                            }
+
+                            // Buy lines 
+                            if (line.includes('**BUY:**')) {
+                              const content = line.replace('**BUY:**', '').trim();
+                              return (
+                                <div key={i} className="flex items-start gap-2 text-green-300 bg-green-900/10 p-1.5 rounded">
+                                  <span className="font-bold text-xs bg-green-900/50 text-green-400 px-1.5 rounded">BUY</span>
+                                  <span>{content}</span>
+                                </div>
+                              );
+                            }
+
+                            // Detail lines (fixtures, risks, expected)
+                            if (line.trim().startsWith('└')) {
+                              return <div key={i} className="ml-10 text-xs text-gray-400">{line.trim()}</div>;
+                            }
+
+                            // Generic bold lines (like multipliers)
+                            if (line.includes('**')) {
+                              return <div key={i} className="font-medium text-gray-300">{line.replace(/\*\*/g, '')}</div>;
+                            }
+
+                            // Empty strings or other text
+                            if (!line.trim()) return null;
+
+                            return <div key={i} className="text-gray-400">{line}</div>;
+                          })}
+                        </div>
+
+                        {/* Transfer Alternatives */}
+                        {currentData.transfers.alternatives?.length > 0 && (
+                          <div className="mt-4 pt-3 border-t border-gray-700">
+                            <h4 className="text-xs font-bold text-fpl-cyan mb-2 uppercase tracking-wider">🔄 Alternative Options</h4>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                              {currentData.transfers.alternatives.map(alt => (
+                                <div key={alt.position_id} className="bg-gray-800/50 rounded p-2">
+                                  <div className="text-[10px] font-bold text-gray-400 mb-1">{alt.position}</div>
+                                  <div className="space-y-1">
+                                    {alt.options.slice(0, 3).map((option, i) => (
+                                      <div key={option.id} className="flex items-center justify-between text-xs">
+                                        <span className={`${i === 0 ? 'text-fpl-green font-medium' : 'text-gray-300'}`}>
+                                          {i + 1}. {option.name}
+                                        </span>
+                                        <span className="text-gray-500 text-[10px]">
+                                          {option.expected_points.toFixed(1)} | £{option.price.toFixed(1)}m
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-gray-500">No transfers planned.</p>
+                    )}
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button onClick={() => setViewMode("pitch")} className={`px-3 py-1 rounded text-xs uppercase font-bold ${viewMode === 'pitch' ? 'bg-fpl-green text-gray-900' : 'bg-gray-700 text-gray-400'}`}>Pitch</button>
+                    <button onClick={() => setViewMode("list")} className={`px-3 py-1 rounded text-xs uppercase font-bold ${viewMode === 'list' ? 'bg-fpl-green text-gray-900' : 'bg-gray-700 text-gray-400'}`}>List</button>
+                  </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto">
+                  {viewMode === "pitch" ? <Pitch lineup={currentData.squad} /> : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {currentData.squad.map(player => (
+                        <div key={player.id} className={`p-3 rounded flex justify-between items-center ${player.is_starter ? 'bg-gray-700' : 'bg-gray-700/50 border border-dashed border-gray-600'}`}>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-sm">{player.web_name}</span>
+                              {player.is_captain && <span className="bg-yellow-500 text-black text-[9px] font-bold px-1 rounded">C</span>}
+                              {player.is_vice_captain && <span className="bg-gray-500 text-white text-[9px] font-bold px-1 rounded">V</span>}
+                              {!player.is_starter && <span className="bg-gray-600 text-white text-[9px] font-bold px-1 rounded">BENCH</span>}
+                            </div>
+                            <div className="text-xs text-gray-400 mt-1">{player.team_name} • {player.position}</div>
+                            {player.analytics && (
+                              <div className="flex gap-1 mt-1">
+                                {player.analytics.is_differential && <span className="text-[10px] bg-indigo-500/20 text-indigo-300 px-1 rounded">Diff</span>}
+                                {player.analytics.is_template && <span className="text-[10px] bg-pink-500/20 text-pink-300 px-1 rounded">Templ</span>}
+                                <span className="text-[10px] bg-gray-600 px-1 rounded" title="Ownership">{player.analytics.ownership_pct}% Own</span>
+                              </div>
+                            )}
+                          </div>
+                          <div className="text-right">
+                            <div className="text-fpl-green font-bold">{player.expected_points?.toFixed(1)}</div>
+                            <div className="text-xs text-gray-500">xP</div>
+                            {player.analytics && (
+                              <div className="text-[10px] text-gray-400 mt-1" title="Ceiling">
+                                <span>{player.analytics.ceiling?.toFixed(1)} Clng</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
     </div >
   )

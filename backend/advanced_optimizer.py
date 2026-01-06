@@ -18,6 +18,7 @@ from enum import Enum
 
 from point_predictor import PointPredictor, compute_uncertainty_bounds
 from transfer_explainer import TransferExplainer
+from chip_advisor import ChipAdvisor
 
 
 class Chip(Enum):
@@ -44,6 +45,18 @@ class TransferPlan:
 
 
 @dataclass
+class CaptainRecommendation:
+    """Captain pick with reasoning."""
+    player_id: int
+    player_name: str
+    expected_points: float
+    has_dgw: bool
+    fixtures: str
+    confidence: str  # "high", "medium", "low"
+    alternatives: List[Dict[str, Any]] = field(default_factory=list)
+
+
+@dataclass
 class GameweekPlan:
     """Optimal plan for a single gameweek."""
     gameweek: int
@@ -54,6 +67,7 @@ class GameweekPlan:
     expected_points: float
     chip_used: Optional[Chip] = None
     transfers: Optional[TransferPlan] = None
+    captain_recommendation: Optional[CaptainRecommendation] = None
 
 
 @dataclass
@@ -67,7 +81,9 @@ class MultiPeriodSolution:
     banked_transfers_after: int
     chips_remaining: List[str]
     optimization_time_seconds: float
-    chip_suggestion: Optional[Dict[str, Any]] = None  # Post-optimization chip recommendation
+    chip_suggestion: Optional[Dict[str, Any]] = None  # Legacy: single best chip
+    chip_recommendations: Optional[List[Dict[str, Any]]] = None  # All chip recommendations
+    captain_recommendations: Optional[List[Dict[str, Any]]] = None  # Per-GW captain suggestions
 
 
 class MultiPeriodFPLOptimizer:
@@ -719,42 +735,62 @@ class MultiPeriodFPLOptimizer:
         total_xp = sum(gp.expected_points for gp in gameweek_plans)
         total_hits = sum(ts.hit_cost for ts in transfer_summary)
         
-        # Analyze chip opportunities across the horizon
+        # === Enhanced Chip & Captain Analysis ===
         chip_suggestion = None
+        chip_recommendations = []
+        captain_recommendations = []
+        
         if not chip_to_use:  # Only suggest if no chip already being used
-            best_chip_value = 0
-            available_chips = [c for c in ['triple_captain', 'bench_boost', 'free_hit', 'wildcard'] if c not in chips_used]
-            
-            for gp in gameweek_plans:
-                gw = gp.gameweek
+            try:
+                # Initialize ChipAdvisor
+                chip_advisor = ChipAdvisor(
+                    players_df=self.players,
+                    teams_df=self.teams,
+                    fixtures=self.fixtures,
+                    current_gw=self.current_gw
+                )
                 
-                # Triple Captain: extra captain points (1x more)
-                if 'triple_captain' in available_chips:
-                    captain = next((p for p in gp.starting_xi if p.get('is_captain')), None)
-                    if captain:
-                        captain_xp = captain.get(f'xp_gw{gw}', captain.get('ep_next', 5))
-                        tc_gain = captain_xp  # 3x instead of 2x = +1x
-                        if tc_gain > best_chip_value:
-                            best_chip_value = tc_gain
-                            chip_suggestion = {
-                                'chip': 'triple_captain',
-                                'gameweek': gw,
-                                'estimated_gain': round(tc_gain, 1),
-                                'reason': f"Captain {captain.get('web_name', 'player')} projected {captain_xp:.1f} pts"
-                            }
+                # Convert gameweek_plans to dict format for analysis
+                gw_plans_dicts = [
+                    {
+                        'gameweek': gp.gameweek,
+                        'starting_xi': gp.starting_xi,
+                        'bench': gp.bench
+                    }
+                    for gp in gameweek_plans
+                ]
                 
-                # Bench Boost: bench players at full value
-                if 'bench_boost' in available_chips:
-                    bench_xp = sum(p.get(f'xp_gw{gw}', p.get('ep_next', 2)) for p in gp.bench)
-                    bb_gain = bench_xp * 0.9  # Currently at 0.1x, so gain is 0.9x
-                    if bb_gain > best_chip_value:
-                        best_chip_value = bb_gain
-                        chip_suggestion = {
-                            'chip': 'bench_boost',
-                            'gameweek': gw,
-                            'estimated_gain': round(bb_gain, 1),
-                            'reason': f"Bench projected {bench_xp:.1f} pts total"
-                        }
+                # Get comprehensive chip and captain analysis
+                analysis = chip_advisor.analyze_chip_opportunities_for_horizon(
+                    gameweek_plans=gw_plans_dicts,
+                    chips_used=chips_used,
+                    predictions_df=predictions
+                )
+                
+                chip_recommendations = analysis.get('chip_recommendations', [])
+                captain_recommendations = analysis.get('captain_recommendations', [])
+                chip_suggestion = analysis.get('best_chip')
+                
+                # Update gameweek_plans with captain recommendations
+                for i, gp in enumerate(gameweek_plans):
+                    if i < len(captain_recommendations):
+                        cap_rec = captain_recommendations[i]
+                        recommended = cap_rec.get('recommended_captain')
+                        if recommended:
+                            gp.captain_recommendation = CaptainRecommendation(
+                                player_id=recommended.get('player_id', gp.captain_id),
+                                player_name=recommended.get('player_name', ''),
+                                expected_points=recommended.get('expected_points', 0),
+                                has_dgw=recommended.get('has_dgw', False),
+                                fixtures=recommended.get('fixtures', ''),
+                                confidence=cap_rec.get('confidence', 'medium'),
+                                alternatives=cap_rec.get('alternatives', [])
+                            )
+            except Exception as e:
+                print(f"ChipAdvisor analysis error: {e}")
+                # Fallback to basic analysis if ChipAdvisor fails
+                chip_recommendations = []
+                captain_recommendations = []
         
         return MultiPeriodSolution(
             status='Optimal',
@@ -765,7 +801,9 @@ class MultiPeriodFPLOptimizer:
             banked_transfers_after=int(ft_banked[horizon[-1]].value() or 0),
             chips_remaining=[c for c in ['wildcard', 'freehit', 'triple_captain', 'bench_boost'] if c not in chips_used],
             optimization_time_seconds=end_time - start_time,
-            chip_suggestion=chip_suggestion
+            chip_suggestion=chip_suggestion,
+            chip_recommendations=chip_recommendations,
+            captain_recommendations=captain_recommendations
         )
     
     def _generate_transfer_explanation(self, 
@@ -874,7 +912,16 @@ class MultiPeriodFPLOptimizer:
                         'hits': gp.transfers.hits_taken if gp.transfers else 0,
                         'explanation': gp.transfers.explanation if gp.transfers else "",
                         'alternatives': gp.transfers.alternatives if gp.transfers else []
-                    }
+                    },
+                    'captain_recommendation': {
+                        'player_id': gp.captain_recommendation.player_id,
+                        'player_name': gp.captain_recommendation.player_name,
+                        'expected_points': gp.captain_recommendation.expected_points,
+                        'has_dgw': gp.captain_recommendation.has_dgw,
+                        'fixtures': gp.captain_recommendation.fixtures,
+                        'confidence': gp.captain_recommendation.confidence,
+                        'alternatives': gp.captain_recommendation.alternatives
+                    } if gp.captain_recommendation else None
                 }
                 for gp in solution.gameweek_plans
             ],
@@ -893,5 +940,8 @@ class MultiPeriodFPLOptimizer:
                 }
                 for tp in solution.transfer_summary
             ],
-            'chip_suggestion': solution.chip_suggestion
+            'chip_suggestion': solution.chip_suggestion,
+            'chip_recommendations': solution.chip_recommendations or [],
+            'captain_recommendations': solution.captain_recommendations or []
         }
+

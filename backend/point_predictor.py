@@ -2,8 +2,8 @@
 Point Predictor Module for FPL 2025/26 Season
 
 Calculates expected points using:
-- xG (expected goals)
-- xA (expected assists)
+- xG (expected goals) - enhanced with Understat data when available
+- xA (expected assists) - enhanced with Understat data when available
 - xGI (expected goal involvement)
 - ICT Index components
 - CBIT/CBIRT defensive bonus scoring (2025/26 rules)
@@ -15,6 +15,15 @@ import pandas as pd
 import numpy as np
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
+import logging
+
+# Optional Understat integration
+try:
+    from understat_service import UnderstatService
+    UNDERSTAT_AVAILABLE = True
+except ImportError:
+    UNDERSTAT_AVAILABLE = False
+    logging.info("Understat service not available")
 
 
 @dataclass
@@ -55,7 +64,8 @@ class PointPredictor:
     POINTS_DEFENSIVE_BONUS = 2
     
     def __init__(self, players_df: pd.DataFrame, teams_df: pd.DataFrame, 
-                 fixtures: List[Dict], current_gameweek: int):
+                 fixtures: List[Dict], current_gameweek: int,
+                 use_understat: bool = True):
         """
         Initialize predictor with FPL data.
         
@@ -64,17 +74,49 @@ class PointPredictor:
             teams_df: DataFrame of all teams
             fixtures: List of fixture dicts from FPL API
             current_gameweek: Current or next gameweek number
+            use_understat: Whether to use Understat xG/xA data (default: True)
         """
         self.players = players_df.copy()
         self.teams = teams_df.copy()
         self.fixtures = fixtures
         self.current_gw = current_gameweek
+        self.use_understat = use_understat and UNDERSTAT_AVAILABLE
         
         # Precompute team strengths
         self._compute_team_strengths()
         
         # Parse fixture data into lookup structure
         self._build_fixture_map()
+        
+        # Enrich with Understat data if available
+        self._understat_enriched = False
+        if self.use_understat:
+            self._enrich_with_understat()
+    
+    def _enrich_with_understat(self):
+        """
+        Enrich player data with Understat xG/xA metrics.
+        
+        This provides more accurate per-90 rates than FPL's ep_next.
+        """
+        try:
+            from understat_service import UnderstatService
+            service = UnderstatService()
+            
+            # Enrich players DataFrame
+            self.players = service.sync_with_fpl(
+                self.players, 
+                self.teams,
+                season="2025"  # Current season
+            )
+            
+            self._understat_enriched = True
+            match_count = self.players['understat_matched'].sum() if 'understat_matched' in self.players.columns else 0
+            logging.info(f"Enriched {match_count} players with Understat data")
+            
+        except Exception as e:
+            logging.warning(f"Failed to enrich with Understat data: {e}")
+            self._understat_enriched = False
         
     def _compute_team_strengths(self):
         """Compute attack and defense strength ratings for each team."""
@@ -150,24 +192,66 @@ class PointPredictor:
     # Calibration factor based on historical FPL prediction accuracy
     CALIBRATION_FACTOR = 0.85
     
+    def _get_xg_per_90(self, player: pd.Series) -> float:
+        """
+        Get xG per 90 for a player, preferring Understat data if available.
+        
+        Returns:
+            xG per 90 minutes
+        """
+        element_type = player['element_type']
+        
+        # Try Understat data first (more accurate)
+        if self._understat_enriched and player.get('understat_matched', False):
+            understat_xg_per_90 = float(player.get('understat_xG_per_90', 0) or 0)
+            if understat_xg_per_90 > 0:
+                return understat_xg_per_90
+        
+        # Fall back to FPL data
+        minutes = max(float(player.get('minutes', 0) or 0), 1)
+        expected_goals_season = float(player.get('expected_goals', 0) or 0)
+        
+        if minutes >= self.MIN_MINUTES_FOR_RATES:
+            return (expected_goals_season / minutes) * 90
+        else:
+            # Use position-based baseline for limited data
+            return self.BASELINE_XG.get(element_type, 0.1)
+    
+    def _get_xa_per_90(self, player: pd.Series) -> float:
+        """
+        Get xA per 90 for a player, preferring Understat data if available.
+        
+        Returns:
+            xA per 90 minutes
+        """
+        element_type = player['element_type']
+        
+        # Try Understat data first (more accurate)
+        if self._understat_enriched and player.get('understat_matched', False):
+            understat_xa_per_90 = float(player.get('understat_xA_per_90', 0) or 0)
+            if understat_xa_per_90 > 0:
+                return understat_xa_per_90
+        
+        # Fall back to FPL data
+        minutes = max(float(player.get('minutes', 0) or 0), 1)
+        expected_assists_season = float(player.get('expected_assists', 0) or 0)
+        
+        if minutes >= self.MIN_MINUTES_FOR_RATES:
+            return (expected_assists_season / minutes) * 90
+        else:
+            return self.BASELINE_XA.get(element_type, 0.08)
+    
     def calculate_xg_points(self, player: pd.Series, gameweek: int) -> float:
         """
         Calculate expected goal points for a player.
         
         Uses player's xG per 90 adjusted for opponent defense strength.
-        Requires minimum sample size for reliable rates.
+        Prefers Understat data when available for better accuracy.
         """
         element_type = player['element_type']
         
-        # Get base xG rate with minimum sample size requirement
-        minutes = max(float(player.get('minutes', 0) or 0), 1)
-        expected_goals_season = float(player.get('expected_goals', 0) or 0)
-        
-        if minutes >= self.MIN_MINUTES_FOR_RATES:
-            xg_per_90 = (expected_goals_season / minutes) * 90
-        else:
-            # Use position-based baseline for limited data
-            xg_per_90 = self.BASELINE_XG.get(element_type, 0.1)
+        # Get base xG rate (prefers Understat if available)
+        xg_per_90 = self._get_xg_per_90(player)
         
         # Get fixture info
         team_id = player['team']
@@ -197,16 +281,13 @@ class PointPredictor:
         return min(goal_points, 9.0)
     
     def calculate_xa_points(self, player: pd.Series, gameweek: int) -> float:
-        """Calculate expected assist points with minimum sample size."""
-        element_type = player['element_type']
-        minutes = max(float(player.get('minutes', 0) or 0), 1)
-        expected_assists_season = float(player.get('expected_assists', 0) or 0)
+        """
+        Calculate expected assist points.
         
-        if minutes >= self.MIN_MINUTES_FOR_RATES:
-            xa_per_90 = (expected_assists_season / minutes) * 90
-        else:
-            # Use position-based baseline for limited data
-            xa_per_90 = self.BASELINE_XA.get(element_type, 0.08)
+        Prefers Understat xA data when available for better accuracy.
+        """
+        # Get base xA rate (prefers Understat if available)
+        xa_per_90 = self._get_xa_per_90(player)
         
         team_id = player['team']
         fixtures = self.fixture_map.get((team_id, gameweek), [])

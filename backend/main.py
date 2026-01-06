@@ -26,6 +26,35 @@ from backtest_engine import BacktestEngine
 from fixture_analyzer import FixtureAnalyzer
 from chip_advisor import ChipAdvisor
 
+
+def get_active_gameweek(events: list) -> int:
+    """
+    Get the active gameweek for predictions.
+    
+    If the current gameweek is finished, returns the next gameweek.
+    This ensures predictions are always for upcoming matches.
+    """
+    current_gw = None
+    next_gw = None
+    
+    for e in events:
+        if e.get("is_current"):
+            current_gw = e
+        if e.get("is_next"):
+            next_gw = e
+    
+    # If current GW is finished, use next GW
+    if current_gw and current_gw.get("finished") and next_gw:
+        return next_gw["id"]
+    
+    # Otherwise use current (or next if no current)
+    if current_gw:
+        return current_gw["id"]
+    if next_gw:
+        return next_gw["id"]
+    
+    return 1  # Fallback
+
 app = FastAPI(
     title="FPL Optimizer API",
     description="Advanced FPL lineup optimization with multi-period planning and robust optimization",
@@ -79,6 +108,67 @@ class RobustRequest(BaseModel):
     gamma: float = Field(default=1.0, ge=0, le=3, description="Protection level (0=nominal, higher=conservative)")
     excluded_players: List[int] = []
     manager_id: Optional[int] = None
+
+
+
+# Helper for analytics enrichment
+def _enrich_with_analytics(response_dict: Dict, players_df: pd.DataFrame, teams_df: pd.DataFrame):
+    """Enrich optimization result with EV and ownership analytics."""
+    try:
+        from ev_calculator import EVCalculator
+        from ownership_tracker import OwnershipTracker
+        
+        ev_calc = EVCalculator(players_df, teams_df)
+        own_tracker = OwnershipTracker(players_df, teams_df)
+        
+        # Get all distributions once
+        ev_dists = ev_calc.get_all_distributions()
+        ev_map = ev_dists.set_index('player_id').to_dict(orient='index')
+        
+        # Get all ownership
+        own_data = own_tracker.get_all_ownership().set_index('player_id').to_dict(orient='index')
+        
+        def enrich_list(player_list):
+            for p in player_list:
+                pid = p.get('id')
+                if not pid: continue
+                
+                analytics = {}
+                
+                # EV Data
+                if pid in ev_map:
+                    ev = ev_map[pid]
+                    analytics.update({
+                        'risk_score': ev.get('risk_score'),
+                        'ceiling': ev.get('ceiling'),
+                        'floor': ev.get('floor'),
+                        'upside': ev.get('upside')
+                    })
+                
+                # Ownership Data
+                if pid in own_data:
+                    own = own_data[pid]
+                    analytics.update({
+                        'ownership_pct': own.get('ownership_pct'),
+                        'is_differential': own.get('is_differential'),
+                        'is_template': own.get('is_template')
+                    })
+                    
+                p['analytics'] = analytics
+
+        # Enrich gameweek plans
+        for plan in response_dict.get('gameweek_plans', []):
+            enrich_list(plan.get('starting_xi', []))
+            enrich_list(plan.get('bench', []))
+            
+        # Enrich top-level squad
+        enrich_list(response_dict.get('squad', []))
+        
+        return response_dict
+        
+    except Exception as e:
+        print(f"Analytics enrichment error: {e}")
+        return response_dict
 
 
 # Endpoints
@@ -156,10 +246,7 @@ async def optimize_multi_period(request: MultiPeriodRequest):
         
         # Get current gameweek
         events = static_data.get("events", [])
-        current_gw = next(
-            (e["id"] for e in events if e.get("is_current") or e.get("is_next")),
-            1
-        )
+        current_gw = get_active_gameweek(events)
         
         # Get current squad if manager_id provided
         current_squad_ids = []
@@ -229,7 +316,8 @@ async def optimize_multi_period(request: MultiPeriodRequest):
                     )
                     transfer_plan.explanation = enhanced_explanation
         
-        return optimizer.to_dict(solution)
+        response = optimizer.to_dict(solution)
+        return _enrich_with_analytics(response, players_df, teams_df)
         
     except Exception as e:
         print(f"Multi-period optimization error: {e}")
@@ -257,10 +345,7 @@ async def optimize_compare(request: MultiPeriodRequest):
         
         # Get current gameweek
         events = static_data.get("events", [])
-        current_gw = next(
-            (e["id"] for e in events if e.get("is_current") or e.get("is_next")),
-            1
-        )
+        current_gw = get_active_gameweek(events)
         
         # Get current squad if manager_id provided
         current_squad_ids = []
@@ -344,8 +429,8 @@ async def optimize_compare(request: MultiPeriodRequest):
                 },
                 "difference": round(with_hits_net - no_hits_net, 1)
             },
-            "with_hits": optimizer.to_dict(solution_with_hits),
-            "no_hits": optimizer.to_dict(solution_no_hits)
+            "with_hits": _enrich_with_analytics(optimizer.to_dict(solution_with_hits), players_df, teams_df),
+            "no_hits": _enrich_with_analytics(optimizer.to_dict(solution_no_hits), players_df, teams_df)
         }
         
     except Exception as e:
@@ -432,10 +517,7 @@ async def get_predictions(gameweeks: int = 5):
         
         # Get current gameweek
         events = static_data.get("events", [])
-        current_gw = next(
-            (e["id"] for e in events if e.get("is_current") or e.get("is_next")),
-            1
-        )
+        current_gw = get_active_gameweek(events)
         
         predictor = PointPredictor(
             players_df=players_df,
@@ -708,10 +790,7 @@ async def analyze_transfers(request: TransferAnalysisRequest):
         
         # Get current gameweek
         events = static_data.get("events", [])
-        current_gw = next(
-            (e["id"] for e in events if e.get("is_current") or e.get("is_next")),
-            1
-        )
+        current_gw = get_active_gameweek(events)
         
         # Initialize optimizer
         optimizer = MultiPeriodFPLOptimizer(
@@ -811,10 +890,7 @@ async def get_team_fixtures(team_id: int, num_gameweeks: int = 6):
         
         # Get current gameweek
         events = static_data.get("events", [])
-        current_gw = next(
-            (e["id"] for e in events if e.get("is_current") or e.get("is_next")),
-            1
-        )
+        current_gw = get_active_gameweek(events)
         
         analyzer = FixtureAnalyzer(
             fixtures=fixtures_data,
@@ -858,10 +934,7 @@ async def get_all_fixtures(num_gameweeks: int = 5):
         
         # Get current gameweek
         events = static_data.get("events", [])
-        current_gw = next(
-            (e["id"] for e in events if e.get("is_current") or e.get("is_next")),
-            1
-        )
+        current_gw = get_active_gameweek(events)
         
         analyzer = FixtureAnalyzer(
             fixtures=fixtures_data,
@@ -925,10 +998,7 @@ async def get_chip_recommendations(request: ChipAdviceRequest):
         
         # Get current gameweek
         events = static_data.get("events", [])
-        current_gw = next(
-            (e["id"] for e in events if e.get("is_current") or e.get("is_next")),
-            1
-        )
+        current_gw = get_active_gameweek(events)
         
         # Get current squad
         current_squad = request.current_squad
@@ -995,3 +1065,944 @@ async def get_manager_chips(manager_id: int):
 @app.get("/health")
 def health_check():
     return {"status": "ok", "version": "2.0.0"}
+
+
+# =============================================================================
+# UNDERSTAT INTEGRATION ENDPOINTS
+# =============================================================================
+
+@app.get("/api/understat/players")
+async def get_understat_players(season: str = "2025"):
+    """
+    Get all EPL player xG/xA statistics from Understat.
+    
+    Returns per-90 xG/xA rates, total season xG/xA, and other metrics.
+    """
+    try:
+        from understat_service import UnderstatService
+        
+        service = UnderstatService()
+        stats_df = service.get_all_stats_summary(season)
+        
+        if stats_df.empty:
+            return {
+                "season": season,
+                "available": False,
+                "message": "Understat data not available. Install understatapi: pip install understatapi",
+                "players": []
+            }
+        
+        # Sort by xGI (most productive players)
+        stats_df = stats_df.sort_values('xGI', ascending=False)
+        
+        return {
+            "season": season,
+            "available": True,
+            "total_players": len(stats_df),
+            "players": stats_df.to_dict(orient='records')
+        }
+        
+    except ImportError:
+        return {
+            "season": season,
+            "available": False,
+            "message": "Understat service not available. Install: pip install understatapi rapidfuzz",
+            "players": []
+        }
+    except Exception as e:
+        print(f"Understat error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/understat/enriched")
+async def get_enriched_players(season: str = "2025"):
+    """
+    Get FPL player data enriched with Understat xG/xA metrics.
+    
+    Matches FPL players to their Understat records and adds xG/xA per 90 data.
+    This is the primary endpoint for enhanced predictions.
+    """
+    try:
+        from understat_service import UnderstatService
+        
+        # Get FPL data
+        data = fpl_service.get_latest_data()
+        static_data = data["static"]
+        
+        players_df = pd.DataFrame(static_data["elements"])
+        teams_df = pd.DataFrame(static_data["teams"])
+        
+        # Enrich with Understat
+        service = UnderstatService()
+        enriched_df = service.sync_with_fpl(players_df, teams_df, season)
+        
+        # Get match rate
+        matched = enriched_df['understat_matched'].sum() if 'understat_matched' in enriched_df.columns else 0
+        total = len(enriched_df)
+        
+        # Select relevant columns
+        columns_to_include = [
+            'id', 'web_name', 'team', 'element_type',
+            'now_cost', 'total_points', 'form', 'ep_next',
+            'understat_matched', 'understat_xG', 'understat_xA', 'understat_xGI',
+            'understat_xG_per_90', 'understat_xA_per_90', 'understat_games', 'understat_minutes'
+        ]
+        
+        available_cols = [c for c in columns_to_include if c in enriched_df.columns]
+        result_df = enriched_df[available_cols].copy()
+        
+        # Sort by xGI (highest first)
+        if 'understat_xGI' in result_df.columns:
+            result_df = result_df.sort_values('understat_xGI', ascending=False)
+        
+        return {
+            "season": season,
+            "total_players": total,
+            "matched_players": int(matched),
+            "match_rate": round(matched / total * 100, 1) if total > 0 else 0,
+            "players": result_df.to_dict(orient='records')
+        }
+        
+    except ImportError:
+        return {
+            "season": season,
+            "available": False,
+            "message": "Understat service not available. Install: pip install understatapi rapidfuzz",
+            "players": []
+        }
+    except Exception as e:
+        print(f"Enriched data error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/understat/top-xg")
+async def get_top_xg_players(limit: int = 20, position: Optional[int] = None, season: str = "2025"):
+    """
+    Get top players by xG or xG per 90.
+    
+    Args:
+        limit: Number of players to return
+        position: Filter by position (1=GK, 2=DEF, 3=MID, 4=FWD)
+        season: Season year (e.g., "2025" for 2025/26)
+    """
+    try:
+        from understat_service import UnderstatService
+        
+        # Get FPL data
+        data = fpl_service.get_latest_data()
+        static_data = data["static"]
+        
+        players_df = pd.DataFrame(static_data["elements"])
+        teams_df = pd.DataFrame(static_data["teams"])
+        
+        # Enrich with Understat
+        service = UnderstatService()
+        enriched_df = service.sync_with_fpl(players_df, teams_df, season)
+        
+        # Filter by position if specified
+        if position:
+            enriched_df = enriched_df[enriched_df['element_type'] == position]
+        
+        # Filter to matched players with xG data
+        if 'understat_matched' in enriched_df.columns:
+            enriched_df = enriched_df[enriched_df['understat_matched'] == True]
+        
+        # Sort by xG per 90 (minimum 180 minutes for per-90 rate)
+        if 'understat_xG_per_90' in enriched_df.columns:
+            min_mins = enriched_df[enriched_df.get('understat_minutes', 0) >= 180]
+            top_per_90 = min_mins.nlargest(limit, 'understat_xG_per_90')
+        else:
+            top_per_90 = pd.DataFrame()
+        
+        # Also get top by total xG
+        if 'understat_xG' in enriched_df.columns:
+            top_total = enriched_df.nlargest(limit, 'understat_xG')
+        else:
+            top_total = pd.DataFrame()
+        
+        # Build team name lookup
+        team_names = {row['id']: row['name'] for _, row in teams_df.iterrows()}
+        
+        def format_player(row):
+            return {
+                'id': int(row['id']),
+                'name': row['web_name'],
+                'team': team_names.get(row['team'], 'Unknown'),
+                'position': ['GK', 'DEF', 'MID', 'FWD'][int(row['element_type']) - 1],
+                'price': row['now_cost'] / 10,
+                'xG': round(row.get('understat_xG', 0), 2),
+                'xA': round(row.get('understat_xA', 0), 2),
+                'xGI': round(row.get('understat_xGI', 0), 2),
+                'xG_per_90': round(row.get('understat_xG_per_90', 0), 3),
+                'xA_per_90': round(row.get('understat_xA_per_90', 0), 3),
+                'minutes': int(row.get('understat_minutes', 0))
+            }
+        
+        return {
+            "season": season,
+            "position_filter": position,
+            "top_by_xG_per_90": [format_player(row) for _, row in top_per_90.iterrows()],
+            "top_by_total_xG": [format_player(row) for _, row in top_total.iterrows()]
+        }
+        
+    except ImportError:
+        return {
+            "available": False,
+            "message": "Understat service not available"
+        }
+    except Exception as e:
+        print(f"Top xG error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/understat/regression-candidates")
+async def get_regression_candidates(season: str = "2025"):
+    """
+    Find players who are over/under-performing their xG.
+    
+    Useful for identifying:
+    - Underperformers (goals < xG) who may improve
+    - Overperformers (goals > xG) who may regress
+    """
+    try:
+        from understat_service import UnderstatService
+        
+        service = UnderstatService()
+        stats_df = service.get_all_stats_summary(season)
+        
+        if stats_df.empty:
+            return {"available": False, "message": "Understat data not available"}
+        
+        # Filter players with enough data
+        min_xG = 1.0
+        candidates = stats_df[stats_df['xG'] >= min_xG].copy()
+        
+        # Calculate regression potential
+        candidates['goal_diff'] = candidates['goals'] - candidates['xG']
+        candidates['regression_factor'] = candidates['xG'] / candidates['goals'].replace(0, 0.1)
+        
+        # Underperformers (low goals vs xG)
+        underperformers = candidates.nsmallest(10, 'goal_diff')
+        
+        # Overperformers (high goals vs xG)
+        overperformers = candidates.nlargest(10, 'goal_diff')
+        
+        def format_candidate(row, is_underperformer):
+            return {
+                'name': row['player_name'],
+                'team': row['team'],
+                'goals': int(row['goals']),
+                'xG': round(row['xG'], 2),
+                'difference': round(row['goal_diff'], 2),
+                'regression_factor': round(row['regression_factor'], 2),
+                'assessment': 'BUY CANDIDATE - Underperforming xG' if is_underperformer else 'SELL CANDIDATE - Overperforming xG'
+            }
+        
+        return {
+            "season": season,
+            "underperformers": [format_candidate(row, True) for _, row in underperformers.iterrows()],
+            "overperformers": [format_candidate(row, False) for _, row in overperformers.iterrows()],
+            "explanation": "Underperformers have scored fewer goals than their xG suggests - they may 'regress to the mean' and score more. Overperformers have outscored their xG and may slow down."
+        }
+        
+    except ImportError:
+        return {"available": False, "message": "Understat service not available"}
+    except Exception as e:
+        print(f"Regression candidates error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# OWNERSHIP ANALYTICS ENDPOINTS
+# =============================================================================
+
+@app.get("/api/ownership/all")
+async def get_all_ownership():
+    """
+    Get ownership data for all players.
+    
+    Returns ownership percentage, estimated captain %, and effective ownership.
+    """
+    try:
+        from ownership_tracker import OwnershipTracker
+        
+        data = fpl_service.get_latest_data()
+        static_data = data["static"]
+        
+        players_df = pd.DataFrame(static_data["elements"])
+        teams_df = pd.DataFrame(static_data["teams"])
+        
+        tracker = OwnershipTracker(players_df, teams_df)
+        df = tracker.get_all_ownership()
+        
+        # Sort by ownership
+        df = df.sort_values('ownership_pct', ascending=False)
+        
+        return {
+            "total_players": len(df),
+            "players": df.to_dict(orient='records')
+        }
+        
+    except Exception as e:
+        print(f"Ownership error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/ownership/template")
+async def get_template_players(min_ownership: float = 20.0):
+    """
+    Get highly-owned 'template' players.
+    
+    These are must-have players that most managers own.
+    """
+    try:
+        from ownership_tracker import OwnershipTracker
+        
+        data = fpl_service.get_latest_data()
+        static_data = data["static"]
+        
+        players_df = pd.DataFrame(static_data["elements"])
+        teams_df = pd.DataFrame(static_data["teams"])
+        
+        tracker = OwnershipTracker(players_df, teams_df)
+        template = tracker.get_template_players(min_ownership)
+        
+        return {
+            "threshold": min_ownership,
+            "count": len(template),
+            "template_players": template.to_dict(orient='records')
+        }
+        
+    except Exception as e:
+        print(f"Template players error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/ownership/differentials")
+async def get_differentials(max_ownership: float = 5.0):
+    """
+    Get low-ownership differential players.
+    
+    These are potential punts that could help climb ranks.
+    Filtered to players with decent form.
+    """
+    try:
+        from ownership_tracker import OwnershipTracker
+        
+        data = fpl_service.get_latest_data()
+        static_data = data["static"]
+        
+        players_df = pd.DataFrame(static_data["elements"])
+        teams_df = pd.DataFrame(static_data["teams"])
+        
+        tracker = OwnershipTracker(players_df, teams_df)
+        differentials = tracker.get_differentials(max_ownership)
+        
+        return {
+            "threshold": max_ownership,
+            "count": len(differentials),
+            "differentials": differentials.head(30).to_dict(orient='records')
+        }
+        
+    except Exception as e:
+        print(f"Differentials error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/ownership/captains")
+async def get_captain_rankings():
+    """
+    Get player rankings by estimated captaincy percentage.
+    
+    Shows who managers are likely captaining.
+    """
+    try:
+        from ownership_tracker import OwnershipTracker
+        
+        data = fpl_service.get_latest_data()
+        static_data = data["static"]
+        
+        players_df = pd.DataFrame(static_data["elements"])
+        teams_df = pd.DataFrame(static_data["teams"])
+        
+        tracker = OwnershipTracker(players_df, teams_df)
+        captains = tracker.get_captaincy_rankings()
+        
+        return {
+            "top_captain_picks": captains.to_dict(orient='records')
+        }
+        
+    except Exception as e:
+        print(f"Captain rankings error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/ownership/by-position")
+async def get_ownership_by_position():
+    """
+    Get ownership breakdown by position.
+    
+    Shows most owned and top differentials at each position.
+    """
+    try:
+        from ownership_tracker import OwnershipTracker
+        
+        data = fpl_service.get_latest_data()
+        static_data = data["static"]
+        
+        players_df = pd.DataFrame(static_data["elements"])
+        teams_df = pd.DataFrame(static_data["teams"])
+        
+        tracker = OwnershipTracker(players_df, teams_df)
+        by_position = tracker.get_ownership_by_position()
+        
+        return by_position
+        
+    except Exception as e:
+        print(f"Ownership by position error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class SquadCompareRequest(BaseModel):
+    """Request to compare squad to template."""
+    squad_ids: List[int]
+
+
+@app.post("/api/ownership/compare-squad")
+async def compare_squad_to_template(request: SquadCompareRequest):
+    """
+    Compare a user's squad to the template.
+    
+    Shows template coverage, missing must-haves, and differentials owned.
+    """
+    try:
+        from ownership_tracker import OwnershipTracker
+        
+        data = fpl_service.get_latest_data()
+        static_data = data["static"]
+        
+        players_df = pd.DataFrame(static_data["elements"])
+        teams_df = pd.DataFrame(static_data["teams"])
+        
+        tracker = OwnershipTracker(players_df, teams_df)
+        comparison = tracker.compare_squad_to_template(request.squad_ids)
+        
+        return comparison
+        
+    except Exception as e:
+        print(f"Squad comparison error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/ownership/summary")
+async def get_ownership_summary():
+    """
+    Get a quick ownership summary.
+    
+    Returns top template players, differentials, and captain picks.
+    """
+    try:
+        from ownership_tracker import get_ownership_summary
+        
+        data = fpl_service.get_latest_data()
+        static_data = data["static"]
+        
+        players_df = pd.DataFrame(static_data["elements"])
+        teams_df = pd.DataFrame(static_data["teams"])
+        
+        summary = get_ownership_summary(players_df, teams_df)
+        
+        return summary
+        
+    except Exception as e:
+        print(f"Ownership summary error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# EV DISTRIBUTION CALCULATOR ENDPOINTS
+# =============================================================================
+
+@app.get("/api/ev/all")
+async def get_all_ev_distributions():
+    """
+    Get EV distributions for all players.
+    
+    Returns expected points, floor, ceiling, and risk metrics.
+    """
+    try:
+        from ev_calculator import EVCalculator
+        
+        data = fpl_service.get_latest_data()
+        static_data = data["static"]
+        
+        players_df = pd.DataFrame(static_data["elements"])
+        teams_df = pd.DataFrame(static_data["teams"])
+        
+        calc = EVCalculator(players_df, teams_df)
+        df = calc.get_all_distributions()
+        
+        # Sort by expected points
+        df = df.sort_values('expected_points', ascending=False)
+        
+        return {
+            "total_players": len(df),
+            "players": df.to_dict(orient='records')
+        }
+        
+    except Exception as e:
+        print(f"EV distributions error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/ev/high-ceiling")
+async def get_high_ceiling_players(min_ceiling: float = 8.0, position: Optional[int] = None):
+    """
+    Get players with high ceiling (explosive potential).
+    
+    Args:
+        min_ceiling: Minimum ceiling threshold (default 8.0)
+        position: Filter by position (1=GK, 2=DEF, 3=MID, 4=FWD)
+    """
+    try:
+        from ev_calculator import EVCalculator
+        
+        data = fpl_service.get_latest_data()
+        static_data = data["static"]
+        
+        players_df = pd.DataFrame(static_data["elements"])
+        teams_df = pd.DataFrame(static_data["teams"])
+        
+        calc = EVCalculator(players_df, teams_df)
+        high_ceiling = calc.get_high_ceiling_players(min_ceiling, position)
+        
+        return {
+            "threshold": min_ceiling,
+            "position_filter": position,
+            "count": len(high_ceiling),
+            "high_ceiling_players": high_ceiling.head(30).to_dict(orient='records')
+        }
+        
+    except Exception as e:
+        print(f"High ceiling error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/ev/safe-players")
+async def get_safe_players(max_risk: float = 0.5, min_expected: float = 3.0):
+    """
+    Get low-risk players with consistent returns.
+    
+    Args:
+        max_risk: Maximum risk score (default 0.5)
+        min_expected: Minimum expected points (default 3.0)
+    """
+    try:
+        from ev_calculator import EVCalculator
+        
+        data = fpl_service.get_latest_data()
+        static_data = data["static"]
+        
+        players_df = pd.DataFrame(static_data["elements"])
+        teams_df = pd.DataFrame(static_data["teams"])
+        
+        calc = EVCalculator(players_df, teams_df)
+        safe = calc.get_safe_players(max_risk, min_expected)
+        
+        return {
+            "max_risk": max_risk,
+            "min_expected": min_expected,
+            "count": len(safe),
+            "safe_players": safe.head(30).to_dict(orient='records')
+        }
+        
+    except Exception as e:
+        print(f"Safe players error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class SquadEVRequest(BaseModel):
+    """Request for squad EV calculation."""
+    squad_ids: List[int]
+    starting_xi: Optional[List[int]] = None
+
+
+@app.post("/api/ev/squad")
+async def calculate_squad_ev(request: SquadEVRequest):
+    """
+    Calculate aggregate EV distribution for a squad.
+    
+    Returns expected points, floor, ceiling, and player contributions.
+    """
+    try:
+        from ev_calculator import EVCalculator
+        
+        data = fpl_service.get_latest_data()
+        static_data = data["static"]
+        
+        players_df = pd.DataFrame(static_data["elements"])
+        teams_df = pd.DataFrame(static_data["teams"])
+        
+        calc = EVCalculator(players_df, teams_df)
+        result = calc.calculate_squad_ev(request.squad_ids, request.starting_xi)
+        
+        return result
+        
+    except Exception as e:
+        print(f"Squad EV error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class ComparePlayersRequest(BaseModel):
+    """Request to compare players."""
+    player_ids: List[int]
+
+
+@app.post("/api/ev/compare")
+async def compare_players_ev(request: ComparePlayersRequest):
+    """
+    Compare EV distributions of multiple players.
+    
+    Useful for transfer decisions - shows expected, ceiling, floor, value.
+    """
+    try:
+        from ev_calculator import EVCalculator
+        
+        data = fpl_service.get_latest_data()
+        static_data = data["static"]
+        
+        players_df = pd.DataFrame(static_data["elements"])
+        teams_df = pd.DataFrame(static_data["teams"])
+        
+        calc = EVCalculator(players_df, teams_df)
+        result = calc.compare_players(request.player_ids)
+        
+        return result
+        
+    except Exception as e:
+        print(f"Compare players error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/ev/simulate")
+async def simulate_gameweek(request: SquadEVRequest, n_simulations: int = 1000):
+    """
+    Monte Carlo simulation of gameweek outcomes.
+    
+    Returns probability distribution of total points.
+    """
+    try:
+        from ev_calculator import EVCalculator
+        
+        data = fpl_service.get_latest_data()
+        static_data = data["static"]
+        
+        players_df = pd.DataFrame(static_data["elements"])
+        teams_df = pd.DataFrame(static_data["teams"])
+        
+        calc = EVCalculator(players_df, teams_df)
+        result = calc.simulate_gameweek(request.squad_ids, min(n_simulations, 5000))
+        
+        return result
+        
+    except Exception as e:
+        print(f"Simulation error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/ev/summary")
+async def get_ev_summary():
+    """
+    Get a quick EV summary.
+    
+    Returns high-ceiling, safe, and high-upside players.
+    """
+    try:
+        from ev_calculator import get_ev_summary
+        
+        data = fpl_service.get_latest_data()
+        static_data = data["static"]
+        
+        players_df = pd.DataFrame(static_data["elements"])
+        teams_df = pd.DataFrame(static_data["teams"])
+        
+        summary = get_ev_summary(players_df, teams_df)
+        
+        return summary
+        
+    except Exception as e:
+        print(f"EV summary error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# LIVE GAMEWEEK TRACKER ENDPOINTS
+# =============================================================================
+
+@app.get("/api/live/prices")
+async def get_live_prices():
+    """
+    Get current player prices and price change predictions.
+    
+    Shows transfer activity and predicted price movements.
+    """
+    try:
+        from live_tracker import LiveTracker
+        
+        data = fpl_service.get_latest_data()
+        static_data = data["static"]
+        
+        players_df = pd.DataFrame(static_data["elements"])
+        teams_df = pd.DataFrame(static_data["teams"])
+        
+        tracker = LiveTracker(players_df, teams_df)
+        df = tracker.get_live_prices()
+        
+        return {
+            "total_players": len(df),
+            "players": df.head(100).to_dict(orient='records')
+        }
+        
+    except Exception as e:
+        print(f"Live prices error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/live/price-risers")
+async def get_price_risers(min_net_transfers: int = 20000):
+    """Get players likely to rise in price."""
+    try:
+        from live_tracker import LiveTracker
+        
+        data = fpl_service.get_latest_data()
+        static_data = data["static"]
+        
+        players_df = pd.DataFrame(static_data["elements"])
+        teams_df = pd.DataFrame(static_data["teams"])
+        
+        tracker = LiveTracker(players_df, teams_df)
+        risers = tracker.get_price_risers(min_net_transfers)
+        
+        return {
+            "threshold": min_net_transfers,
+            "count": len(risers),
+            "risers": risers.to_dict(orient='records')
+        }
+        
+    except Exception as e:
+        print(f"Price risers error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/live/price-fallers")
+async def get_price_fallers(min_net_out: int = 20000):
+    """Get players likely to fall in price."""
+    try:
+        from live_tracker import LiveTracker
+        
+        data = fpl_service.get_latest_data()
+        static_data = data["static"]
+        
+        players_df = pd.DataFrame(static_data["elements"])
+        teams_df = pd.DataFrame(static_data["teams"])
+        
+        tracker = LiveTracker(players_df, teams_df)
+        fallers = tracker.get_price_fallers(min_net_out)
+        
+        return {
+            "threshold": min_net_out,
+            "count": len(fallers),
+            "fallers": fallers.to_dict(orient='records')
+        }
+        
+    except Exception as e:
+        print(f"Price fallers error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/live/transfers")
+async def get_top_transfers():
+    """Get most transferred in and out players this GW."""
+    try:
+        from live_tracker import LiveTracker
+        
+        data = fpl_service.get_latest_data()
+        static_data = data["static"]
+        
+        players_df = pd.DataFrame(static_data["elements"])
+        teams_df = pd.DataFrame(static_data["teams"])
+        
+        tracker = LiveTracker(players_df, teams_df)
+        
+        return {
+            "transfers_in": tracker.get_top_transfers_in(20).to_dict(orient='records'),
+            "transfers_out": tracker.get_top_transfers_out(20).to_dict(orient='records')
+        }
+        
+    except Exception as e:
+        print(f"Transfers error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/live/form")
+async def get_form_analysis():
+    """
+    Analyze current form versus historical averages.
+    
+    Identifies players in hot/cold streaks.
+    """
+    try:
+        from live_tracker import LiveTracker
+        
+        data = fpl_service.get_latest_data()
+        static_data = data["static"]
+        
+        players_df = pd.DataFrame(static_data["elements"])
+        teams_df = pd.DataFrame(static_data["teams"])
+        
+        tracker = LiveTracker(players_df, teams_df)
+        form = tracker.get_form_analysis()
+        
+        return {
+            "total_players": len(form),
+            "players": form.head(50).to_dict(orient='records')
+        }
+        
+    except Exception as e:
+        print(f"Form analysis error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/live/hot-streaks")
+async def get_hot_streaks(min_form: float = 6.0):
+    """Get players on hot form streaks."""
+    try:
+        from live_tracker import LiveTracker
+        
+        data = fpl_service.get_latest_data()
+        static_data = data["static"]
+        
+        players_df = pd.DataFrame(static_data["elements"])
+        teams_df = pd.DataFrame(static_data["teams"])
+        
+        tracker = LiveTracker(players_df, teams_df)
+        hot = tracker.get_hot_streaks(min_form)
+        
+        return {
+            "min_form": min_form,
+            "count": len(hot),
+            "hot_players": hot.to_dict(orient='records')
+        }
+        
+    except Exception as e:
+        print(f"Hot streaks error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/live/breakouts")
+async def get_breakout_candidates():
+    """
+    Identify potential breakout candidates.
+    
+    Players with high recent form but low ownership.
+    """
+    try:
+        from live_tracker import LiveTracker
+        
+        data = fpl_service.get_latest_data()
+        static_data = data["static"]
+        
+        players_df = pd.DataFrame(static_data["elements"])
+        teams_df = pd.DataFrame(static_data["teams"])
+        
+        tracker = LiveTracker(players_df, teams_df)
+        breakouts = tracker.get_breakout_candidates()
+        
+        return {
+            "count": len(breakouts),
+            "breakout_candidates": breakouts.to_dict(orient='records')
+        }
+        
+    except Exception as e:
+        print(f"Breakouts error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/live/value-plays")
+async def get_value_plays():
+    """Get high-value plays (form/price ratio)."""
+    try:
+        from live_tracker import LiveTracker
+        
+        data = fpl_service.get_latest_data()
+        static_data = data["static"]
+        
+        players_df = pd.DataFrame(static_data["elements"])
+        teams_df = pd.DataFrame(static_data["teams"])
+        
+        tracker = LiveTracker(players_df, teams_df)
+        values = tracker.get_value_plays()
+        
+        return {
+            "count": len(values),
+            "value_plays": values.head(30).to_dict(orient='records')
+        }
+        
+    except Exception as e:
+        print(f"Value plays error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/live/summary")
+async def get_gameweek_summary():
+    """
+    Get comprehensive summary of current gameweek.
+    
+    Includes top scorers, transfers, form, and price changes.
+    """
+    try:
+        from live_tracker import get_live_summary
+        
+        data = fpl_service.get_latest_data()
+        static_data = data["static"]
+        
+        players_df = pd.DataFrame(static_data["elements"])
+        teams_df = pd.DataFrame(static_data["teams"])
+        
+        # Get current gameweek
+        events = static_data.get("events", [])
+        current_gw = get_active_gameweek(events)
+        
+        summary = get_live_summary(players_df, teams_df, current_gw)
+        
+        return summary
+        
+    except Exception as e:
+        print(f"GW summary error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/live/captains")
+async def get_captain_analysis():
+    """Analyze captain options based on recent returns."""
+    try:
+        from live_tracker import LiveTracker
+        
+        data = fpl_service.get_latest_data()
+        static_data = data["static"]
+        
+        players_df = pd.DataFrame(static_data["elements"])
+        teams_df = pd.DataFrame(static_data["teams"])
+        
+        tracker = LiveTracker(players_df, teams_df)
+        captains = tracker.get_captain_analysis()
+        
+        return {
+            "top_captains": captains.head(20).to_dict(orient='records')
+        }
+        
+    except Exception as e:
+        print(f"Captain analysis error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

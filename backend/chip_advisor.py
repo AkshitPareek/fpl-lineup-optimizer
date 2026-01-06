@@ -283,3 +283,348 @@ class ChipAdvisor:
         if player.empty:
             return None
         return player.iloc[0]['team']
+    
+    def analyze_chip_opportunities_for_horizon(
+        self,
+        gameweek_plans: List[Dict],
+        chips_used: List[str],
+        predictions_df: Optional[pd.DataFrame] = None
+    ) -> Dict:
+        """
+        Analyze chip opportunities across the optimization horizon.
+        
+        Args:
+            gameweek_plans: List of gameweek plan dicts from optimizer
+            chips_used: Chips already used this season
+            predictions_df: Optional predictions DataFrame for enhanced analysis
+            
+        Returns:
+            Dict with:
+            - chip_recommendations: Ranked list of chip suggestions
+            - best_chip: Top recommended chip
+            - captain_recommendations: Per-GW captain suggestions
+        """
+        chip_recommendations = []
+        captain_recommendations = []
+        
+        available_chips = [c for c in self.CHIPS if c not in chips_used]
+        
+        for gw_plan in gameweek_plans:
+            gw = gw_plan.get('gameweek', 0)
+            starting_xi = gw_plan.get('starting_xi', [])
+            bench = gw_plan.get('bench', [])
+            
+            # Get DGW/BGW info for this gameweek
+            dgw_teams = self.double_gws.get(gw, [])
+            bgw_teams = self.blank_gws.get(gw, [])
+            is_dgw = len(dgw_teams) > 0
+            is_bgw = len(bgw_teams) > 0
+            
+            # === Captain Analysis ===
+            captain_analysis = self._analyze_captain_options(
+                starting_xi, gw, dgw_teams, predictions_df
+            )
+            captain_recommendations.append(captain_analysis)
+            
+            # === Triple Captain Analysis ===
+            if 'triple_captain' in available_chips:
+                tc_analysis = self._analyze_triple_captain(
+                    starting_xi, gw, dgw_teams, predictions_df
+                )
+                if tc_analysis:
+                    chip_recommendations.append(tc_analysis)
+            
+            # === Bench Boost Analysis ===
+            if 'bench_boost' in available_chips:
+                bb_analysis = self._analyze_bench_boost(
+                    starting_xi, bench, gw, dgw_teams, predictions_df
+                )
+                if bb_analysis:
+                    chip_recommendations.append(bb_analysis)
+            
+            # === Free Hit Analysis ===
+            if 'free_hit' in available_chips:
+                fh_analysis = self._analyze_free_hit(
+                    starting_xi, bench, gw, dgw_teams, bgw_teams
+                )
+                if fh_analysis:
+                    chip_recommendations.append(fh_analysis)
+        
+        # Sort recommendations by estimated gain
+        chip_recommendations.sort(key=lambda x: x.get('estimated_gain', 0), reverse=True)
+        
+        # Determine best chip
+        best_chip = chip_recommendations[0] if chip_recommendations else None
+        
+        return {
+            'chip_recommendations': chip_recommendations,
+            'best_chip': best_chip,
+            'captain_recommendations': captain_recommendations,
+            'available_chips': available_chips
+        }
+    
+    def _analyze_captain_options(
+        self,
+        starting_xi: List[Dict],
+        gw: int,
+        dgw_teams: List[int],
+        predictions_df: Optional[pd.DataFrame] = None
+    ) -> Dict:
+        """Analyze captain options for a gameweek."""
+        candidates = []
+        
+        for player in starting_xi:
+            player_id = player.get('id')
+            player_name = player.get('web_name', 'Unknown')
+            team_id = player.get('team')
+            
+            # Get expected points
+            xp_key = f'xp_gw{gw}'
+            xp = player.get(xp_key, player.get('expected_points', 0))
+            if xp is None:
+                xp = player.get('ep_next', 3)
+            xp = float(xp) if xp else 3.0
+            
+            # Check if has DGW
+            has_dgw = team_id in dgw_teams if team_id else False
+            
+            # Get fixtures
+            fixtures = self._get_player_fixture_string(team_id, gw)
+            
+            candidates.append({
+                'player_id': player_id,
+                'player_name': player_name,
+                'expected_points': round(xp, 1),
+                'has_dgw': has_dgw,
+                'fixtures': fixtures,
+                'team_id': team_id
+            })
+        
+        # Sort by xP (DGW players get natural boost from higher xP)
+        candidates.sort(key=lambda x: x['expected_points'], reverse=True)
+        
+        # Top pick
+        top_pick = candidates[0] if candidates else None
+        alternatives = candidates[1:4] if len(candidates) > 1 else []
+        
+        # Calculate confidence
+        if top_pick and alternatives:
+            gap = top_pick['expected_points'] - alternatives[0]['expected_points']
+            if gap >= 2.0:
+                confidence = 'high'
+            elif gap >= 1.0:
+                confidence = 'medium'
+            else:
+                confidence = 'low'
+        else:
+            confidence = 'medium'
+        
+        return {
+            'gameweek': gw,
+            'recommended_captain': top_pick,
+            'alternatives': alternatives,
+            'confidence': confidence,
+            'has_dgw_options': any(c['has_dgw'] for c in candidates[:3])
+        }
+    
+    def _analyze_triple_captain(
+        self,
+        starting_xi: List[Dict],
+        gw: int,
+        dgw_teams: List[int],
+        predictions_df: Optional[pd.DataFrame] = None
+    ) -> Optional[Dict]:
+        """Analyze Triple Captain value for a gameweek."""
+        # Find best captain candidate
+        best_captain = None
+        best_xp = 0
+        
+        for player in starting_xi:
+            player_id = player.get('id')
+            team_id = player.get('team')
+            xp_key = f'xp_gw{gw}'
+            xp = player.get(xp_key, player.get('expected_points', 0))
+            if xp is None:
+                xp = player.get('ep_next', 3)
+            xp = float(xp) if xp else 3.0
+            
+            has_dgw = team_id in dgw_teams if team_id else False
+            
+            if xp > best_xp:
+                best_xp = xp
+                best_captain = {
+                    'player_id': player_id,
+                    'player_name': player.get('web_name', 'Unknown'),
+                    'expected_points': round(xp, 1),
+                    'has_dgw': has_dgw,
+                    'fixtures': self._get_player_fixture_string(team_id, gw)
+                }
+        
+        if not best_captain:
+            return None
+        
+        # TC gain = extra captain points (3x instead of 2x = +1x)
+        tc_gain = best_xp
+        
+        # Boost confidence for DGW
+        if best_captain['has_dgw']:
+            confidence = 'high' if tc_gain >= 8 else 'medium'
+            reason = f"{best_captain['player_name']} has DGW{gw} ({best_captain['fixtures']}) - projected {best_xp:.1f} pts"
+        else:
+            confidence = 'medium' if tc_gain >= 10 else 'low'
+            reason = f"{best_captain['player_name']} projected {best_xp:.1f} pts in GW{gw}"
+        
+        return {
+            'chip': 'triple_captain',
+            'recommended_gameweek': gw,
+            'estimated_gain': round(tc_gain, 1),
+            'reason': reason,
+            'captain': best_captain,
+            'confidence': confidence,
+            'is_dgw': best_captain['has_dgw']
+        }
+    
+    def _analyze_bench_boost(
+        self,
+        starting_xi: List[Dict],
+        bench: List[Dict],
+        gw: int,
+        dgw_teams: List[int],
+        predictions_df: Optional[pd.DataFrame] = None
+    ) -> Optional[Dict]:
+        """Analyze Bench Boost value for a gameweek."""
+        if not bench:
+            return None
+        
+        total_bench_xp = 0
+        dgw_bench_players = 0
+        bench_details = []
+        
+        for player in bench:
+            player_id = player.get('id')
+            team_id = player.get('team')
+            xp_key = f'xp_gw{gw}'
+            xp = player.get(xp_key, player.get('expected_points', 0))
+            if xp is None:
+                xp = player.get('ep_next', 2)
+            xp = float(xp) if xp else 2.0
+            
+            has_dgw = team_id in dgw_teams if team_id else False
+            if has_dgw:
+                dgw_bench_players += 1
+            
+            total_bench_xp += xp
+            bench_details.append({
+                'player_name': player.get('web_name', 'Unknown'),
+                'expected_points': round(xp, 1),
+                'has_dgw': has_dgw
+            })
+        
+        # BB gain = bench gets full points instead of 0.1x
+        bb_gain = total_bench_xp * 0.9
+        
+        # Confidence based on bench strength and DGW count
+        if dgw_bench_players >= 3:
+            confidence = 'high'
+            reason = f"{dgw_bench_players} bench players have DGW{gw} - total bench xP: {total_bench_xp:.1f}"
+        elif dgw_bench_players >= 2 or total_bench_xp >= 15:
+            confidence = 'medium'
+            reason = f"Strong bench in GW{gw} - total bench xP: {total_bench_xp:.1f}"
+        else:
+            confidence = 'low'
+            reason = f"Bench xP: {total_bench_xp:.1f} in GW{gw}"
+        
+        return {
+            'chip': 'bench_boost',
+            'recommended_gameweek': gw,
+            'estimated_gain': round(bb_gain, 1),
+            'reason': reason,
+            'bench_total_xp': round(total_bench_xp, 1),
+            'bench_details': bench_details,
+            'dgw_bench_count': dgw_bench_players,
+            'confidence': confidence,
+            'is_dgw': dgw_bench_players > 0
+        }
+    
+    def _analyze_free_hit(
+        self,
+        starting_xi: List[Dict],
+        bench: List[Dict],
+        gw: int,
+        dgw_teams: List[int],
+        bgw_teams: List[int]
+    ) -> Optional[Dict]:
+        """Analyze Free Hit value for a gameweek."""
+        all_players = starting_xi + bench
+        
+        # Count blanks and DGWs
+        blank_count = 0
+        dgw_count = 0
+        
+        for player in all_players:
+            team_id = player.get('team')
+            if team_id in bgw_teams:
+                blank_count += 1
+            if team_id in dgw_teams:
+                dgw_count += 1
+        
+        # Free Hit is valuable if:
+        # 1. Many squad players blank
+        # 2. Big DGW opportunity to maximize DGW players
+        
+        if blank_count >= 4:
+            # High value - many blanks
+            estimated_gain = blank_count * 4  # Approximate: 4 pts per player saved
+            confidence = 'high'
+            reason = f"{blank_count} squad players blank in GW{gw} - Free Hit to field full XI"
+            return {
+                'chip': 'free_hit',
+                'recommended_gameweek': gw,
+                'estimated_gain': round(estimated_gain, 1),
+                'reason': reason,
+                'blank_count': blank_count,
+                'dgw_count': dgw_count,
+                'confidence': confidence,
+                'is_bgw': True,
+                'is_dgw': len(dgw_teams) > 5
+            }
+        elif len(dgw_teams) >= 8 and dgw_count < 8:
+            # Big DGW - could field more DGW players
+            potential_dgw_gain = (8 - dgw_count) * 2  # ~2 pts per extra DGW player
+            estimated_gain = potential_dgw_gain
+            confidence = 'medium'
+            reason = f"Large DGW{gw} with {len(dgw_teams)} teams - Free Hit to maximize DGW coverage"
+            return {
+                'chip': 'free_hit',
+                'recommended_gameweek': gw,
+                'estimated_gain': round(estimated_gain, 1),
+                'reason': reason,
+                'blank_count': blank_count,
+                'dgw_count': dgw_count,
+                'confidence': confidence,
+                'is_bgw': False,
+                'is_dgw': True
+            }
+        
+        return None
+    
+    def _get_player_fixture_string(self, team_id: int, gw: int) -> str:
+        """Get fixture string for a player's team in a specific GW."""
+        if not team_id:
+            return ""
+        
+        fixtures = []
+        for fix in self.fixtures:
+            if fix.get('event') != gw:
+                continue
+            
+            if fix['team_h'] == team_id:
+                opp_name = self.teams[self.teams['id'] == fix['team_a']]['short_name'].values
+                opp = opp_name[0] if len(opp_name) > 0 else 'UNK'
+                fixtures.append(f"{opp}(H)")
+            elif fix['team_a'] == team_id:
+                opp_name = self.teams[self.teams['id'] == fix['team_h']]['short_name'].values
+                opp = opp_name[0] if len(opp_name) > 0 else 'UNK'
+                fixtures.append(f"{opp}(A)")
+        
+        return ", ".join(fixtures) if fixtures else "No fixture"

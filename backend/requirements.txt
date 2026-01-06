@@ -5,3 +5,7 @@ pulp
 pandas
 requests
 python-multipart
+numpy
+tqdm
+understatapi
+rapidfuzz

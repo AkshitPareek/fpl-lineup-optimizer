@@ -22,6 +22,8 @@ from tqdm import tqdm
 from fpl_service import FPLService
 from historical_data_service import HistoricalDataService
 from advanced_optimizer import MultiPeriodFPLOptimizer
+from ev_calculator import EVCalculator
+from ownership_tracker import OwnershipTracker
 
 class BacktestEngine:
     def __init__(self):
@@ -403,6 +405,27 @@ class BacktestEngine:
             bank = budget - cost_of_squad
             budget = cost_of_squad + bank
             
+            # 7. Analytics Calculation (EV & Ownership)
+            squad_ids = [p['id'] for p in starters + bench]
+            
+            # Initialize calculators with current state
+            ev_calc = EVCalculator(players_df, self.teams_df)
+            own_tracker = OwnershipTracker(players_df, self.teams_df)
+            
+            # Get metrics
+            squad_ev_metrics = ev_calc.calculate_squad_ev(squad_ids, [p['id'] for p in starters])
+            ownership_analysis = own_tracker.compare_squad_to_template(squad_ids)
+            
+            # Flatten metrics for result
+            analytics_metrics = {
+                'squad_risk': squad_ev_metrics.get('total_risk', 0),
+                'squad_ceiling': squad_ev_metrics.get('total_ceiling', 0),
+                'squad_floor': squad_ev_metrics.get('total_floor', 0),
+                'template_coverage': ownership_analysis.get('template_coverage_pct', 0),
+                'differential_count': ownership_analysis.get('differential_count', 0),
+                'avg_ownership': ownership_analysis.get('avg_ownership', 0)
+            }
+            
             results.append({
                 'gameweek': gw,
                 'predicted_points': plan.expected_points,
@@ -414,7 +437,8 @@ class BacktestEngine:
                 'transfers_in': len(plan.transfers.transfers_in),
                 'banked_transfers_next': banked_transfers,
                 'squad_value': cost_of_squad,
-                'squad': starters + bench
+                'squad': starters + bench,
+                **analytics_metrics
             })
             
         # Calculate efficiency metrics
