@@ -3,6 +3,10 @@ import axios from 'axios'
 import Pitch from './components/Pitch'
 import AnalyticsDashboard from './components/analytics/AnalyticsDashboard'
 
+// Production API URL handling
+const API_URL = import.meta.env.VITE_API_URL || '';
+axios.defaults.baseURL = API_URL;
+
 function App() {
   const [data, setData] = useState(null)
   const [lineup, setLineup] = useState(null)
@@ -130,7 +134,7 @@ function App() {
         setBacktestProgress({ progress: 0, message: "Initializing..." })
 
         try {
-          const response = await fetch('/api/backtest/stream', {
+          const response = await fetch(`${API_URL}/api/backtest/stream`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

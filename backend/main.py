@@ -10,7 +10,7 @@ Provides endpoints for:
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from typing import List, Optional
+from typing import List, Optional, Dict
 from pydantic import BaseModel, Field
 import pandas as pd
 import json
@@ -61,13 +61,21 @@ app = FastAPI(
     version="2.0.0"
 )
 
+import os
+
 # Configure CORS
+origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    os.getenv("FRONTEND_URL", ""),
+]
+
+# Filter out empty strings if FRONTEND_URL is not set
+origins = [o for o in origins if o]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
