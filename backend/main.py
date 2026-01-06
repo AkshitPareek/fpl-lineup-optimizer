@@ -8,13 +8,13 @@ Provides endpoints for:
 - Manager team and data fetching
 """
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse, JSONResponse
 from typing import List, Optional, Dict
 from pydantic import BaseModel, Field
 import pandas as pd
 import json
-from fastapi.responses import StreamingResponse
 
 from fpl_service import FPLService
 from optimizer import FPLOptimizer
@@ -63,25 +63,81 @@ app = FastAPI(
 
 import os
 
-# Configure CORS
-origins = [
+# Configure CORS - Must be configured before routes
+# For production, explicitly list allowed origins
+ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
     "https://fploptimize.netlify.app",
     "https://www.fploptimize.netlify.app",
-    os.getenv("FRONTEND_URL", ""),
 ]
 
-# Filter out empty strings and strip trailing slashes
-origins = [o.rstrip("/") for o in origins if o]
+# Add environment variable origin if set
+env_frontend_url = os.getenv("FRONTEND_URL", "")
+if env_frontend_url:
+    ALLOWED_ORIGINS.append(env_frontend_url.rstrip("/"))
+
+# Remove duplicates and empty strings
+ALLOWED_ORIGINS = list(set(o.rstrip("/") for o in ALLOWED_ORIGINS if o))
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=600,  # Cache preflight requests for 10 minutes
 )
+
+
+# Startup event to log CORS configuration
+@app.on_event("startup")
+async def startup_event():
+    print(f"🚀 FPL Optimizer API starting...")
+    print(f"📋 CORS allowed origins: {ALLOWED_ORIGINS}")
+
+
+# Custom exception handler to ensure CORS headers on errors
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """Handle all exceptions and ensure CORS headers are included."""
+    origin = request.headers.get("origin", "")
+    
+    # Build response
+    response = JSONResponse(
+        status_code=500,
+        content={"detail": str(exc)}
+    )
+    
+    # Add CORS headers if origin is allowed
+    if origin in ALLOWED_ORIGINS:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+    
+    print(f"Exception handler: {exc}")
+    return response
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """Handle HTTP exceptions and ensure CORS headers are included."""
+    origin = request.headers.get("origin", "")
+    
+    response = JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail}
+    )
+    
+    # Add CORS headers if origin is allowed
+    if origin in ALLOWED_ORIGINS:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+    
+    return response
+
 
 fpl_service = FPLService()
 

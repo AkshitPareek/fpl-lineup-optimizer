@@ -572,7 +572,10 @@ class MultiPeriodFPLOptimizer:
                 prob += ft_banked[t] >= 1  # Always have at least 1 FT
             
             # Transfer balance: transfers in = transfers out
-            prob += pulp.lpSum([z_in[(j, t)] for j in player_ids]) == pulp.lpSum([z_out[(j, t)] for j in player_ids])
+            # Note: This is removed because it is implied by the squad size (15) 
+            # and the flow conservation equations. Keeping it causes infeasibility
+            # if some current players are excluded (e.g. injured).
+            # prob += pulp.lpSum([z_in[(j, t)] for j in player_ids]) == pulp.lpSum([z_out[(j, t)] for j in player_ids])
             
             # Free transfers and hits
             transfers_made = pulp.lpSum([z_in[(j, t)] for j in player_ids])
