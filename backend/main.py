@@ -404,7 +404,7 @@ async def optimize_compare(request: MultiPeriodRequest):
     import asyncio
     from concurrent.futures import ThreadPoolExecutor
     
-    # Limit gameweeks to prevent timeout on free tier
+    # Keep full gameweek horizon - we've optimized to skip 2nd optimization when possible
     effective_gameweeks = min(request.gameweeks, 5)
     
     try:
@@ -476,43 +476,80 @@ async def optimize_compare(request: MultiPeriodRequest):
                 max_hits=0  # No hits allowed
             )
         
-        # Run optimizations - for now run sequentially due to GIL
-        # but wrap in executor to allow async timeout
+        # Run optimizations - smart strategy to minimize runtime
+        # First run with-hits, then only run no-hits if hits were actually taken
         loop = asyncio.get_event_loop()
         
         try:
-            # Set a 30 second timeout (solver is optimized with 15s limit)
+            # Run the with-hits optimization first (45s timeout for full 5 GW horizon)
             solution_with_hits = await asyncio.wait_for(
                 loop.run_in_executor(None, run_with_hits),
-                timeout=30.0
+                timeout=45.0
             )
         except asyncio.TimeoutError:
-            print("With-hits optimization timed out, returning simplified response")
+            print("With-hits optimization timed out")
             raise HTTPException(
                 status_code=504,
-                detail="Optimization timed out. Try reducing the gameweek horizon or using fewer constraints."
+                detail="Optimization timed out. Try reducing the gameweek horizon."
             )
         
-        try:
-            solution_no_hits = await asyncio.wait_for(
-                loop.run_in_executor(None, run_no_hits),
-                timeout=30.0
-            )
-        except asyncio.TimeoutError:
-            # If no-hits times out, return with-hits only
-            print("No-hits optimization timed out, returning with-hits only")
+        # Check if any hits were taken
+        total_hits = sum(tp.hits_taken for tp in solution_with_hits.transfer_summary)
+        
+        # If no hits taken, the no-hits solution would be identical
+        if total_hits == 0:
+            print("No hits taken - skipping no-hits optimization (results would be identical)")
+            with_hits_data = optimizer.to_dict(solution_with_hits)
             return {
                 "current_gw": current_gw,
                 "strategy": request.strategy,
                 "comparison": {
                     "with_hits": {
                         "total_xp": round(solution_with_hits.total_expected_points, 1),
-                        "total_hits": sum(tp.hits_taken for tp in solution_with_hits.transfer_summary),
-                        "hit_cost": sum(tp.hit_cost for tp in solution_with_hits.transfer_summary),
-                        "net_xp": round(solution_with_hits.total_expected_points - sum(tp.hit_cost for tp in solution_with_hits.transfer_summary), 1),
+                        "total_hits": 0,
+                        "hit_cost": 0,
+                        "net_xp": round(solution_with_hits.total_expected_points, 1),
                         "recommended": True
                     },
-                    "no_hits": {"error": "Timed out"},
+                    "no_hits": {
+                        "total_xp": round(solution_with_hits.total_expected_points, 1),
+                        "total_hits": 0,
+                        "hit_cost": 0,
+                        "net_xp": round(solution_with_hits.total_expected_points, 1),
+                        "recommended": True
+                    },
+                    "difference": 0,
+                    "note": "No hits required - both strategies produce identical results"
+                },
+                "with_hits": _enrich_with_analytics(with_hits_data, players_df, teams_df),
+                "no_hits": _enrich_with_analytics(with_hits_data, players_df, teams_df)  # Same as with_hits
+            }
+        
+        # Hits were taken - need to run no-hits optimization for comparison
+        print(f"With-hits took {total_hits} hits, running no-hits for comparison...")
+        try:
+            solution_no_hits = await asyncio.wait_for(
+                loop.run_in_executor(None, run_no_hits),
+                timeout=45.0
+            )
+        except asyncio.TimeoutError:
+            # If no-hits times out, return with-hits only with estimate
+            print("No-hits optimization timed out, returning with-hits only")
+            with_hits_net = solution_with_hits.total_expected_points - sum(
+                tp.hit_cost for tp in solution_with_hits.transfer_summary
+            )
+            return {
+                "current_gw": current_gw,
+                "strategy": request.strategy,
+                "comparison": {
+                    "with_hits": {
+                        "total_xp": round(solution_with_hits.total_expected_points, 1),
+                        "total_hits": total_hits,
+                        "hit_cost": total_hits * 4,
+                        "net_xp": round(with_hits_net, 1),
+                        "recommended": True
+                    },
+                    "no_hits": {"error": "Timed out - could not calculate"},
                     "difference": 0
                 },
                 "with_hits": _enrich_with_analytics(optimizer.to_dict(solution_with_hits), players_df, teams_df),
@@ -532,7 +569,7 @@ async def optimize_compare(request: MultiPeriodRequest):
             "comparison": {
                 "with_hits": {
                     "total_xp": round(solution_with_hits.total_expected_points, 1),
-                    "total_hits": sum(tp.hits_taken for tp in solution_with_hits.transfer_summary),
+                    "total_hits": total_hits,
                     "hit_cost": sum(tp.hit_cost for tp in solution_with_hits.transfer_summary),
                     "net_xp": round(with_hits_net, 1),
                     "recommended": with_hits_net > no_hits_net

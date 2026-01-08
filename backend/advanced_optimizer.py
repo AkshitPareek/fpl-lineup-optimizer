@@ -621,12 +621,15 @@ class MultiPeriodFPLOptimizer:
         # - timeLimit=15: Max 15 seconds per solve
         # - gapRel=0.01: Accept solutions within 1% of optimal (much faster)
         # - threads=1: Single thread to avoid memory issues on free tier
+        solve_start = time.time()
         prob.solve(pulp.PULP_CBC_CMD(
             msg=0,
             timeLimit=15,
             gapRel=0.01,  # 1% optimality gap - good enough for FPL
             threads=1
         ))
+        solve_time = time.time() - solve_start
+        print(f"MILP Solve time: {solve_time:.1f}s, Status: {pulp.LpStatus[prob.status]}")
         
         end_time = time.time()
         
