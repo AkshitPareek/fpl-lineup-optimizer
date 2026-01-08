@@ -401,6 +401,12 @@ async def optimize_compare(request: MultiPeriodRequest):
     - With hits: Maximum net points even if taking penalty
     - Without hits: Best possible using only free transfers
     """
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+    
+    # Limit gameweeks to prevent timeout on free tier
+    effective_gameweeks = min(request.gameweeks, 5)
+    
     try:
         data = fpl_service.get_latest_data()
         static_data = data["static"]
@@ -439,35 +445,80 @@ async def optimize_compare(request: MultiPeriodRequest):
         if request.chip_to_use:
             chip_to_use = tuple(request.chip_to_use)  # [name, gw] -> (name, gw)
         
-        # Run WITH hits allowed
-        solution_with_hits = optimizer.optimize_multi_period(
-            budget=actual_budget,
-            gameweeks=request.gameweeks,
-            current_squad_ids=current_squad_ids,
-            excluded_players=request.excluded_players,
-            banked_transfers=banked_transfers,
-            chips_used=request.chips_used,
-            chip_to_use=chip_to_use,
-            robust=request.robust,
-            uncertainty_budget=request.uncertainty_budget,
-            strategy=request.strategy,
-            max_hits=10  # Allow hits
-        )
+        # Define optimization functions for concurrent execution
+        def run_with_hits():
+            return optimizer.optimize_multi_period(
+                budget=actual_budget,
+                gameweeks=effective_gameweeks,
+                current_squad_ids=current_squad_ids,
+                excluded_players=request.excluded_players,
+                banked_transfers=banked_transfers,
+                chips_used=request.chips_used,
+                chip_to_use=chip_to_use,
+                robust=request.robust,
+                uncertainty_budget=request.uncertainty_budget,
+                strategy=request.strategy,
+                max_hits=10  # Allow hits
+            )
         
-        # Run WITHOUT hits
-        solution_no_hits = optimizer.optimize_multi_period(
-            budget=actual_budget,
-            gameweeks=request.gameweeks,
-            current_squad_ids=current_squad_ids,
-            excluded_players=request.excluded_players,
-            banked_transfers=banked_transfers,
-            chips_used=request.chips_used,
-            chip_to_use=chip_to_use,
-            robust=request.robust,
-            uncertainty_budget=request.uncertainty_budget,
-            strategy=request.strategy,
-            max_hits=0  # No hits allowed
-        )
+        def run_no_hits():
+            return optimizer.optimize_multi_period(
+                budget=actual_budget,
+                gameweeks=effective_gameweeks,
+                current_squad_ids=current_squad_ids,
+                excluded_players=request.excluded_players,
+                banked_transfers=banked_transfers,
+                chips_used=request.chips_used,
+                chip_to_use=chip_to_use,
+                robust=request.robust,
+                uncertainty_budget=request.uncertainty_budget,
+                strategy=request.strategy,
+                max_hits=0  # No hits allowed
+            )
+        
+        # Run optimizations - for now run sequentially due to GIL
+        # but wrap in executor to allow async timeout
+        loop = asyncio.get_event_loop()
+        
+        try:
+            # Set a 25 second timeout to stay under Render's limit
+            solution_with_hits = await asyncio.wait_for(
+                loop.run_in_executor(None, run_with_hits),
+                timeout=25.0
+            )
+        except asyncio.TimeoutError:
+            print("With-hits optimization timed out, returning simplified response")
+            raise HTTPException(
+                status_code=504,
+                detail="Optimization timed out. Try reducing the gameweek horizon or using fewer constraints."
+            )
+        
+        try:
+            solution_no_hits = await asyncio.wait_for(
+                loop.run_in_executor(None, run_no_hits),
+                timeout=25.0
+            )
+        except asyncio.TimeoutError:
+            # If no-hits times out, return with-hits only
+            print("No-hits optimization timed out, returning with-hits only")
+            return {
+                "current_gw": current_gw,
+                "strategy": request.strategy,
+                "comparison": {
+                    "with_hits": {
+                        "total_xp": round(solution_with_hits.total_expected_points, 1),
+                        "total_hits": sum(tp.hits_taken for tp in solution_with_hits.transfer_summary),
+                        "hit_cost": sum(tp.hit_cost for tp in solution_with_hits.transfer_summary),
+                        "net_xp": round(solution_with_hits.total_expected_points - sum(tp.hit_cost for tp in solution_with_hits.transfer_summary), 1),
+                        "recommended": True
+                    },
+                    "no_hits": {"error": "Timed out"},
+                    "difference": 0
+                },
+                "with_hits": _enrich_with_analytics(optimizer.to_dict(solution_with_hits), players_df, teams_df),
+                "no_hits": None,
+                "partial_result": True
+            }
         
         # Calculate net points for comparison
         with_hits_net = solution_with_hits.total_expected_points - sum(
@@ -499,6 +550,13 @@ async def optimize_compare(request: MultiPeriodRequest):
             "no_hits": _enrich_with_analytics(optimizer.to_dict(solution_no_hits), players_df, teams_df)
         }
         
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=504,
+            detail="Optimization timed out. Try reducing the gameweek horizon."
+        )
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"Compare optimization error: {e}")
         import traceback
