@@ -394,6 +394,35 @@ class MultiPeriodFPLOptimizer:
         for col in gw_cols:
             available[col] = available[col].fillna(0)
         
+        # Calculate total expected points for filtering
+        available['total_horizon_xp'] = available[gw_cols].sum(axis=1)
+        
+        # ===== OPTIMIZATION: Pre-filter to top players per position =====
+        # This reduces problem size from ~700 players to ~120, dramatically speeding up solve
+        TOP_PER_POSITION = 30  # Top 30 per position = 120 players max
+        
+        # Always include current squad players
+        current_squad_set = set(current_squad_ids) if current_squad_ids else set()
+        
+        # Select top players per position
+        filtered_players = []
+        for pos in [1, 2, 3, 4]:
+            pos_players = available[available['element_type'] == pos].copy()
+            
+            # Sort by total expected points over horizon
+            pos_players = pos_players.sort_values('total_horizon_xp', ascending=False)
+            
+            # Take top N, but always include current squad players of this position
+            top_pos = pos_players.head(TOP_PER_POSITION)
+            current_pos = pos_players[pos_players['id'].isin(current_squad_set)]
+            
+            # Combine and deduplicate
+            combined = pd.concat([top_pos, current_pos]).drop_duplicates(subset='id')
+            filtered_players.append(combined)
+        
+        available = pd.concat(filtered_players, ignore_index=True)
+        print(f"Optimization: Reduced player pool from {len(self.players)} to {len(available)} candidates")
+        
         player_ids = available['id'].tolist()
         
         # Helper function
@@ -588,8 +617,16 @@ class MultiPeriodFPLOptimizer:
             prob += hits[t] >= transfers_made - available_ft
             prob += ft_used[t] >= transfers_made - hits[t]
         
-        # Solve
-        prob.solve(pulp.PULP_CBC_CMD(msg=0, timeLimit=120))
+        # Solve with optimized settings:
+        # - timeLimit=15: Max 15 seconds per solve
+        # - gapRel=0.01: Accept solutions within 1% of optimal (much faster)
+        # - threads=1: Single thread to avoid memory issues on free tier
+        prob.solve(pulp.PULP_CBC_CMD(
+            msg=0,
+            timeLimit=15,
+            gapRel=0.01,  # 1% optimality gap - good enough for FPL
+            threads=1
+        ))
         
         end_time = time.time()
         

@@ -481,10 +481,10 @@ async def optimize_compare(request: MultiPeriodRequest):
         loop = asyncio.get_event_loop()
         
         try:
-            # Set a 25 second timeout to stay under Render's limit
+            # Set a 30 second timeout (solver is optimized with 15s limit)
             solution_with_hits = await asyncio.wait_for(
                 loop.run_in_executor(None, run_with_hits),
-                timeout=25.0
+                timeout=30.0
             )
         except asyncio.TimeoutError:
             print("With-hits optimization timed out, returning simplified response")
@@ -496,7 +496,7 @@ async def optimize_compare(request: MultiPeriodRequest):
         try:
             solution_no_hits = await asyncio.wait_for(
                 loop.run_in_executor(None, run_no_hits),
-                timeout=25.0
+                timeout=30.0
             )
         except asyncio.TimeoutError:
             # If no-hits times out, return with-hits only
