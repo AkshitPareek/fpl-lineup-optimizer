@@ -44,3 +44,4 @@
 - Execution sequencing: `docs/team/EXECUTION_PLAN.md`
 - Task-to-test mapping: `docs/team/TASK_TEST_MAP.md`
 - Task status ledger: `backend/TASK_TRACKING.md`
+- New-session handoff for real-player validation: `docs/team/NEW_AGENT_REAL_PLAYERS_PLAYBOOK.md`
