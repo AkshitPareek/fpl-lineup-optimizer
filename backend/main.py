@@ -166,6 +166,17 @@ class MultiPeriodRequest(BaseModel):
     robust: bool = Field(default=False, description="Use robust optimization")
     uncertainty_budget: float = Field(default=0.3, ge=0, le=1, description="Robustness parameter Γ")
     strategy: str = Field(default="standard", description="Strategy: standard, differential, template")
+    use_ml_predictions: bool = False
+    ml_blend_weight: float = Field(
+        default=0.6,
+        ge=0,
+        le=1,
+        description="Weight for ML in blend: blended = w*ml + (1-w)*rule",
+    )
+    force_next_gameweek: bool = Field(
+        default=True,
+        description="Use next GW as start if available",
+    )
 
 
 class RobustRequest(BaseModel):
@@ -174,6 +185,13 @@ class RobustRequest(BaseModel):
     gamma: float = Field(default=1.0, ge=0, le=3, description="Protection level (0=nominal, higher=conservative)")
     excluded_players: List[int] = []
     manager_id: Optional[int] = None
+
+
+class ChipSuggestionRequest(BaseModel):
+    """Request for chip recommendations."""
+    manager_id: int
+    chips_used: List[str] = Field(default=[], description="Already used chips (e.g., ['wildcard'])")
+    force_next_gameweek: bool = Field(default=True, description="Start advice from next GW if available")
 
 
 
@@ -313,6 +331,11 @@ async def optimize_multi_period(request: MultiPeriodRequest):
         # Get current gameweek
         events = static_data.get("events", [])
         current_gw = get_active_gameweek(events)
+        if request.force_next_gameweek:
+            next_event = next((e for e in events if e.get("is_next")), None)
+            if next_event:
+                current_gw = next_event["id"]
+                print(f"[multi-period] force_next_gameweek=true start_gw={current_gw}")
         
         # Get current squad if manager_id provided
         current_squad_ids = []
@@ -342,12 +365,84 @@ async def optimize_multi_period(request: MultiPeriodRequest):
             except Exception as e:
                 print(f"Error fetching manager team: {e}")
         
+        predictions_df = None
+        if request.use_ml_predictions:
+            print(
+                f"[multi-period] prediction_source=blend ml_blend_weight={request.ml_blend_weight:.2f}"
+            )
+            predictor = PointPredictor(
+                players_df=players_df,
+                teams_df=teams_df,
+                fixtures=fixtures_data,
+                current_gameweek=current_gw
+            )
+            rule_predictions_df = predictor.predict_all_players(gameweeks=request.gameweeks)
+
+            # Lazy imports to keep default path unchanged when ML is disabled.
+            from ml_predictor import MLPredictor
+            from historical_data_service import HistoricalDataService
+
+            history_service = HistoricalDataService()
+            history_service.fetch_all_player_history(static_data["elements"])
+            history_records = []
+            for _, player in players_df.iterrows():
+                pid = str(player["id"])
+                player_history = history_service._history_cache.get(pid, {}).get("history", [])
+                for record in player_history:
+                    history_record = dict(record)
+                    history_record["player_id"] = player["id"]
+                    history_records.append(history_record)
+
+            history_df = pd.DataFrame(history_records)
+            context_data = {
+                "players": players_df,
+                "teams": teams_df,
+                "fixtures": fixtures_data,
+                "history": history_df,
+            }
+
+            ml_predictor = MLPredictor(model_version="current", data_dir="data", models_dir="models")
+            player_ids = players_df["id"].tolist()
+
+            blended_df = rule_predictions_df.copy()
+            blend_weight = request.ml_blend_weight
+            gw_cols = []
+
+            for gw in range(current_gw, current_gw + request.gameweeks):
+                col = f"xp_gw{gw}"
+                if col not in blended_df.columns:
+                    continue
+                gw_cols.append(col)
+
+                ml_batch = ml_predictor.predict_batch(
+                    player_ids=player_ids,
+                    target_gw=gw,
+                    context_data=context_data
+                )
+                ml_map = ml_batch.set_index("player_id")["predicted_points"]
+
+                rule_vals = blended_df[col].astype(float)
+                ml_vals = blended_df["id"].map(ml_map).astype(float)
+                blended_df[col] = blend_weight * ml_vals.fillna(rule_vals) + (1 - blend_weight) * rule_vals
+
+            if gw_cols:
+                blended_df["total_xp"] = blended_df[gw_cols].sum(axis=1)
+
+            required_meta_cols = ["id", "web_name", "element_type", "team", "team_name", "now_cost", "total_xp"]
+            ordered_cols = required_meta_cols + gw_cols + [
+                c for c in blended_df.columns if c not in set(required_meta_cols + gw_cols)
+            ]
+            predictions_df = blended_df[ordered_cols]
+        else:
+            print("[multi-period] prediction_source=rule")
+
         # Initialize optimizer
         optimizer = MultiPeriodFPLOptimizer(
             players_df=players_df,
             teams_df=teams_df,
             fixtures=fixtures_data,
-            current_gameweek=current_gw
+            current_gameweek=current_gw,
+            predictions_df=predictions_df
         )
         
         # Run optimization
@@ -389,6 +484,50 @@ async def optimize_multi_period(request: MultiPeriodRequest):
         print(f"Multi-period optimization error: {e}")
         import traceback
         traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/chip-suggestions")
+async def chip_suggestions(request: ChipSuggestionRequest):
+    """Provide chip timing recommendations for a manager."""
+    try:
+        data = fpl_service.get_latest_data()
+        static_data = data["static"]
+        fixtures_data = data["fixtures"]
+
+        players_df = pd.DataFrame(static_data["elements"])
+        teams_df = pd.DataFrame(static_data["teams"])
+
+        events = static_data.get("events", [])
+        current_gw = get_active_gameweek(events)
+        if request.force_next_gameweek:
+            next_event = next((e for e in events if e.get("is_next")), None)
+            if next_event:
+                current_gw = next_event["id"]
+                print(f"[chip-suggestions] force_next_gameweek -> start_gw={current_gw}")
+
+        manager_team = fpl_service.get_manager_team(request.manager_id)
+        current_squad_ids = [p["element"] for p in manager_team.get("picks", [])]
+
+        advisor = ChipAdvisor(
+            players_df=players_df,
+            teams_df=teams_df,
+            fixtures=fixtures_data,
+            current_gw=current_gw
+        )
+
+        recommendations = advisor.get_all_recommendations(
+            current_squad=current_squad_ids,
+            chips_used=request.chips_used
+        )
+
+        return {
+            "manager_id": request.manager_id,
+            "current_gw": current_gw,
+            "chip_advice": recommendations
+        }
+    except Exception as e:
+        print(f"Chip suggestion error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

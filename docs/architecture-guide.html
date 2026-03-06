@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>FPL Optimizer Architecture Whitepaper</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+      background-color: #050607;
+      color: #f6fbff;
+    }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: radial-gradient(circle at top, #2e3a65 0%, #050607 55%);
+    }
+    .page {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 48px 24px 64px;
+    }
+    .hero {
+      padding: 40px 48px;
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 32px;
+      box-shadow: 0 30px 80px rgba(0,0,0,0.45);
+      margin-bottom: 48px;
+    }
+    .hero h1 {
+      margin: 0 0 16px;
+      font-size: clamp(2.8rem, 4vw, 3.6rem);
+      letter-spacing: -0.03em;
+    }
+    .hero p {
+      margin: 0;
+      font-size: 1.1rem;
+      color: #c1cce1;
+    }
+    .tagline {
+      text-transform: uppercase;
+      letter-spacing: 0.5em;
+      font-size: 0.7rem;
+      color: #7c8dd9;
+      margin-bottom: 12px;
+    }
+    section {
+      margin-bottom: 40px;
+    }
+    .grid {
+      display: grid;
+      gap: 20px;
+    }
+    .grid-3 {
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    }
+    .card {
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 20px;
+      padding: 24px;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.04);
+    }
+    .card h3 {
+      margin-top: 0;
+      margin-bottom: 12px;
+      font-size: 1.3rem;
+    }
+    .callout {
+      border-left: 4px solid #7c8dd9;
+      padding: 18px 20px;
+      background: rgba(124,141,217,0.08);
+      color: #e0e6ff;
+      border-radius: 16px;
+      line-height: 1.5;
+    }
+    .pipeline {
+      margin-top: 24px;
+      padding: 32px;
+      border-radius: 24px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(7,8,12,0.5));
+      border: 1px solid rgba(255,255,255,0.05);
+    }
+    .pipeline svg {
+      width: 100%;
+      height: auto;
+    }
+    .pipeline strong {
+      display: block;
+      margin-bottom: 8px;
+      color: #fefefe;
+    }
+    .section-title {
+      text-transform: uppercase;
+      font-size: 0.8rem;
+      letter-spacing: 0.4em;
+      color: #6573dd;
+      margin-bottom: 12px;
+    }
+    .highlight {
+      color: #67e8f9;
+    }
+    .table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 16px;
+    }
+    .table th,
+    .table td {
+      padding: 10px 12px;
+      text-align: left;
+      font-size: 0.95rem;
+    }
+    .table th {
+      color: #8fa4ff;
+    }
+    .table tr:nth-child(even) {
+      background: rgba(255,255,255,0.02);
+    }
+    .footer {
+      text-align: center;
+      margin-top: 60px;
+      font-size: 0.85rem;
+      color: #9aa7c9;
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="hero">
+      <div class="tagline">2026 Architecture Brief</div>
+      <h1>FPL Lineup Optimizer</h1>
+      <p>A white-paper style narrative that captures how the optimizer moves data from the FPL cloud through ML-enhanced predictors into transfer-grade decisions.</p>
+    </div>
+
+    <section>
+      <div class="section-title">One Liner</div>
+      <p class="callout">Data ingestion → prediction services (rule-based + ML) → MILP planning (single/multi/robust) → analytics + chip guidance → curated API for the frontend. Designed for observability, optional ML, and graceful fallbacks.</p>
+    </section>
+
+    <section>
+      <div class="section-title">System Layers</div>
+      <div class="grid grid-3">
+        <div class="card">
+          <h3>Data Fabric</h3>
+          <ul>
+            <li><strong>FPLService</strong> caches `/bootstrap-static`, `/fixtures`, manager picks, chips, ownership for ~1hr so we amortize API calls.</li>
+            <li><strong>HistoricalDataService</strong> persists element-summary data under `data/cache/all_player_history.json` to reconstruct past GWs and power ML feature engineering.</li>
+            <li>Fixture metadata drives `FixtureAnalyzer`, enabling DGW/BGW detection, FDR averages, and tickers used by chips, analytics, and front-end labels.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Prediction Stack</h3>
+          <ul>
+            <li>Rule-based `PointPredictor`: xG/xA proxies, ICT/CBIT/CBIRT bonuses, fixture difficulty, ownership adjustments, optional Understat enrichments.</li>
+            <li>ML `MLPredictor`: loads `models/current` artifacts (metadata, scaler, XGB/NN weights, `feature_columns.csv`), extracts engineered features (form, minutes, fixtures, health) from bootstrap + history, ensembles XGB+NN outputs, returns confidence.</li>
+            <li>Blend logic in `backend/main.py` uses `ml_blend_weight` with graceful fallback when `confidence == 30` or ML fails; rule-predictions always available as backup.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Optimization Engines</h3>
+          <ul>
+            <li>`FPLOptimizer`: single GW LP maximizing 0.9×starters + 0.1×bench, enforces budget, squad/starter counts, per-team cap, and strategy-specific boosts (safe/differential/transfers/my_squad).</li>
+            <li>`MultiPeriodFPLOptimizer`: 3-8 GW rolling horizon, transfer banking (≤5 FTs), hit penalties, chip activation (Wildcard/Free Hit/Triple Captain/Bench Boost), captain + vice nearly gameweek aware.</li>
+            <li>`RobustOptimizer`: box uncertainty (σ derived from XP × √(1−R²)), γ-level hedging, same positional/budget constraints as base solver but built for worst-case.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-title">Data Flow Diagrams</div>
+      <div class="pipeline">
+        <strong>Diagram 1: Real-time Optimization Flow</strong>
+        <svg viewBox="0 0 960 240" role="img" aria-label="Data Flow Diagram">
+          <defs>
+            <linearGradient id="flow" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="#ff9a3c" />
+              <stop offset="50%" stop-color="#7c8dd9" />
+              <stop offset="100%" stop-color="#67e8f9" />
+            </linearGradient>
+          </defs>
+          <rect x="40" y="40" width="210" height="60" rx="18" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.2)" />
+          <text x="145" y="75" text-anchor="middle" fill="#fefefe" font-size="12">FPLService / History Cache</text>
+          <rect x="280" y="30" width="230" height="90" rx="20" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.25)" />
+          <text x="395" y="50" fill="#fefefe" font-size="11" text-anchor="middle">Players, Fixtures, Teams, Picks</text>
+          <text x="395" y="70" fill="#fefefe" font-size="11" text-anchor="middle">+ History DataFrame</text>
+          <path d="M250 70 L280 70" stroke="url(#flow)" stroke-width="4" marker-end="url(#arrow)" />
+          <path d="M520 70 L600 70" stroke="url(#flow)" stroke-width="4" marker-end="url(#arrow)" />
+          <rect x="600" y="25" width="260" height="100" rx="28" fill="rgba(124,141,217,0.08)" stroke="rgba(255,255,255,0.25)" />
+          <text x="730" y="45" fill="#fefefe" font-size="11" text-anchor="middle">PointPredictor</text>
+          <text x="730" y="65" fill="#fefefe" font-size="11" text-anchor="middle">+ ML Predictor blend</text>
+          <text x="730" y="85" fill="#fefefe" font-size="11" text-anchor="middle">→ blended xp_gw columns</text>
+          <path d="M860 75 L930 75" stroke="#6ef2d0" stroke-width="4" marker-end="url(#arrow)" />
+          <rect x="930" y="20" width="140" height="110" rx="22" fill="rgba(103,232,249,0.15)" stroke="rgba(255,255,255,0.25)" />
+          <text x="1000" y="45" fill="#050607" font-size="14" text-anchor="middle" font-weight="600">Multi-period MILP</text>
+          <text x="1000" y="65" fill="#050607" font-size="12" text-anchor="middle">Transfers, Chips, Captain</text>
+          <text x="1000" y="85" fill="#050607" font-size="12" text-anchor="middle">→ Lineup + GW plans</text>
+          <defs>
+            <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L6,3 L0,6 Z" fill="#67e8f9" />
+            </marker>
+          </defs>
+        </svg>
+        <p style="margin-top: 20px; color:#c1cce1;">Input stream: cached FPL + history data feeds both rule-based and ML predictors. The blended `xp_gw*` columns flow into the optimizer for squad + captain planning with chip logic upstream.</p>
+      </div>
+
+      <div class="pipeline" style="margin-top: 28px;">
+        <strong>Diagram 2: ML Feature & Artifact Chain</strong>
+        <svg viewBox="0 0 920 220" role="img" aria-label="ML Artifact Chain">
+          <rect x="40" y="30" width="200" height="60" rx="18" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.2)" />
+          <text x="140" y="65" text-anchor="middle" fill="#fefefe" font-size="12">History + Bootstrap → Feature extractor</text>
+          <path d="M240 60 L320 60" stroke="url(#flow)" stroke-width="4" marker-end="url(#arrow)" />
+          <rect x="320" y="10" width="120" height="120" rx="20" fill="rgba(124,141,217,0.06)" stroke="rgba(255,255,255,0.2)" />
+          <text x="380" y="45" fill="#fefefe" font-size="12" text-anchor="middle">Derived features</text>
+          <text x="380" y="65" fill="#fefefe" font-size="12" text-anchor="middle">form, minutes, fixtures</text>
+          <path d="M440 60 L520 60" stroke="url(#flow)" stroke-width="4" marker-end="url(#arrow)" />
+          <rect x="520" y="10" width="180" height="120" rx="20" fill="rgba(103,232,249,0.12)" stroke="rgba(255,255,255,0.25)" />
+          <text x="610" y="40" fill="#050607" font-size="12" text-anchor="middle">Scaler + XGB + NN artifacts</text>
+          <text x="610" y="60" fill="#050607" font-size="12" text-anchor="middle">`models/current/*`</text>
+          <text x="610" y="80" fill="#050607" font-size="12" text-anchor="middle">metadata + ensemble weights</text>
+          <path d="M700 60 L780 60" stroke="#ff9a3c" stroke-width="4" marker-end="url(#arrow)" />
+          <rect x="780" y="20" width="120" height="100" rx="20" fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.2)" />
+          <text x="840" y="50" fill="#fefefe" font-size="12" text-anchor="middle">MLPredictor returns</text>
+          <text x="840" y="70" fill="#fefefe" font-size="12" text-anchor="middle">`predicted_points`, `confidence`</text>
+          <text x="840" y="90" fill="#fefefe" font-size="12" text-anchor="middle">→ blended into rule table</text>
+        </svg>
+        <p style="margin-top: 20px; color:#c1cce1;">Detailed ML chain: history/fixtures feed the extractor, output scaled features, the XGBoost+NN ensemble uses artifacts under `models/current`, resulting predictions with confidence metrics.</p>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-title">Core APIs</div>
+      <div class="grid grid-3">
+        <div class="card">
+          <h3>Optimization Suite</h3>
+          <p>Endpoints include `/api/optimize`, `/api/optimize/compare`, `/api/optimize/multi-period`, and `/api/optimize/robust`—all routed through `backend/main.py`.</p>
+          <p>Multi-period accepts ML blend flags, chips, banked transfers, strategy toggles.</p>
+        </div>
+        <div class="card">
+          <h3>Analytics</h3>
+          <p>/api/ev/*, /api/ownership/*, and /api/live/* deliver EV dashboards, ownership diffs, and live trends used by `frontend/src/components/analytics`.</p>
+        </div>
+        <div class="card">
+          <h3>Chip & Backtest</h3>
+          <p>Chip recommendations (`/api/chip-suggestions`) reuse `ChipAdvisor`. Backtests and SSE streams rely on `BacktestEngine` to replay past GWs.</p>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="section-title">Training & Artifacts</div>
+      <table class="table">
+        <thead>
+          <tr><th>Component</th><th>Location</th><th>Purpose</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>ML artifacts</td><td>`backend/models/current/`</td><td>metadata, scaler, XGB/NN weights, feature columns required by `MLPredictor`.</td></tr>
+          <tr><td>Training pipeline</td><td>`backend/ml_training.py`, `datasets/fpl_points_v1/`</td><td>Extracts features from historical caches, trains ensemble models, exports artifacts.</td></tr>
+          <tr><td>Specs</td><td>`docs/plans/ML-INTEGRATION-SPEC.md`, `docs/plans/ML-MODELS-DESIGN.md`</td><td>Detail feature contract and optional config toggles (e.g., `ML_ENABLED`, `ml_blend_weight`).</td></tr>
+        </tbody>
+      </table>
+      <p class="callout">Model contract ensures ML path stays optional: `main.py` only imports ML when `use_ml_predictions` true, `HistoricalDataService` preloads history, blend weight controls how much ML vs rule data drives 3-8 GW plans.</p>
+    </section>
+
+    <section>
+      <div class="section-title">Operational Notes</div>
+      <div class="grid grid-3">
+        <div class="card">
+          <h3>Observability</h3>
+          <ul>
+            <li>Startup logs announce CORS and origins.</li>
+            <li>Multi-period logs include `force_next_gameweek` overrides and ML blend metadata.</li>
+            <li>Exceptions push tracebacks plus analytics enrichment errors.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Fallbacks</h3>
+          <ul>
+            <li>ML path uses confidence; predictions with 30 trigger fallbacks documented in the team playbook.</li>
+            <li>If ML errors, blending defaults to rule values; `MLPredictor.predict_batch` returns baseline with confidence=30.</li>
+            <li>`use_ml_predictions` remains a request-level opt-in flag until frontend surfaces it.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3>Next Steps</h3>
+          <ol>
+            <li>Expose ML blend controls on the frontend and highlight confidence metrics.</li>
+            <li>Document chip recommendations in UI and align with backend advisor output.</li>
+            <li>Use `docs/OPTIMIZER-ARCHITECTURE.md` and this whitepaper as references for training and product planning.</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    <div class="footer">Generated for the FPL optimizer team on March 6, 2026. Keep this guide close when planning architecture reviews or ML deployments.</div>
+  </div>
+</body>
+</html>
