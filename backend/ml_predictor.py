@@ -210,8 +210,8 @@ class MLPredictor:
         )
         features["start_probability"] = self._compute_start_prob(recent_mins)
 
-        # ICT
-        ict_total = player_history["ict_index"].sum()
+        # ICT values from FPL history can be strings; coerce before aggregation.
+        ict_total = pd.to_numeric(player_history["ict_index"], errors="coerce").fillna(0).sum()
         if total_minutes > 0:
             features["ict_per_90"] = ict_total / (total_minutes / 90)
         else:

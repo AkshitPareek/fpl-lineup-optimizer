@@ -1,0 +1,363 @@
+{
+  "dataset_name": "fpl_points_v1",
+  "created_at": "2026-03-05T19:03:40.261590",
+  "n_splits": 3,
+  "feature_metadata": {
+    "feature_names": [
+      "now_cost",
+      "total_points_rolling_1",
+      "total_points_rolling_3",
+      "total_points_rolling_6",
+      "minutes_rolling_1",
+      "minutes_rolling_3",
+      "minutes_rolling_6",
+      "goals_scored_rolling_1",
+      "goals_scored_rolling_3",
+      "assists_rolling_1",
+      "assists_rolling_3",
+      "clean_sheets_rolling_1",
+      "clean_sheets_rolling_3",
+      "avg_fdr_next_3",
+      "avg_fdr_next_6",
+      "dgw_next_3",
+      "dgw_next_6",
+      "bgw_next_3",
+      "team_points_rolling_3",
+      "team_goals_rolling_3",
+      "team_conceded_rolling_3",
+      "injury_risk_score",
+      "form_trend",
+      "points_per_minute",
+      "value_ratio",
+      "ownership_factor",
+      "opp_strength",
+      "poly_now_cost^2",
+      "poly_now_cost avg_fdr_next_3",
+      "poly_now_cost avg_fdr_next_6",
+      "poly_now_cost injury_risk_score",
+      "poly_now_cost form_trend",
+      "poly_now_cost ownership_factor",
+      "poly_avg_fdr_next_3^2",
+      "poly_avg_fdr_next_3 avg_fdr_next_6",
+      "poly_avg_fdr_next_3 injury_risk_score",
+      "poly_avg_fdr_next_3 form_trend",
+      "poly_avg_fdr_next_3 ownership_factor",
+      "poly_avg_fdr_next_6^2",
+      "poly_avg_fdr_next_6 injury_risk_score",
+      "poly_avg_fdr_next_6 form_trend",
+      "poly_avg_fdr_next_6 ownership_factor",
+      "poly_injury_risk_score^2",
+      "poly_injury_risk_score form_trend",
+      "poly_injury_risk_score ownership_factor",
+      "poly_form_trend^2",
+      "poly_form_trend ownership_factor",
+      "poly_ownership_factor^2",
+      "total_points_rolling_3_x_avg_fdr_next_3",
+      "total_points_rolling_6_x_avg_fdr_next_6",
+      "injury_risk_score_x_form_trend",
+      "now_cost_x_form_trend",
+      "minutes_rolling_1_x_goals_scored_rolling_1",
+      "minutes_rolling_3_x_goals_scored_rolling_3",
+      "team_points_x_team_goals",
+      "now_cost_x_opp_strength",
+      "form_trend_x_value_ratio",
+      "total_points_x_ownership_factor",
+      "points_per_minute_rolling_3",
+      "points_per_minute_rolling_6",
+      "team_points_per_conceded",
+      "team_goal_diff",
+      "goals_to_assists_ratio_3",
+      "fdr_improvement",
+      "points_std_rolling",
+      "minutes_std_rolling",
+      "max_goals_rolling",
+      "points_vs_fdr_3",
+      "team_offensive_score",
+      "form_trend_abs",
+      "log_now_cost",
+      "log_total_points_rolling_1",
+      "log_total_points_rolling_3",
+      "log_avg_fdr_next_3"
+    ],
+    "n_features": 121,
+    "scaler_mean": [
+      43.302083333333336,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      0.0,
+      4.04375,
+      3.9821874999999998,
+      0.0,
+      0.0,
+      0.0,
+      4.182291666666667,
+      4.453125,
+      4.578125,
+      0.0,
+      -0.04682291666666666,
+      0.0,
+      0.0,
+      0.027604166666666666,
+      3.0
+    ],
+    "scaler_scale": [
+      3.798628567398444,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      0.5578945726270034,
+      0.5863689522622112,
+      1.0,
+      1.0,
+      1.0,
+      2.82531321241803,
+      2.7797426861207257,
+      2.8365436393097028,
+      1.0,
+      0.9805221875654624,
+      1.0,
+      1.0,
+      0.05607370134598651,
+      1.0
+    ],
+    "feature_stats": {
+      "now_cost": {
+        "mean": 43.302083333333336,
+        "std": 3.80855963942415,
+        "min": 38.0,
+        "max": 57.0
+      },
+      "total_points_rolling_1": {
+        "mean": 0.0,
+        "std": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "total_points_rolling_3": {
+        "mean": 0.0,
+        "std": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "total_points_rolling_6": {
+        "mean": 0.0,
+        "std": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "minutes_rolling_1": {
+        "mean": 0.0,
+        "std": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "minutes_rolling_3": {
+        "mean": 0.0,
+        "std": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "minutes_rolling_6": {
+        "mean": 0.0,
+        "std": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "goals_scored_rolling_1": {
+        "mean": 0.0,
+        "std": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "goals_scored_rolling_3": {
+        "mean": 0.0,
+        "std": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "assists_rolling_1": {
+        "mean": 0.0,
+        "std": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "assists_rolling_3": {
+        "mean": 0.0,
+        "std": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "clean_sheets_rolling_1": {
+        "mean": 0.0,
+        "std": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "clean_sheets_rolling_3": {
+        "mean": 0.0,
+        "std": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "avg_fdr_next_3": {
+        "mean": 4.04375,
+        "std": 0.5593531230183367,
+        "min": 3.03,
+        "max": 4.99
+      },
+      "avg_fdr_next_6": {
+        "mean": 3.9821874999999998,
+        "std": 0.5879019456031584,
+        "min": 3.01,
+        "max": 5.0
+      },
+      "dgw_next_3": {
+        "mean": 0.0,
+        "std": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "dgw_next_6": {
+        "mean": 0.0,
+        "std": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "bgw_next_3": {
+        "mean": 0.0,
+        "std": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "team_points_rolling_3": {
+        "mean": 4.182291666666667,
+        "std": 2.832699664794162,
+        "min": 0.0,
+        "max": 9.0
+      },
+      "team_goals_rolling_3": {
+        "mean": 4.453125,
+        "std": 2.7870099996627022,
+        "min": 0.0,
+        "max": 9.0
+      },
+      "team_conceded_rolling_3": {
+        "mean": 4.578125,
+        "std": 2.84395945232912,
+        "min": 0.0,
+        "max": 9.0
+      },
+      "injury_risk_score": {
+        "mean": 0.0,
+        "std": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "form_trend": {
+        "mean": -0.04682291666666666,
+        "std": 0.983085648639569,
+        "min": -2.33,
+        "max": 2.55
+      },
+      "points_per_minute": {
+        "mean": 0.0,
+        "std": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "value_ratio": {
+        "mean": 0.0,
+        "std": 0.0,
+        "min": 0.0,
+        "max": 0.0
+      },
+      "ownership_factor": {
+        "mean": 0.027604166666666666,
+        "std": 0.056220299508174365,
+        "min": 0.0,
+        "max": 0.2
+      },
+      "opp_strength": {
+        "mean": 3.0,
+        "std": 0.0,
+        "min": 3.0,
+        "max": 3.0
+      }
+    }
+  },
+  "splits": {
+    "train": 192,
+    "validation": 41,
+    "test": 41
+  },
+  "target_column": "actual_points",
+  "preprocessing": "StandardScaler",
+  "dataset_hash": "8b4bc60f926298b949fff41998f1454a3a869f7dd3f2d808d9be1bf322040e8f",
+  "advanced_features": [
+    "poly_now_cost^2",
+    "poly_now_cost avg_fdr_next_3",
+    "poly_now_cost avg_fdr_next_6",
+    "poly_now_cost injury_risk_score",
+    "poly_now_cost form_trend",
+    "poly_now_cost ownership_factor",
+    "poly_avg_fdr_next_3^2",
+    "poly_avg_fdr_next_3 avg_fdr_next_6",
+    "poly_avg_fdr_next_3 injury_risk_score",
+    "poly_avg_fdr_next_3 form_trend",
+    "poly_avg_fdr_next_3 ownership_factor",
+    "poly_avg_fdr_next_6^2",
+    "poly_avg_fdr_next_6 injury_risk_score",
+    "poly_avg_fdr_next_6 form_trend",
+    "poly_avg_fdr_next_6 ownership_factor",
+    "poly_injury_risk_score^2",
+    "poly_injury_risk_score form_trend",
+    "poly_injury_risk_score ownership_factor",
+    "poly_form_trend^2",
+    "poly_form_trend ownership_factor",
+    "poly_ownership_factor^2",
+    "total_points_rolling_3_x_avg_fdr_next_3",
+    "total_points_rolling_6_x_avg_fdr_next_6",
+    "injury_risk_score_x_form_trend",
+    "now_cost_x_form_trend",
+    "minutes_rolling_1_x_goals_scored_rolling_1",
+    "minutes_rolling_3_x_goals_scored_rolling_3",
+    "team_points_x_team_goals",
+    "now_cost_x_opp_strength",
+    "form_trend_x_value_ratio",
+    "total_points_x_ownership_factor",
+    "points_per_minute_rolling_3",
+    "points_per_minute_rolling_6",
+    "team_points_per_conceded",
+    "team_goal_diff",
+    "goals_to_assists_ratio_3",
+    "fdr_improvement",
+    "points_std_rolling",
+    "minutes_std_rolling",
+    "max_goals_rolling",
+    "points_vs_fdr_3",
+    "team_offensive_score",
+    "form_trend_abs",
+    "log_now_cost",
+    "log_total_points_rolling_1",
+    "log_total_points_rolling_3",
+    "log_avg_fdr_next_3"
+  ]
+}

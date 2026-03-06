@@ -1,0 +1,34 @@
+{
+  "version": "current",
+  "training_date": "2026-03-05T00:00:00Z",
+  "features": [
+    "position",
+    "now_cost",
+    "team",
+    "form_points",
+    "form_minutes",
+    "form_xg",
+    "form_xa",
+    "form_ict",
+    "goals_per_90",
+    "assists_per_90",
+    "fixture_score",
+    "double_gw_flag",
+    "blank_gw_flag",
+    "recent_4_minutes_avg",
+    "start_probability",
+    "ict_per_90",
+    "understat_matched",
+    "understat_xG_per_90",
+    "understat_xA_per_90",
+    "injury_status",
+    "availability_factor"
+  ],
+  "metrics": {
+    "note": "provisioned compatibility artifacts for ML-path execution"
+  },
+  "ensemble_weights": {
+    "xgb": 0.6,
+    "nn": 0.4
+  }
+}

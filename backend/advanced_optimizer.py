@@ -521,6 +521,7 @@ class MultiPeriodFPLOptimizer:
         prob += pulp.lpSum(objective_terms)
         
         # Constraints per gameweek
+        prev_gw_squad_ids = list(current_squad_ids) if current_squad_ids else []
         for idx, t in enumerate(horizon):
             # Starter must be in squad
             for j in player_ids:
@@ -700,6 +701,30 @@ class MultiPeriodFPLOptimizer:
                         'element_type': int(get_attr(j, 'element_type'))
                     })
             
+            # Reconcile transfer-out list from actual squad deltas so players excluded
+            # from optimization candidates (e.g. injured in current squad) are still shown.
+            gw_squad_ids = [p['id'] for p in gw_squad]
+            expected_out_ids = sorted(list(set(prev_gw_squad_ids) - set(gw_squad_ids)))
+            if expected_out_ids:
+                gw_transfers_out = []
+                for out_id in expected_out_ids:
+                    player_row = self.players[self.players['id'] == out_id]
+                    if not player_row.empty:
+                        row = player_row.iloc[0]
+                        gw_transfers_out.append({
+                            'id': int(out_id),
+                            'name': str(row.get('web_name', out_id)),
+                            'cost': float((row.get('now_cost', 0) or 0) / 10.0),
+                            'element_type': int(row.get('element_type', 0) or 0)
+                        })
+                    else:
+                        gw_transfers_out.append({
+                            'id': int(out_id),
+                            'name': str(out_id),
+                            'cost': 0.0,
+                            'element_type': 0
+                        })
+
             # Sort by position for display
             gw_starters.sort(key=lambda p: (p['element_type'], -p['expected_points']))
             gw_bench.sort(key=lambda p: -p['expected_points'])
@@ -774,6 +799,7 @@ class MultiPeriodFPLOptimizer:
             
             if idx == len(horizon) - 1:
                 final_squad = gw_squad
+            prev_gw_squad_ids = gw_squad_ids
         
         total_xp = sum(gp.expected_points for gp in gameweek_plans)
         total_hits = sum(ts.hit_cost for ts in transfer_summary)
@@ -987,4 +1013,3 @@ class MultiPeriodFPLOptimizer:
             'chip_recommendations': solution.chip_recommendations or [],
             'captain_recommendations': solution.captain_recommendations or []
         }
-

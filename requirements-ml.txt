@@ -1,0 +1,156 @@
+# FPL ML Integration - Dependencies
+
+## System Dependencies
+
+### PostgreSQL Client Tools
+Required for database operations (backup, restore, migrations).
+
+**Ubuntu/Debian:**
+```bash
+sudo apt-get update
+sudo apt-get install postgresql-client
+```
+
+**macOS:**
+```bash
+brew install libpq
+brew link libpq --force
+```
+
+**Windows:**
+Download PostgreSQL installer from https://www.postgresql.org/download/windows/
+Select "Command Line Tools" during installation.
+
+Verify installation:
+```bash
+psql --version
+pg_dump --version
+```
+
+---
+
+## Python Dependencies
+
+Install with:
+```bash
+pip install -r requirements.txt
+```
+
+### Core Dependencies (FastAPI, Database, Utilities)
+- fastapi>=0.104.0
+- uvicorn[standard]>=0.24.0
+- gunicorn>=21.2.0
+- httpx>=0.25.0
+- pulp>=2.8.0
+- pandas>=2.1.0
+- requests>=2.31.0
+- python-multipart>=0.0.6
+- numpy>=1.24.0
+- tqdm>=4.66.0
+- sqlalchemy>=2.0.0
+- psycopg2-binary>=2.9.0
+- alembic>=1.11.0
+
+### ML Core
+- scikit-learn>=1.2.0
+- xgboost>=2.0.0
+- tensorflow>=2.13.0  # or tensorflow-cpu if no GPU
+
+### Hyperparameter Tuning
+- scikit-optimize>=0.9.0
+- optuna>=3.0.0
+
+### Serialization & Versioning
+- joblib>=1.2.0
+- mlflow>=2.0.0
+
+### Visualization (for EDA)
+- matplotlib>=3.6.0
+- seaborn>=0.12.0
+- plotly>=5.13.0
+
+### Utilities
+- pyyaml>=6.0
+- wandb>=0.15.0  # Optional: for experiment tracking
+
+---
+
+## Optional Features
+
+### Understat Integration (if using xG/xA data)
+```bash
+pip install understatapi rapidfuzz
+```
+
+---
+
+## Development Dependencies
+
+For testing and development (not in production requirements):
+```bash
+pip install pytest pytest-cov pytest-asyncio black flake8 mypy pre-commit
+```
+
+---
+
+## Docker Setup (Alternative)
+
+If using Docker, the PostgreSQL client tools are included in the base image:
+
+```dockerfile
+FROM python:3.11-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    postgresql-client \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application
+COPY . /app
+WORKDIR /app
+```
+
+---
+
+## Verification
+
+After installation, verify all dependencies:
+
+```bash
+# Python packages
+python -c "import pandas, numpy, sklearn, xgboost, tensorflow, sqlalchemy; print('✅ All Python packages OK')"
+
+# PostgreSQL client
+psql --version
+pg_dump --version
+
+# Run database initialization test
+python backend/scripts/initialize_db.py --local --skip-migrations
+```
+
+---
+
+## Troubleshooting
+
+**"psql: command not found"**
+- Install PostgreSQL client tools (see above)
+- Ensure PostgreSQL client binaries are in PATH
+
+**"No module named 'xgboost'"**
+- XGBoost requires C++ compiler. On Ubuntu: `sudo apt-get install build-essential`
+- Or use pre-built: `pip install xgboost --no-binary xgboost`
+
+**"TensorFlow import errors"**
+- If no GPU, install tensorflow-cpu instead: `pip install tensorflow-cpu`
+- Or use lighter alternative: `pip install jax` and adjust code
+
+**"psycopg2-binary installation fails"**
+- Install system dependencies first:
+  - Ubuntu: `sudo apt-get install libpq-dev python3-dev`
+  - macOS: `brew install postgresql`
+  - Then: `pip install psycopg2-binary`
