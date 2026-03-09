@@ -114,7 +114,8 @@ research/
 | ID | Name | Status | Owner | Hypothesis | Key Finding |
 |----|------|--------|-------|------------|-------------|
 | EXP-001 | Baseline Establishment | ✅ Complete | Initial | Establish reference metrics | [Results](./03-experiments/2026-03-09-baseline-establishment/) |
-| EXP-002 | Feature Engineering v1 | 🟡 Planned | TBD | Polynomial features improve RMSE | - |
+| EXP-002 | LightGBM vs XGBoost | ✅ Complete | Autonomous | LightGBM better than XGBoost | [No sig. improvement](./03-experiments/2026-03-09-exp-001-lightgbm-vs-xgboost/) |
+| EXP-003 | Feature Engineering v1 | 🟡 Planned | TBD | Polynomial features improve RMSE | - |
 | EXP-003 | Position-Specific Models | 🟡 Planned | TBD | Separate models per position help | - |
 | EXP-004 | Attention LSTM | 🟡 Planned | TBD | Attention mechanism captures form | - |
 | EXP-005 | Optimized Ensembles | 🟡 Planned | TBD | Learned weights beat uniform | - |

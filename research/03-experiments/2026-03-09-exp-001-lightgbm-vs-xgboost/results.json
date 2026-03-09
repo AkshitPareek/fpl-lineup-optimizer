@@ -1,0 +1,44 @@
+{
+  "run_id": 1,
+  "timestamp": "2026-03-09T23:25:00",
+  "type": "model_comparison",
+  "autonomous": true,
+  "baseline": {
+    "model": "xgboost",
+    "metrics": {
+      "rmse": 0.8568,
+      "mae": 0.7231,
+      "r2": -0.0204,
+      "spearman_corr": 0.0241
+    }
+  },
+  "test": {
+    "model": "lightgbm",
+    "metrics": {
+      "rmse": 0.8526,
+      "mae": 0.7165,
+      "r2": -0.0106,
+      "spearman_corr": 0.0668
+    }
+  },
+  "comparison": {
+    "rmse_delta": -0.0041,
+    "relative_percent": 0.48,
+    "effect_size": 0.08,
+    "is_significant": false,
+    "is_improvement": false
+  },
+  "validation_layers": {
+    "layer_1_p_value": "N/A",
+    "layer_2_effect_size": "FAIL - 0.08 < 0.2",
+    "layer_3_relative_improvement": "FAIL - 0.48% < 1%",
+    "layer_4_trend": "N/A"
+  },
+  "conclusion": "LightGBM is numerically better but not statistically significant improvement",
+  "recommendation": "Keep XGBoost as baseline, try ensemble approach next",
+  "next_steps": [
+    "EXP-002: Ensemble XGBoost + LightGBM",
+    "EXP-003: Feature engineering",
+    "EXP-004: Position-specific models"
+  ]
+}
