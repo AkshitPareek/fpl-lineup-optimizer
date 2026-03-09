@@ -1,0 +1,14 @@
+{
+  "experiment_id": "EXP-010",
+  "name": "Stacking Ensemble",
+  "status": "completed",
+  "timestamp": "2026-03-09T23:54:36.373343",
+  "hypothesis": "Sklearn StackingRegressor with Ridge meta-learner",
+  "results": {
+    "rmse": 0.85112720599637,
+    "relative_improvement": 0.6620908034115273,
+    "cohens_d": 0.1283845450861597,
+    "is_significant": false
+  },
+  "conclusion": "Stacking ensemble: 0.66% improvement - Not significant"
+}

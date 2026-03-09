@@ -1,0 +1,19 @@
+{
+  "experiment_id": "EXP-009",
+  "name": "Weighted Ensemble",
+  "status": "completed",
+  "timestamp": "2026-03-09T23:54:33.132252",
+  "hypothesis": "Learn optimal ensemble weights using Ridge regression",
+  "results": {
+    "rmse": 0.8514175852389188,
+    "relative_improvement": 0.6281996686602773,
+    "cohens_d": 0.1345809291857376,
+    "is_significant": false,
+    "weights": {
+      "xgb": -0.1809965045153463,
+      "lgb": 0.10719825707942215,
+      "rf": -0.023594357103907143
+    }
+  },
+  "conclusion": "Weighted ensemble: 0.63% improvement with weights {'xgb': -0.1809965045153463, 'lgb': 0.10719825707942215, 'rf': -0.023594357103907143} - Not significant"
+}

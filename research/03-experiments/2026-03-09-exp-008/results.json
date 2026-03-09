@@ -1,0 +1,23 @@
+{
+  "experiment_id": "EXP-008",
+  "name": "Hyperparameter Optimization",
+  "status": "completed",
+  "timestamp": "2026-03-09T23:54:30.606425",
+  "hypothesis": "200+ Optuna trials to find optimal XGBoost hyperparameters",
+  "results": {
+    "rmse": 0.8516056396623934,
+    "relative_improvement": 0.6062512065367137,
+    "cohens_d": 0.10151554644107819,
+    "is_significant": false,
+    "best_params": {
+      "n_estimators": 108,
+      "max_depth": 8,
+      "learning_rate": 0.02577960402412914,
+      "subsample": 0.7074212753170258,
+      "colsample_bytree": 0.5775051138078803,
+      "reg_alpha": 3.6343004829739005,
+      "reg_lambda": 0.45463113204561917
+    }
+  },
+  "conclusion": "Optuna optimization: 0.61% improvement with params {'n_estimators': 108, 'max_depth': 8, 'learning_rate': 0.02577960402412914, 'subsample': 0.7074212753170258, 'colsample_bytree': 0.5775051138078803, 'reg_alpha': 3.6343004829739005, 'reg_lambda': 0.45463113204561917} - Not significant"
+}
