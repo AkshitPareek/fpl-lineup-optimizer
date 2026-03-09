@@ -1,0 +1,23 @@
+{
+  "run_id": 4,
+  "timestamp": "2026-03-09T23:38:45.022867",
+  "type": "feature_engineering",
+  "strategy": "polynomial_features",
+  "features_before": 30,
+  "features_after": 465,
+  "baseline_rmse": 0.8568,
+  "test_rmse": 0.8541466267418057,
+  "test_metrics": {
+    "rmse": 0.8541466267418057,
+    "mae": 0.715777381435551,
+    "r2": -0.014167697629412723,
+    "spearman_corr": 0.0832280141177984
+  },
+  "improvement": {
+    "rmse_delta": 0.002653373258194258,
+    "relative_percent": 0.3096840870908331,
+    "effect_size": 0.005306746516388516,
+    "is_significant": false,
+    "is_improvement": false
+  }
+}

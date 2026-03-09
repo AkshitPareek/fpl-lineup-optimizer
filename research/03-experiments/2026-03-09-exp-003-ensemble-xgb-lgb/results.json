@@ -1,0 +1,25 @@
+{
+  "run_id": 3,
+  "timestamp": "2026-03-09T23:38:14.186049",
+  "type": "ensemble",
+  "models": [
+    "xgboost",
+    "lightgbm"
+  ],
+  "method": "simple_average",
+  "baseline_rmse": 0.8567575912550265,
+  "ensemble_rmse": 0.8536882185621073,
+  "ensemble_metrics": {
+    "rmse": 0.8536882185621073,
+    "mae": 0.7192980828693839,
+    "r2": -0.013079411378969175,
+    "spearman_corr": 0.08846248041451527
+  },
+  "improvement": {
+    "rmse_delta": 0.003069372692919181,
+    "relative_percent": 0.3582545079551606,
+    "effect_size": 0.006138745385838362,
+    "is_significant": false,
+    "is_improvement": false
+  }
+}

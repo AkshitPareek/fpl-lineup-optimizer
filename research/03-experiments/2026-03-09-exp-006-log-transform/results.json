@@ -1,0 +1,21 @@
+{
+  "run_id": 6,
+  "timestamp": "2026-03-09T23:39:45.133833",
+  "type": "preprocessing",
+  "strategy": "log_transform",
+  "baseline_rmse": 0.8568,
+  "test_rmse": 0.8691845883612538,
+  "test_metrics": {
+    "rmse": 0.8691845883612538,
+    "mae": 0.7382767930787646,
+    "r2": -0.05019258570043017,
+    "spearman_corr": -0.14255196548058968
+  },
+  "improvement": {
+    "rmse_delta": -0.012384588361253779,
+    "relative_percent": -1.445446820874624,
+    "effect_size": 0.024769176722507558,
+    "is_significant": false,
+    "is_improvement": false
+  }
+}
