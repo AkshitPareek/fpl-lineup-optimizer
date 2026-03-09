@@ -118,8 +118,12 @@ Track how concepts develop over time:
 | 2026-03-09 | Validation Framework | ✅ Validated | EXP-001 |
 | 2026-03-09 | A/B Testing | ✅ Validated | EXP-001 |
 | 2026-03-09 | Baseline Models | ✅ Established | EXP-001 |
-| 2026-03-?? | LSTM Attention | 🟡 Planned | EXP-004 |
-| 2026-03-?? | Position Models | 🟡 Planned | EXP-003 |
+| 2026-03-09 | LightGBM Comparison | ✅ Tested | EXP-002 |
+| 2026-03-09 | Simple Ensemble | ⚠️ Rejected | EXP-003 |
+| 2026-03-09 | Polynomial Features | ⚠️ Rejected | EXP-004 |
+| 2026-03-09 | Log Transform | ❌ Rejected | EXP-006 |
+| 2026-03-?? | Position Models | 🟡 Planned | EXP-007 |
+| 2026-03-?? | LSTM Attention | 🟡 Planned | EXP-010 |
 
 ---
 
@@ -127,20 +131,26 @@ Track how concepts develop over time:
 
 ### Experiments → Concepts
 
-| Experiment | Primary Concept | Secondary Concepts |
-|------------|-----------------|-------------------|
-| [EXP-001](../03-experiments/2026-03-09-baseline-establishment/) | Baseline Establishment | Validation Framework, A/B Testing |
-| EXP-004 (planned) | LSTM Attention | Recurrent Networks, Attention Mechanism |
-| EXP-003 (planned) | Position-Specific Models | Model Specialization, Domain Knowledge |
+| Experiment | Primary Concept | Secondary Concepts | Finding |
+|------------|-----------------|-------------------|---------|
+| [EXP-001](../03-experiments/2026-03-09-baseline-establishment/) | Baseline Establishment | Validation Framework, A/B Testing | Baseline: RMSE 0.8568 |
+| [EXP-002](../03-experiments/2026-03-09-exp-001-lightgbm-vs-xgboost/) | LightGBM Comparison | Gradient Boosting Algorithms | +0.48% (not significant) |
+| [EXP-003](../03-experiments/2026-03-09-exp-003-ensemble-xgb-lgb/) | Simple Ensemble | Ensemble Methods, Model Correlation | +0.36% (not significant) |
+| [EXP-004](../03-experiments/2026-03-09-exp-004-polynomial-features/) | Polynomial Features | Feature Engineering, Curse of Dimensionality | +0.31% (not significant) |
+| [EXP-006](../03-experiments/2026-03-09-exp-006-log-transform/) | Log Transform | Target Transformation | -1.45% (WORSE) |
+| EXP-007 (planned) | Position-Specific Models | Model Specialization, Domain Knowledge | Expected: 2-5% improvement |
+| EXP-010 (planned) | LSTM Attention | Recurrent Networks, Attention Mechanism | Expected: 3-5% improvement |
 
 ### Concepts → Experiments
 
-| Concept | Validated By | Planned In |
-|---------|--------------|------------|
-| Validation Framework | EXP-001 | All future |
-| A/B Testing | EXP-001 | All future |
-| LSTM | - | EXP-004 |
-| Ensemble | - | EXP-005 |
+| Concept | Validated By | Rejected By | Planned In |
+|---------|--------------|-------------|------------|
+| Validation Framework | EXP-001 | - | All future |
+| A/B Testing | EXP-001 | - | All future |
+| LightGBM | EXP-002 | - | - |
+| Simple Ensemble | - | EXP-003 | EXP-009 (weighted) |
+| Polynomial Features | - | EXP-004 | EXP-011 (feature selection) |
+| Log Transform | - | EXP-006 | - |
 
 ---
 
@@ -202,22 +212,59 @@ Add a new concept when:
    - Finding: Multiple model types (XGB, LGBM, RF) have similar performance
    - Impact: Ensemble potential confirmed
 
+3. **Algorithm Choice Less Important Than Features** ✅
+   - Source: EXP-002
+   - Finding: LightGBM and XGBoost have equivalent performance
+   - Impact: Focus on features, not algorithms
+
+### Rejected Insights
+
+4. **Simple Ensembles Don't Help** ❌
+   - Source: EXP-003
+   - Finding: Averaging correlated models doesn't reduce error
+   - Impact: Need learned/diverse ensembles
+
+5. **Generic Feature Engineering Doesn't Help** ❌
+   - Source: EXP-004, EXP-006
+   - Finding: Polynomial features and log transforms ineffective or harmful
+   - Impact: Need domain-specific features
+
 ### Proposed Insights (Pending Validation)
 
-3. **Attention Improves Form Modeling** 🟡
-   - Hypothesis: Attention mechanisms better capture recent form
-   - To Test: EXP-004
-
-4. **Position-Specific Models Help** 🟡
+6. **Position-Specific Models Help** 🟡
    - Hypothesis: Different positions need different architectures
-   - To Test: EXP-003
+   - To Test: EXP-007
+
+7. **Hyperparameter Optimization Helps** 🟡
+   - Hypothesis: 200+ Optuna trials can find better hyperparameters
+   - To Test: EXP-008
+
+8. **Attention Improves Form Modeling** 🟡
+   - Hypothesis: Attention mechanisms better capture recent form
+   - To Test: EXP-010
 
 ---
 
 ## 🚧 Work in Progress
 
+### Completed Autonomous Session (2026-03-09)
+
+✅ Ran 4 experiments automatically:
+- EXP-002: LightGBM comparison (+0.48%)
+- EXP-003: Simple ensemble (+0.36%)
+- EXP-004: Polynomial features (+0.31%)
+- EXP-006: Log transform (-1.45%)
+
+✅ No significant improvements found (< 1% threshold)
+✅ Baseline XGBoost well-optimized
+✅ Documentation auto-generated for all experiments
+
 ### Concepts Being Developed
 
+- [ ] Position-Specific Models (EXP-007)
+- [ ] Hyperparameter Optimization (EXP-008)
+- [ ] Weighted/Learned Ensembles (EXP-009)
+- [ ] Temporal Features (EXP-011)
 - [ ] Uncertainty Quantification
 - [ ] Multi-Task Learning (points + minutes)
 - [ ] Transfer Learning Across Seasons
@@ -228,6 +275,7 @@ Add a new concept when:
 - [ ] Feature Importance vs Position
 - [ ] Model Complexity vs Overfitting
 - [ ] Historical Form vs Future Performance
+- [ ] Ensemble Diversity vs Error Reduction
 
 ---
 

@@ -102,30 +102,81 @@ EXP-001
 ├── tests → [XGBoost, LightGBM, Random Forest, Ensemble]
 ├── validates → [Validation Framework, A/B Testing, Data Pipeline]
 ├── produces → [Baseline Metrics]
-├── enables → [EXP-002, EXP-003, EXP-004, EXP-005]
+├── enables → [EXP-002, EXP-003, EXP-004, EXP-005, EXP-006]
 └── related-to → [Methodology Validation]
 ```
 
-### EXP-002: Feature Engineering (Planned)
+### EXP-002: LightGBM vs XGBoost
 
 ```
 EXP-002
 ├── builds-on → [EXP-001]
-├── tests → [Polynomial Features, Interaction Features, Ratio Features]
-├── uses → [Validation Framework]
-├── compares-to → [EXP-001 Baseline]
-└── enables → [Better Model Performance]
+├── tests → [LightGBM, Gradient Boosting Algorithms]
+├── compares-to → [XGBoost Baseline]
+├── produces → [RMSE: 0.8526, +0.48% improvement]
+├── finding → [LightGBM ≈ XGBoost (no significant difference)]
+└── enables → [EXP-003, EXP-005]
+```
+
+### EXP-003: Ensemble XGBoost + LightGBM
+
+```
+EXP-003
+├── builds-on → [EXP-001, EXP-002]
+├── tests → [Simple Averaging Ensemble]
+├── uses → [XGBoost, LightGBM]
+├── compares-to → [XGBoost Baseline, LightGBM]
+├── produces → [RMSE: 0.8537, +0.36% improvement]
+├── finding → [Simple ensemble doesn't help (models too correlated)]
+└── enables → [EXP-005 (Weighted Ensemble)]
+```
+
+### EXP-004: Polynomial Features
+
+```
+EXP-004
+├── builds-on → [EXP-001]
+├── tests → [Polynomial Features (30 → 465 features)]
+├── compares-to → [XGBoost Baseline]
+├── produces → [RMSE: 0.8541, +0.31% improvement]
+├── finding → [More features ≠ better (curse of dimensionality)]
+└── enables → [EXP-008 (Feature Selection)]
+```
+
+### EXP-005: Feature Selection (Failed)
+
+```
+EXP-005
+├── builds-on → [EXP-001]
+├── tests → [RFE with XGBoost]
+├── compares-to → [XGBoost Baseline]
+├── status → [Failed - NameError]
+├── blocking → [Fix: Correct variable reference in run_autoresearch.py]
+└── enables → [Retry after fix]
+```
+
+### EXP-006: Log Transform
+
+```
+EXP-006
+├── builds-on → [EXP-001]
+├── tests → [Log1p Transform for Targets]
+├── compares-to → [XGBoost Baseline]
+├── produces → [RMSE: 0.8692, -1.45% (WORSE)]
+├── finding → [Log transform hurts FPL prediction]
+└── implies → [FPL points not log-normal distributed]
 ```
 
 ### EXP-004: Attention LSTM (Planned)
 
 ```
-EXP-004
+EXP-007 (Planned)
 ├── builds-on → [EXP-001]
-├── tests → [LSTM with Attention]
-├── compares-to → [XGBoost Baseline, LightGBM Baseline]
-├── hypothesis → [Attention improves form modeling]
-└── related-to → [Sequential Modeling, Form Prediction]
+├── tests → [Position-Specific Models]
+├── compares-to → [XGBoost Baseline]
+├── hypothesis → [Position models capture different point distributions]
+├── expected → [2-5% improvement]
+└── related-to → [Domain Knowledge, Position Features]
 ```
 
 ---
@@ -215,31 +266,29 @@ LSTM with Attention
 
 ## Improvement Chains
 
-### Potential Improvement Pathways
+### Actual vs Potential Pathways
 
 ```
-Current State (EXP-001)
+Current State (EXP-001: RMSE 0.8568)
 │
-├── Path 1: Feature Engineering
-│   ├── EXP-002a: Polynomial Features
-│   ├── EXP-002b: Interaction Features
-│   ├── EXP-002c: Ratio Features
-│   └── EXP-002d: Temporal Features
+├── Path 1: Algorithm Choice → ❌ Dead End
+│   ├── EXP-002: LightGBM → 0.8526 (+0.48%, not significant)
+│   └── Finding: Algorithm choice less important than features/data
 │
-├── Path 2: Architecture
-│   ├── EXP-003: Position-Specific Models
-│   ├── EXP-004: Attention LSTM
-│   └── EXP-009: Transformer
+├── Path 2: Simple Ensemble → ❌ Dead End
+│   ├── EXP-003: Average Ensemble → 0.8537 (+0.36%, not significant)
+│   └── Finding: Simple averaging ineffective (models correlated)
 │
-├── Path 3: Ensembling
-│   ├── EXP-005: Optimized Weights
-│   ├── EXP-006: Stacking
-│   └── EXP-007: Blending
+├── Path 3: Feature Engineering → ❌ Dead End (Generic)
+│   ├── EXP-004: Polynomial Features → 0.8541 (+0.31%, not significant)
+│   ├── EXP-006: Log Transform → 0.8692 (-1.45%, WORSE)
+│   └── Finding: Generic feature engineering doesn't help
 │
-└── Path 4: Training
-    ├── EXP-008: Hyperparameter Optimization
-    ├── EXP-010: Multi-Task Learning
-    └── EXP-011: Transfer Learning
+└── Promising Future Paths
+    ├── Path A: Position-Specific Models (EXP-007) → Expected 2-5%
+    ├── Path B: Hyperparameter Optimization (EXP-008) → Expected 1-3%
+    ├── Path C: Weighted/Learned Ensemble (EXP-009) → Expected 1-2%
+    └── Path D: Domain-Specific Features → Expected 1-3%
 ```
 
 ---
@@ -288,19 +337,36 @@ EXP-001 Findings
 ├── High Noise Limits R²
 └── Validation Framework Works
 
-→ Implies: Focus on ensembles and ranking metrics
-→ Implies: Need larger samples for significance
-→ Implies: Attention to feature engineering
+EXP-002-006 Findings (Autonomous Session 1)
+├── LightGBM ≈ XGBoost (no significant difference)
+├── Simple ensembles don't help (models correlated)
+├── Polynomial features ineffective (curse of dimensionality)
+├── Log transform hurts performance
+├── Baseline XGBoost is well-optimized
+└── Need different strategies for improvement
+
+→ Implies: Algorithm choice less important than data/features
+→ Implies: Simple ensemble strategies exhausted
+→ Implies: Need position-specific models and hyperopt
+→ Implies: Focus on domain knowledge, not generic ML
 ```
 
 ### Open Questions
 
 ```
-Unvalidated Hypotheses
-├── Does Attention Help? → [Test: EXP-004]
-├── Do Position Models Help? → [Test: EXP-003]
-├── Which Features Matter? → [Test: EXP-002]
-├── Can We Automate? → [Future Research]
+Validated Hypotheses (Autonomous Session 1)
+├── LightGBM > XGBoost? → [NO: Same performance, EXP-002]
+├── Simple Ensemble Helps? → [NO: +0.36%, not significant, EXP-003]
+├── Polynomial Features Help? → [NO: +0.31%, not significant, EXP-004]
+├── Log Transform Helps? → [NO: -1.45%, hurts performance, EXP-006]
+
+Remaining Unvalidated Hypotheses
+├── Do Position Models Help? → [Test: EXP-007]
+├── Does Hyperopt Help? → [Test: EXP-008]
+├── Does Weighted Ensemble Help? → [Test: EXP-009]
+├── Does Attention Help? → [Test: EXP-010 (LSTM)]
+├── Which Features Matter? → [Test: EXP-011 (Feature Importance)]
+├── Can We Automate? → [YES: This session proved it!]
 └── What's Theoretical Limit? → [Future Analysis]
 ```
 
