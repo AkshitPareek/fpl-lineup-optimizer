@@ -1,0 +1,14 @@
+{
+  "experiment_id": "EXP-017",
+  "name": "Bagging Ensemble",
+  "status": "completed",
+  "timestamp": "2026-03-10T00:04:04.376754",
+  "hypothesis": "Bootstrap aggregation with XGBoost base",
+  "results": {
+    "rmse": 0.8583602592714217,
+    "relative_improvement": -0.18210308956835566,
+    "cohens_d": -0.014931249432265759,
+    "is_significant": false
+  },
+  "conclusion": "Bagging ensemble: -0.18% improvement - Not significant"
+}

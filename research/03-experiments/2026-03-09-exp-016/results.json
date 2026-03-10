@@ -1,0 +1,14 @@
+{
+  "experiment_id": "EXP-016",
+  "name": "Voting Ensemble",
+  "status": "completed",
+  "timestamp": "2026-03-10T00:04:02.168710",
+  "hypothesis": "VotingRegressor with weighted averaging",
+  "results": {
+    "rmse": 0.8577406874682597,
+    "relative_improvement": -0.1097907876120103,
+    "cohens_d": 0.06822384179622422,
+    "is_significant": false
+  },
+  "conclusion": "Voting ensemble: -0.11% improvement - Not significant"
+}

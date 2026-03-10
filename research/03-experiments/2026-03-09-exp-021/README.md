@@ -1,9 +1,9 @@
-# EXP-011: Feature Selection
+# EXP-021: Target Encoding + XGBoost
 
 **Status:** ⚠️ Not Significant
 
 ## Hypothesis
-Select top-K features using XGBoost importance
+Enhanced features with statistics
 
 ## Methodology
 See experiment runner for implementation details.
@@ -12,14 +12,14 @@ See experiment runner for implementation details.
 
 | Metric | Value |
 |--------|-------|
-| RMSE | 0.8611 |
+| RMSE | 0.8623 |
 | Baseline RMSE | 0.8568 |
-| Relative Improvement | -0.50% |
-| Cohen's d | 0.0252 |
+| Relative Improvement | -0.64% |
+| Cohen's d | -0.3695 |
 | Significant | ❌ No |
 
 ## Conclusion
-Feature selection (top 20): -0.50% improvement - Not significant
+Target encoding: -0.64% improvement - Not significant
 
 ## Timestamp
-2026-03-09T23:58:33.589234
+2026-03-10T00:04:07.806578

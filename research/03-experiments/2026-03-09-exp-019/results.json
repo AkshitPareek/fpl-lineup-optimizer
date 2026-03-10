@@ -1,0 +1,14 @@
+{
+  "experiment_id": "EXP-019",
+  "name": "ElasticNet with Polynomial Features",
+  "status": "completed",
+  "timestamp": "2026-03-10T00:04:04.530153",
+  "hypothesis": "Regularized linear model with polynomial features",
+  "results": {
+    "rmse": 0.85160936797489,
+    "relative_improvement": 0.6058160626879148,
+    "cohens_d": 0.09027013251706432,
+    "is_significant": false
+  },
+  "conclusion": "ElasticNet + Poly: 0.61% improvement - Not significant"
+}
