@@ -125,10 +125,19 @@ class FPLTeamAnalyzer:
                 xPoints = xG + xA
                 
                 # Fixture difficulty adjustment
-                # (Would need fixture data for precise calculation)
                 fixture_adj = 1.0
                 
-                final_pred = (base_pred + xPoints * 0.3) * fixture_adj
+                # Calculate base prediction
+                base_pred = (base_pred + xPoints * 0.3) * fixture_adj
+                
+                # INJURY ADJUSTMENT
+                status = player.get('status', 'a')
+                news = player.get('news', '')
+                availability = self._calculate_availability(status, news)
+                
+                # Adjust expected points by availability
+                # If 50% chance of playing, expected points are roughly halved
+                final_pred = base_pred * availability['probability']
                 
                 squad.append({
                     'id': player_id,
@@ -142,6 +151,10 @@ class FPLTeamAnalyzer:
                     'xG': float(player.get('expected_goals', 0) or 0),
                     'xA': float(player.get('expected_assists', 0) or 0),
                     'predicted_points': max(0, final_pred),
+                    'base_prediction': max(0, base_pred),  # Store unadjusted
+                    'availability_prob': availability['probability'],
+                    'availability_status': availability['status'],
+                    'injury_news': availability['news'],
                     'total_points': player['total_points'],
                     'minutes': player['minutes'],
                     'bonus': player['bonus'],
@@ -149,11 +162,87 @@ class FPLTeamAnalyzer:
                     'is_captain': pick.get('is_captain', False),
                     'is_vice_captain': pick.get('is_vice_captain', False),
                     'multiplier': pick.get('multiplier', 1),
-                    'status': player.get('status', 'a'),
-                    'news': player.get('news', ''),
+                    'status': status,
+                    'news': news,
                 })
         
         return squad
+    
+    def _calculate_availability(self, status, news):
+        """
+        Calculate probability of player being available.
+        
+        Status codes:
+            'a' = Available
+            'd' = Doubtful (25% chance)
+            'i' = Injured (0% chance)
+            's' = Suspended (0% chance)
+            'n' = Unavailable (0% chance)
+        """
+        status = status or 'a'
+        news = news or ''
+        news_lower = news.lower()
+        
+        # Base probability by status
+        if status == 'a':
+            prob = 1.0
+            status_text = "🟢 Available"
+        elif status == 'd':
+            prob = 0.25
+            status_text = "🟡 Doubtful"
+        elif status in ['i', 's', 'n']:
+            prob = 0.0
+            status_text = "🔴 Unavailable"
+        else:
+            prob = 0.5
+            status_text = "🟠 Unknown"
+        
+        # Try to extract specific percentage from news
+        import re
+        
+        # Look for patterns like "50% chance", "25% chance of playing"
+        pct_match = re.search(r'(\d+)%\s*(?:chance|likely)', news_lower)
+        if pct_match:
+            prob = int(pct_match.group(1)) / 100.0
+            status_text = f"🟡 {pct_match.group(1)}% chance"
+        
+        # Look for return dates
+        return_match = re.search(r'expected back[:\s]+(\w+\.?\s*\d{1,2})', news_lower)
+        if return_match:
+            status_text += f" (back {return_match.group(1)})"
+        
+        # Specific injury keywords that reduce probability
+        if any(word in news_lower for word in ['knock', 'niggle', 'minor']):
+            if prob > 0.7:
+                prob = 0.7
+                status_text = "🟡 Minor knock"
+        elif any(word in news_lower for word in ['hamstring', 'groin', 'calf', 'thigh']):
+            if prob > 0.5:
+                prob = 0.5
+                status_text = "🟡 Muscle injury"
+        elif any(word in news_lower for word in ['ankle', 'knee', 'ligament']):
+            if prob > 0.3:
+                prob = 0.3
+                status_text = "🔴 Joint injury"
+        elif any(word in news_lower for word in ['surgery', 'long term', 'months']):
+            prob = 0.0
+            status_text = "🔴 Long-term injury"
+        
+        # Suspended
+        if 'suspended' in news_lower or status == 's':
+            prob = 0.0
+            status_text = "🔴 Suspended"
+        
+        # International duty
+        if 'international' in news_lower or 'afcon' in news_lower or 'cop america' in news_lower:
+            prob = 0.0
+            status_text = "🔴 International duty"
+        
+        return {
+            'probability': prob,
+            'status': status_text,
+            'news': news[:50] + '...' if len(news) > 50 else news
+        }
     
     def suggest_lineup(self, squad):
         print("\n🎯 OPTIMAL LINEUP SUGGESTION")
@@ -196,13 +285,14 @@ class FPLTeamAnalyzer:
             
             pos_names = {1: 'GK', 2: 'DEF', 3: 'MID', 4: 'FWD'}
             
-            print(f"{'Pos':<5} {'Player':<25} {'Team':<6} {'£':<6} {'Form':<6} {'xPts':<6}")
-            print("-"*70)
+            print(f"{'Pos':<5} {'Player':<22} {'Team':<6} {'£':<6} {'Form':<5} {'xPts':<6} {'Status'}")
+            print("-"*80)
             
             for p in sorted(lineup, key=lambda x: (x['position'], -x['predicted_points'])):
                 pos = pos_names[p['position']]
                 marker = " (C)" if p['is_captain'] else " (V)" if p['is_vice_captain'] else ""
-                print(f"{pos:<5} {p['name']:<25} {p['team']:<6} {p['price']:<6.1f} {p['form']:<6.1f} {p['predicted_points']:<5.1f}{marker}")
+                status_short = p['availability_status'][:12]
+                print(f"{pos:<5} {p['name']:<22} {p['team']:<6} {p['price']:<6.1f} {p['form']:<5.1f} {p['predicted_points']:<5.1f} {status_short}{marker}")
             
             # Bench
             bench = [p for p in squad if p not in lineup]
@@ -210,7 +300,8 @@ class FPLTeamAnalyzer:
                 print("\nBench:")
                 for p in bench:
                     pos = pos_names[p['position']]
-                    print(f"{pos:<5} {p['name']:<25} {p['team']:<6} {p['price']:<6.1f} {p['form']:<6.1f} {p['predicted_points']:<5.1f}")
+                    status_short = p['availability_status'][:12]
+                    print(f"{pos:<5} {p['name']:<22} {p['team']:<6} {p['price']:<6.1f} {p['form']:<5.1f} {p['predicted_points']:<5.1f} {status_short}")
             
             return best
         return None
@@ -228,18 +319,17 @@ class FPLTeamAnalyzer:
         sorted_squad = sorted(squad, key=lambda x: x['predicted_points'])
         
         print("Players to CONSIDER SELLING (low expected returns):")
-        print(f"{'Player':<25} {'Team':<6} {'Price':<7} {'Form':<6} {'xPts':<6} {'Status'}")
-        print("-"*75)
+        print(f"{'Player':<22} {'Team':<6} {'Price':<7} {'Base':<6} {'Adj':<6} {'Status'}")
+        print("-"*85)
         
         for p in sorted_squad[:transfers]:
-            status = "🔴 " + p['news'][:30] if p['news'] else "🟢 Available"
-            print(f"{p['name']:<25} {p['team']:<6} £{p['price']:<6.1f} {p['form']:<6.1f} {p['predicted_points']:<5.1f} {status}")
+            print(f"{p['name']:<22} {p['team']:<6} £{p['price']:<6.1f} {p['base_prediction']:<5.1f} {p['predicted_points']:<5.1f} {p['availability_status']}")
         
         # Top targets from all players
         all_players = self.static_data['elements']
         available = [p for p in all_players if p.get('status') == 'a']  # Available
         
-        # Filter by budget
+        # Filter by budget and availability
         max_price = sorted_squad[0]['price'] + balance if sorted_squad else 10.0
         
         targets = []
@@ -247,31 +337,45 @@ class FPLTeamAnalyzer:
             if p['now_cost'] / 10.0 > max_price + 0.1:
                 continue
             
+            # Check availability
+            status = p.get('status', 'a')
+            news = p.get('news', '')
+            avail = self._calculate_availability(status, news)
+            
+            # Skip if unavailable or very unlikely to play
+            if avail['probability'] < 0.5:
+                continue
+            
             form = float(p.get('form', 0) or 0)
             ppg = float(p.get('points_per_game', 0) or 0)
             ict = float(p.get('ict_index', 0) or 0)
             
-            pred = form * 0.5 + ppg * 0.3 + ict * 0.05
+            # Calculate base prediction then adjust for availability
+            base_pred = form * 0.5 + ppg * 0.3 + ict * 0.05
+            adj_pred = base_pred * avail['probability']
             
-            if pred > sorted_squad[0]['predicted_points'] + 1:  # Significant upgrade
+            if adj_pred > sorted_squad[0]['predicted_points'] + 1:  # Significant upgrade
                 targets.append({
                     'name': p['web_name'],
                     'team': self.static_data['teams'][p['team']-1]['short_name'] if p['team'] <= len(self.static_data['teams']) else 'UNK',
                     'position': p['element_type'],
                     'price': p['now_cost'] / 10.0,
                     'form': form,
-                    'predicted_points': pred
+                    'predicted_points': adj_pred,
+                    'base_prediction': base_pred,
+                    'availability': avail['status']
                 })
         
         targets = sorted(targets, key=lambda x: x['predicted_points'], reverse=True)
         
         print(f"\nTop TRANSFER IN Targets (under £{max_price:.1f}m + £{balance}m = £{max_price + balance:.1f}m):")
-        print(f"{'Player':<25} {'Team':<6} {'Pos':<5} {'Price':<7} {'Form':<6} {'xPts':<6}")
-        print("-"*70)
+        print(f"{'Player':<22} {'Team':<6} {'Pos':<5} {'Price':<7} {'Base':<6} {'Adj':<6} {'Status'}")
+        print("-"*90)
         
         pos_map = {1: 'GK', 2: 'DEF', 3: 'MID', 4: 'FWD'}
         for p in targets[:8]:
-            print(f"{p['name']:<25} {p['team']:<6} {pos_map[p['position']]:<5} £{p['price']:<6.1f} {p['form']:<6.1f} {p['predicted_points']:<5.1f}")
+            status_short = p['availability'][:15]
+            print(f"{p['name']:<22} {p['team']:<6} {pos_map[p['position']]:<5} £{p['price']:<6.1f} {p['base_prediction']:<5.1f} {p['predicted_points']:<5.1f} {status_short}")
         
         print("\n💡 Transfer Strategy:")
         print(f"   1. Sell: {sorted_squad[0]['name']} (£{sorted_squad[0]['price']}m, form {sorted_squad[0]['form']})")
@@ -309,11 +413,12 @@ def main():
         print("="*70)
         sorted_squad = sorted(squad, key=lambda x: x['predicted_points'], reverse=True)
         
-        print(f"{'Rank':<5} {'Player':<25} {'Team':<6} {'Pos':<5} {'Form':<6} {'xPts':<6}")
-        print("-"*70)
+        print(f"{'Rank':<5} {'Player':<22} {'Team':<5} {'Pos':<5} {'Form':<5} {'Base':<6} {'Adj':<6} {'Status'}")
+        print("-"*90)
         pos_map = {1: 'GK', 2: 'DEF', 3: 'MID', 4: 'FWD'}
         for i, p in enumerate(sorted_squad[:10], 1):
-            print(f"{i:<5} {p['name']:<25} {p['team']:<6} {pos_map[p['position']]:<5} {p['form']:<6.1f} {p['predicted_points']:<5.1f}")
+            status_short = p['availability_status'][:15]
+            print(f"{i:<5} {p['name']:<22} {p['team']:<5} {pos_map[p['position']]:<5} {p['form']:<5.1f} {p['base_prediction']:<5.1f} {p['predicted_points']:<5.1f} {status_short}")
         
         # Lineup
         best = analyzer.suggest_lineup(squad)
