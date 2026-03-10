@@ -1,0 +1,21 @@
+{
+  "current_production": "EXP-030",
+  "models": {
+    "EXP-030": {
+      "name": "Weighted Average of All",
+      "experiment_id": "EXP-030",
+      "rmse": 0.8284,
+      "improvement": 3.32,
+      "deployed_at": "2026-03-10T00:21:42.893845",
+      "status": "production",
+      "path": "/home/akshit/fpl-lineup-optimizer/models/production",
+      "performance": {
+        "rmse": 0.8284,
+        "baseline_rmse": 0.8568,
+        "mae": 0.7062,
+        "spearman": 0.1915,
+        "top5_accuracy": 0.4
+      }
+    }
+  }
+}
