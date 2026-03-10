@@ -1,0 +1,7 @@
+{
+  "experiment_id": "EXP-027",
+  "name": "Support Vector Regression",
+  "rmse": 0.8584077941909541,
+  "improvement_vs_xgb": -0.18765104936439508,
+  "params": null
+}

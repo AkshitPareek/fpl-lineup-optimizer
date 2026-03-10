@@ -1,0 +1,7 @@
+{
+  "experiment_id": "EXP-026",
+  "name": "Neural Network",
+  "rmse": 1.2250844404870418,
+  "improvement_vs_xgb": -42.98371154143812,
+  "params": null
+}

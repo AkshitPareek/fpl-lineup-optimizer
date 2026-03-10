@@ -1,0 +1,7 @@
+{
+  "experiment_id": "EXP-025",
+  "name": "Tiny Ensemble",
+  "rmse": 0.8591475534304494,
+  "improvement_vs_xgb": -0.27399082988437734,
+  "params": null
+}

@@ -1,0 +1,9 @@
+{
+  "experiment_id": "EXP-023",
+  "name": "Median Baseline",
+  "rmse": 0.8508492846330568,
+  "improvement_vs_xgb": 0.6945279373183064,
+  "params": {
+    "median": 1.020300290511902
+  }
+}

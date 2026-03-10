@@ -1,0 +1,7 @@
+{
+  "experiment_id": "EXP-028",
+  "name": "K-Nearest Neighbors",
+  "rmse": 0.8677901470581285,
+  "improvement_vs_xgb": -1.2826969022092096,
+  "params": null
+}

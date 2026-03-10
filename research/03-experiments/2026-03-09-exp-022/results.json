@@ -1,0 +1,9 @@
+{
+  "experiment_id": "EXP-022",
+  "name": "Mean Baseline",
+  "rmse": 0.85160936797489,
+  "improvement_vs_xgb": 0.6058160626879148,
+  "params": {
+    "mean": 1.0113251749044307
+  }
+}

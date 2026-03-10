@@ -1,0 +1,7 @@
+{
+  "experiment_id": "EXP-024",
+  "name": "Highly Regularized XGB",
+  "rmse": 0.8516093728286177,
+  "improvement_vs_xgb": 0.605815496193079,
+  "params": null
+}
