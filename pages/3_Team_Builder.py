@@ -129,7 +129,7 @@ def render_team_builder():
         )
     
     with col2:
-        gameweek = st.number_input("Gameweek", min_value=1, max_value=38, value=30)
+        gameweek = st.number_input("Gameweek", min_value=1, max_value=38, value=29, help="Current: GW29")
     
     # Demo mode checkbox
     use_demo = st.checkbox("Use Demo Team (if API fails)", value=use_sample)

@@ -305,7 +305,7 @@ def render_team_builder():
         )
     
     with col2:
-        gameweek = st.number_input("Gameweek", min_value=1, max_value=38, value=30)
+        gameweek = st.number_input("Gameweek", min_value=1, max_value=38, value=29, help="Current: GW29")
     
     # Demo mode
     use_demo = st.checkbox("Use Demo Team", value=False)
@@ -332,8 +332,28 @@ def render_team_builder():
             st.session_state['demo_mode'] = True
             st.success("✅ Demo team loaded!")
         else:
-            st.info("⚠️ FPL API may be blocked from Streamlit Cloud. Try Demo mode, or run locally.")
-            st.info("To load real data: Clone repo and run `streamlit run streamlit_app.py` locally.")
+            # Try to load real data
+            with st.spinner("Fetching from FPL API..."):
+                try:
+                    import requests
+                    url = f"https://fantasy.premierleague.com/api/entry/{team_id}/event/{gameweek}/picks/"
+                    resp = requests.get(url, timeout=30, headers={
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                    })
+                    
+                    if resp.status_code == 200:
+                        st.session_state['team_data'] = resp.json()
+                        st.session_state['demo_mode'] = False
+                        st.success(f"✅ Team loaded successfully for GW{gameweek}!")
+                    elif resp.status_code == 404:
+                        st.error(f"❌ No data for GW{gameweek}. This gameweek may not have started yet.")
+                        st.info(f"💡 Try GW29 (current) or earlier gameweeks.")
+                    else:
+                        st.error(f"❌ API Error: Status {resp.status_code}")
+                        st.info("💡 Try Demo mode to see dashboard features.")
+                except Exception as e:
+                    st.error(f"❌ Error: {e}")
+                    st.info("💡 Try Demo mode to see dashboard features.")
     
     # Display team if loaded
     if 'team_data' in st.session_state:
@@ -341,23 +361,51 @@ def render_team_builder():
         st.subheader("📋 Your Team")
         
         if st.session_state.get('demo_mode', False):
-            st.info("📢 Showing DEMO team. Run locally to load real FPL data.")
-        
-        # Sample display
-        players_list = [
-            {'Position': 'GK', 'Player': 'Alisson (DEMO)', 'Price': '£5.5m', 'Form': '6.0', 'Captain': '⭐'},
-            {'Position': 'DEF', 'Player': 'Alexander-Arnold (DEMO)', 'Price': '£8.0m', 'Form': '7.5', 'Captain': ''},
-            {'Position': 'DEF', 'Player': 'Gabriel (DEMO)', 'Price': '£5.0m', 'Form': '5.5', 'Captain': ''},
-            {'Position': 'MID', 'Player': 'Salah (DEMO)', 'Price': '£12.5m', 'Form': '9.0', 'Captain': ''},
-            {'Position': 'FWD', 'Player': 'Haaland (DEMO)', 'Price': '£14.0m', 'Form': '8.5', 'Captain': ''},
-        ]
-        
-        df = pd.DataFrame(players_list)
-        st.dataframe(df, use_container_width=True)
+            st.info("📢 Showing DEMO team.")
+            players_list = [
+                {'Position': 'GK', 'Player': 'Alisson (DEMO)', 'Price': '£5.5m', 'Form': '6.0', 'Captain': '⭐'},
+                {'Position': 'DEF', 'Player': 'Alexander-Arnold (DEMO)', 'Price': '£8.0m', 'Form': '7.5', 'Captain': ''},
+                {'Position': 'DEF', 'Player': 'Gabriel (DEMO)', 'Price': '£5.0m', 'Form': '5.5', 'Captain': ''},
+                {'Position': 'MID', 'Player': 'Salah (DEMO)', 'Price': '£12.5m', 'Form': '9.0', 'Captain': ''},
+                {'Position': 'FWD', 'Player': 'Haaland (DEMO)', 'Price': '£14.0m', 'Form': '8.5', 'Captain': ''},
+            ]
+            df = pd.DataFrame(players_list)
+            st.dataframe(df, use_container_width=True)
+        else:
+            st.success("✅ Showing real FPL data!")
+            # Try to get player names from FPL data
+            try:
+                import requests
+                url = "https://fantasy.premierleague.com/api/bootstrap-static/"
+                resp = requests.get(url, timeout=30, headers={'User-Agent': 'Mozilla/5.0'})
+                fpl_data = resp.json()
+                
+                players_list = []
+                for pick in st.session_state['team_data'].get('picks', []):
+                    player_id = pick['element']
+                    player = next((p for p in fpl_data['elements'] if p['id'] == player_id), None)
+                    if player:
+                        position_map = {1: 'GK', 2: 'DEF', 3: 'MID', 4: 'FWD'}
+                        players_list.append({
+                            'Position': position_map.get(player['element_type'], 'UNK'),
+                            'Player': f"{player['first_name']} {player['second_name']}",
+                            'Price': f"£{player['now_cost']/10:.1f}m",
+                            'Form': player.get('form', '0'),
+                            'Captain': '⭐' if pick.get('is_captain') else ''
+                        })
+                
+                if players_list:
+                    df = pd.DataFrame(players_list)
+                    st.dataframe(df, use_container_width=True)
+                else:
+                    st.write(st.session_state['team_data'])
+            except Exception as e:
+                st.write("Raw team data:")
+                st.write(st.session_state['team_data'])
         
         st.divider()
         st.subheader("💡 Transfer Recommendations")
-        st.info("Transfer recommendations require FPL API. Run locally for full functionality.")
+        st.info("EXP-032 model predictions available in local deployment with full feature set.")
     else:
         st.info("👆 Enter Team ID and click 'Load Team', or use Demo mode.")
         
