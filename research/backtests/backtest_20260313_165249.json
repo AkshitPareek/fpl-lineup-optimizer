@@ -1,0 +1,23 @@
+{
+  "champion_total": 19.822855252251966,
+  "baseline_total": 17.435315575110888,
+  "hindsight_total": 29.763568438189004,
+  "improvement": 2.3875396771410777,
+  "improvement_pct": 13.69369924424722,
+  "results": [
+    {
+      "gw": 1,
+      "champion": 10.532679170748036,
+      "baseline": 9.788210654269747,
+      "hindsight": 17.82093797635205,
+      "improvement": 0.7444685164782889
+    },
+    {
+      "gw": 2,
+      "champion": 9.29017608150393,
+      "baseline": 7.64710492084114,
+      "hindsight": 11.942630461836954,
+      "improvement": 1.6430711606627897
+    }
+  ]
+}
