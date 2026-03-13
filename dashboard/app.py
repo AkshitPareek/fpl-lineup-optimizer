@@ -290,34 +290,109 @@ def render_team_builder():
     """Render Team Builder page."""
     st.markdown('<p class="main-header">🏃 Team Builder</p>', unsafe_allow_html=True)
     
-    st.info("🚧 This feature requires FPL API integration. Coming in Phase 2.")
+    st.success("✅ FPL API Integration Active! Enter your Team ID below.")
     
-    # Placeholder for team selection
-    st.subheader("Your Team")
+    # FPL API Client
+    import requests
     
-    team_id = st.text_input("FPL Team ID", value="9777842")
+    class FPLAPIClient:
+        BASE_URL = "https://fantasy.premierleague.com/api"
+        
+        def get_bootstrap(self):
+            resp = requests.get(f"{self.BASE_URL}/bootstrap-static/", timeout=30)
+            return resp.json()
+        
+        def get_manager_team(self, manager_id, gameweek=None):
+            if gameweek is None:
+                bootstrap = self.get_bootstrap()
+                current_event = next((e for e in bootstrap['events'] if e.get('is_current')), None)
+                gameweek = current_event['id'] if current_event else 1
+            
+            url = f"{self.BASE_URL}/entry/{manager_id}/event/{gameweek}/picks/"
+            resp = requests.get(url, timeout=30)
+            return resp.json() if resp.status_code == 200 else None
     
-    if st.button("Load Team"):
-        st.warning("Team loading not yet implemented. Requires FPL API integration.")
+    @st.cache_data(ttl=300)
+    def load_fpl_data():
+        client = FPLAPIClient()
+        return client.get_bootstrap()
     
-    st.divider()
+    # Load FPL data
+    with st.spinner("Loading FPL data..."):
+        try:
+            fpl_data = load_fpl_data()
+        except Exception as e:
+            st.error(f"Failed to load FPL data: {e}")
+            return
     
-    # Optimization Settings
-    st.subheader("Optimization Settings")
+    # Team ID Input
+    st.subheader("🔑 Load Your FPL Team")
     
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns([3, 1])
     
     with col1:
-        st.slider("Available Transfers", 0, 5, 1)
+        team_id = st.text_input(
+            "FPL Team ID",
+            value=st.session_state.get('team_id', '9777842'),
+            help="Find your Team ID in the FPL URL"
+        )
     
     with col2:
-        st.slider("Bank Balance (£m)", 0.0, 5.0, 1.0, 0.1)
+        gameweek = st.number_input("Gameweek", min_value=1, max_value=38, value=30)
     
-    with col3:
-        st.selectbox("Formation", ['3-4-3', '3-5-2', '4-4-2', '4-3-3', '5-4-1', '5-3-2'])
+    if st.button("Load Team", type="primary"):
+        with st.spinner("Fetching from FPL API..."):
+            try:
+                client = FPLAPIClient()
+                team_data = client.get_manager_team(team_id, gameweek)
+                
+                if team_data:
+                    st.session_state['team_data'] = team_data
+                    st.session_state['team_id'] = team_id
+                    st.success("✅ Team loaded successfully!")
+                else:
+                    st.error("❌ Failed to load team. Check your Team ID.")
+            except Exception as e:
+                st.error(f"❌ Error: {e}")
     
-    if st.button("Optimize Team"):
-        st.info("Team optimization requires production model integration.")
+    # Display team if loaded
+    if 'team_data' in st.session_state:
+        team_data = st.session_state['team_data']
+        
+        st.divider()
+        st.subheader("📋 Your Current Team")
+        
+        players_list = []
+        
+        for pick in team_data.get('picks', []):
+            player_id = pick['element']
+            player = next((p for p in fpl_data['elements'] if p['id'] == player_id), None)
+            
+            if player:
+                position_map = {1: 'GK', 2: 'DEF', 3: 'MID', 4: 'FWD'}
+                position = position_map.get(player['element_type'], 'UNK')
+                
+                players_list.append({
+                    'Position': position,
+                    'Player': f"{player['first_name']} {player['second_name']}",
+                    'Price': f"£{player['now_cost']/10:.1f}m",
+                    'Form': player.get('form', '0'),
+                    'Captain': '⭐' if pick['is_captain'] else ''
+                })
+        
+        if players_list:
+            df = pd.DataFrame(players_list)
+            st.dataframe(df, use_container_width=True)
+    else:
+        st.info("👆 Enter your FPL Team ID and click 'Load Team'")
+        
+        with st.expander("How to find your Team ID"):
+            st.markdown("""
+            1. Go to fantasy.premierleague.com
+            2. Log in and click 'Points'
+            3. URL format: `fantasy.premierleague.com/entry/[ID]/`
+            4. Your Team ID is the number after `/entry/`
+            """)
 
 
 def render_research():
