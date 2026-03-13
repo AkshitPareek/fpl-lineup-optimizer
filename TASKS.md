@@ -2,128 +2,140 @@
 
 > **Active Research:** EXP-032 Parallel Agent Search  
 > **Last Updated:** 2026-03-13  
-> **Current Champion:** EXP-031 (Spearman 0.7263)  
-> **Dataset:** 75,238 samples (5 seasons)
+> **Current Champion:** EXP-031 v2 (Spearman 0.7630)  
+> **Dataset:** 75,317 samples (5 seasons: 2020-2025)
+
+---
+
+## 🎯 Session Summary: 2026-03-13
+
+### ✅ COMPLETED TODAY
+
+1. **2024-25 Data Collection (TASK-001)** ✅
+   - Collected 22,343 gameweek records via FPL API
+   - 820 players, GW 1-29
+   - Master dataset: 75,317 samples (+42%)
+
+2. **Dashboard MVP (TASK-002)** ✅
+   - Streamlit dashboard running at http://localhost:8501
+   - 6 pages: Overview, Model Lab, Team Builder, Research, Analytics, Settings
+   - Real-time model comparison
+
+3. **EXP-031 Retraining (TASK-003)** ✅
+   - Retrained with 75k samples
+   - **NEW RECORD: Spearman 0.7630** (was 0.7263)
+   - **+5.1% improvement!**
+   - RMSE: 1.4549
+
+4. **Ralph Loop Re-run (TASK-004)** ✅
+   - Agent 5 completed 20 experiments
+   - Tested: FDR, team strength, interactions
+   - Result: No EXP-032 found yet
+   - **EXP-031 v2 remains champion!**
+
+---
+
+## 📊 Current Champion: EXP-031 v2
+
+| Metric | Value | Change |
+|--------|-------|--------|
+| **Spearman** | **0.7630** | +5.1% ⭐ |
+| **RMSE** | 1.4549 | -0.5% |
+| **Data** | 75,317 samples | +42% |
+| **Top Feature** | form_3gw | 81% importance |
+
+**Status:** 🏆 CHAMPION (beating EXP-030 by 298%)
 
 ---
 
 ## 📋 Active Tasks
 
-### 🔴 CRITICAL - Do First
+### 🔴 CRITICAL
 
-#### TASK-001: Collect 2024-25 Season Data via FPL API
-**Status:** ✅ COMPLETED  
-**Priority:** CRITICAL  
-**Completed:** 2026-03-13
-
-**Results:**
-- Players collected: ~820
-- Gameweek records: 22,343
-- Master dataset: 75,238 samples (was 52,974)
-- New samples added: 22,264 (+42%)
-
-**Files:**
-- `data/current_season/2024-25_fpl_api_data.csv`
-- `datasets/fpl_multi_year/fpl_historical_unified.csv` (updated)
-
----
-
-#### TASK-002: Build Real-Time Dashboard
-**Status:** ✅ COMPLETED (MVP)  
-**Priority:** CRITICAL  
-**Completed:** 2026-03-13
-
-**Results:**
-- Streamlit dashboard running at http://localhost:8501
-- 6 pages: Overview, Model Lab, Team Builder, Research, Analytics, Settings
-- Auto-refresh capability
-
-**Next Enhancement:** Deploy to Streamlit Cloud for public access
-
----
-
-#### TASK-003: Retrain EXP-031 with 2024-25 Data
-**Status:** 🔄 IN PROGRESS  
-**Priority:** CRITICAL  
-**Started:** 2026-03-13
+#### TASK-006: Implement Real FDR Features
+**Status:** 📋 NOT STARTED  
+**Priority:** CRITICAL
 
 **Description:**
-Retrain EXP-031 with the expanded dataset (75k samples vs 53k).
-Expected: Better Spearman correlation with more data.
+Current FDR features in data are placeholder. Need to extract real fixture difficulty from FPL API and use in model.
+
+**Expected Impact:** Spearman +0.02 to +0.03
+
+---
+
+#### TASK-007: Deploy Dashboard to Streamlit Cloud
+**Status:** 📋 NOT STARTED  
+**Priority:** CRITICAL
+
+**Description:**
+Deploy dashboard for public access.
 
 **Steps:**
-- [x] Data collection complete
-- [ ] Regenerate train/test splits
-- [ ] Retrain model
-- [ ] Evaluate new performance
-- [ ] Update champion if improved
-
----
-
-#### TASK-004: Re-run Ralph Loop for EXP-032
-**Status:** 📋 NOT STARTED  
-**Priority:** HIGH  
-**Depends on:** TASK-003
-
-**Description:**
-With 42% more data, try to find model beating EXP-031.
-Target: Spearman ≥ 0.75
+- [ ] Create Streamlit Cloud account
+- [ ] Link GitHub repository
+- [ ] Configure secrets (if needed)
+- [ ] Deploy and test
 
 ---
 
 ### 🟡 HIGH PRIORITY
 
-#### TASK-005: Deploy Dashboard to Streamlit Cloud
+#### TASK-008: Deep Learning Experiment (LSTM)
 **Status:** 📋 NOT STARTED  
 **Priority:** HIGH
 
 **Description:**
-Deploy dashboard for public access and sharing.
+Implement LSTM with sequence data for time-series prediction.
 
 ---
 
-#### TASK-006: Document Ralph Loop Results
+#### TASK-009: Position-Specific Models
 **Status:** 📋 NOT STARTED  
 **Priority:** HIGH
 
 **Description:**
-Comprehensive analysis of all experiments.
+Train separate models for GK/DEF/MID/FWD.
 
 ---
 
-## ✅ Completed Tasks
+## ✅ Completed Tasks Archive
 
 | Task | Date | Result |
 |------|------|--------|
-| EXP-031 Historical Training | 2026-03-13 | 52,974 samples, Spearman 0.7263 |
-| Parallel Agent System | 2026-03-13 | 4 agents working |
-| Ralph Loop Skill | 2026-03-13 | Framework ready |
-| 2024-25 Data Collection | 2026-03-13 | 22,264 new samples added |
-| Dashboard MVP | 2026-03-13 | Running locally |
+| 2024-25 Data Collection | 2026-03-13 | 22,264 samples added |
+| Dashboard MVP | 2026-03-13 | Running locally :8501 |
+| EXP-031 Retrain | 2026-03-13 | Spearman 0.7630 (+5.1%) |
+| Ralph Loop v2 | 2026-03-13 | 20 experiments, no EXP-032 |
+| Parallel Agents | 2026-03-13 | 4 agents deployed |
+| Ralph Loop Skill | 2026-03-13 | Framework complete |
 
 ---
 
-## 🎯 Current Session Goals
+## 🎯 Next Milestones
 
-### Session: 2026-03-13 Evening
+### Milestone 1: EXP-032 Discovery ⏰ 2026-03-20
+- [ ] Implement real FDR features
+- [ ] Achieve Spearman ≥ 0.78
 
-1. ✅ ~~Collect 2024-25 data~~ (COMPLETE - 22,264 samples)
-2. ✅ ~~Start dashboard~~ (COMPLETE - running at :8501)
-3. 🔄 Regenerate train/test splits (IN PROGRESS)
-4. 🔄 Retrain EXP-031 with 75k samples (IN PROGRESS)
-5. 📋 Re-run Ralph Loop for EXP-032 (PENDING)
+### Milestone 2: Dashboard Public Launch ⏰ 2026-03-18
+- [ ] Deploy to Streamlit Cloud
+- [ ] Share with FPL community
 
----
-
-## 📊 Current System Status
-
-| Component | Status | Details |
-|-----------|--------|---------|
-| Data Collection | ✅ Complete | 75,238 samples |
-| Dashboard | ✅ Running | http://localhost:8501 |
-| EXP-031 Model | 🔄 Retraining | With new data |
-| Ralph Loop | ⏳ Waiting | For retrain complete |
+### Milestone 3: Publication ⏰ 2026-03-25
+- [ ] Document all experiments
+- [ ] Write research paper/blog
 
 ---
 
-*Updated: 2026-03-13 23:30*
+## 🔄 Currently Running
+
+| Service | Status | URL/Location |
+|---------|--------|--------------|
+| Dashboard | 🟢 Running | http://localhost:8501 |
+| Data Collection | ✅ Complete | 75,317 samples |
+| Ralph Loop | ✅ Complete | No EXP-032 yet |
+
+---
+
+*Last Updated: 2026-03-13 23:35*
+*Champion: EXP-031 v2 (Spearman 0.7630)*
