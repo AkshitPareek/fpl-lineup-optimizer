@@ -1,0 +1,22 @@
+{
+  "season": "2020-21",
+  "source": "github/vaastav/Fantasy-Premier-League",
+  "collection_date": "2026-03-13T17:54:59.566596",
+  "files": {
+    "players_raw.csv": {
+      "rows": 713,
+      "columns": 67,
+      "path": "data/historical/raw/2020_21_players_raw.csv"
+    },
+    "gws/merged_gw.csv": {
+      "rows": 24365,
+      "columns": 36,
+      "path": "data/historical/raw/2020_21_gws_merged_gw.csv"
+    },
+    "teams.csv": {
+      "rows": 20,
+      "columns": 21,
+      "path": "data/historical/raw/2020_21_teams.csv"
+    }
+  }
+}
