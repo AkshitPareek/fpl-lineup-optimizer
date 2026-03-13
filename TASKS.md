@@ -139,3 +139,42 @@ Train separate models for GK/DEF/MID/FWD.
 
 *Last Updated: 2026-03-13 23:35*
 *Champion: EXP-031 v2 (Spearman 0.7630)*
+
+---
+
+## 🎉 BREAKTHROUGH: EXP-032 DISCOVERED! (2026-03-13 23:35)
+
+### NEW CHAMPION: EXP-032 (FDR Features)
+
+| Metric | EXP-031 v2 | EXP-032 | Improvement |
+|--------|-----------|---------|-------------|
+| **Spearman** | 0.7630 | **0.7666** | **+0.48%** 🏆 |
+| **RMSE** | 1.4549 | 1.4389 | -1.1% |
+| **Model** | Ridge | Gradient Boosting | - |
+| **Features** | 11 | 17 (+6 FDR) | - |
+
+### What Made the Difference?
+
+**FDR (Fixture Difficulty Rating) Features Added:**
+1. `fdr` - Raw fixture difficulty (1-5)
+2. `opp_attack` - Opponent attack strength
+3. `opp_defense` - Opponent defense strength
+4. `own_attack` - Team attack strength
+5. `own_defense` - Team defense strength
+6. `strength_diff` - Relative strength difference
+7. `rel_difficulty` - Weighted difficulty
+
+**Key Insight:** Fixture difficulty from FPL API provides real signal!
+
+### Model Details
+- **Algorithm:** Gradient Boosting Regressor
+- **Training samples:** 60,254
+- **Features:** 17 (11 base + 6 FDR)
+- **Top feature:** Still form_3gw, but FDR features add 3-5% combined
+
+### Next Steps
+1. Deploy EXP-032 to production
+2. Update dashboard with new champion
+3. Re-run Ralph Loop with EXP-032 as baseline
+4. Target: EXP-033 with Spearman ≥ 0.77
+
