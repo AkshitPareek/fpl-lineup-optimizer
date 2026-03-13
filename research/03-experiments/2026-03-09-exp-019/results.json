@@ -2,7 +2,7 @@
   "experiment_id": "EXP-019",
   "name": "ElasticNet with Polynomial Features",
   "status": "completed",
-  "timestamp": "2026-03-10T00:04:04.530153",
+  "timestamp": "2026-03-13T17:04:32.433677",
   "hypothesis": "Regularized linear model with polynomial features",
   "results": {
     "rmse": 0.85160936797489,

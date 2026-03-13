@@ -1,0 +1,26 @@
+{
+  "experiment_id": "EXP-015",
+  "name": "Deep Hyperparameter Search",
+  "status": "completed",
+  "timestamp": "2026-03-13T17:04:21.286272",
+  "hypothesis": "300-trial Optuna with extended hyperparameter ranges",
+  "results": {
+    "rmse": 0.8517316475304095,
+    "relative_improvement": 0.5915444058812414,
+    "cohens_d": 0.12398383766412735,
+    "is_significant": false,
+    "best_params": {
+      "n_estimators": 757,
+      "max_depth": 7,
+      "learning_rate": 0.14231393662599406,
+      "subsample": 0.6537264581261838,
+      "colsample_bytree": 0.517786658319988,
+      "colsample_bylevel": 0.7131931204254021,
+      "reg_alpha": 0.0059902240119626355,
+      "reg_lambda": 8.468172036370595,
+      "min_child_weight": 9,
+      "gamma": 0.3878508438839263
+    }
+  },
+  "conclusion": "Deep hyperopt (300 trials): 0.59% improvement - Not significant"
+}
