@@ -1,0 +1,58 @@
+================================================================================
+2024-25 SEASON DATA COLLECTION REPORT
+================================================================================
+
+Collection Date: 2026-03-13
+Status: COMPLETED
+
+SUMMARY:
+--------
+Total Players Collected: ~820
+Total Gameweek Records: 22,343
+Gameweek Range: 1-29
+File Size: 3.6 MB
+
+DATA COLLECTED:
+---------------
+- Player static data (names, teams, positions)
+- Gameweek-by-gameweek performance
+- Fixture difficulty ratings (FDR)
+- Expected goals (xG, xA)
+- ICT index (Influence, Creativity, Threat)
+- Transfer data (in/out, balance)
+- Value changes
+
+DERIVED FEATURES CALCULATED:
+----------------------------
+- form_3gw: 3-game rolling average
+- form_5gw: 5-game rolling average
+- points_per_90: Points per 90 minutes
+- goal_involvement: Goals + Assists
+
+MASTER DATASET STATUS:
+----------------------
+Previous Size: 52,974 samples (4 seasons: 2020-2024)
+After Collection: 75,238 samples (5 seasons: 2020-2025)
+New Samples Added: 22,264 (2024-25 season)
+
+FILES GENERATED:
+----------------
+- 2024-25_fpl_api_data.csv (3.6 MB)
+- 2024-25_fpl_api_data.parquet (compressed)
+- 2024-25_metadata.json
+- collection.log
+
+NEXT STEPS:
+-----------
+1. Regenerate train/test splits:
+   python aggregate_historical_data.py
+
+2. Retrain EXP-031 with new data:
+   python train_exp031_clean.py
+
+3. Re-run Ralph Loop with updated dataset:
+   python agents/ralph_loop_agent.py --agent-id 5 --strategy feature_expansion
+
+4. Update dashboard with new statistics
+
+================================================================================

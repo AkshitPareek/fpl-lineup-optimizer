@@ -1,0 +1,492 @@
+[
+  {
+    "id": "EXP-032-001",
+    "hypothesis": {
+      "id": "EXP-032-001",
+      "strategy": "feature_expansion",
+      "tactic": "add_fixture_difficulty",
+      "description": "Add FDR (Fixture Difficulty Rating) features",
+      "config": {
+        "additional_features": [
+          "fdr",
+          "opponent_strength"
+        ]
+      }
+    },
+    "metrics": {
+      "rmse": 1.4572457048465108,
+      "mae": 0.7093120417412017,
+      "spearman": 0.7635463676494579
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T23:30:39.709932",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-002",
+    "hypothesis": {
+      "id": "EXP-032-002",
+      "strategy": "feature_expansion",
+      "tactic": "add_ownership_trends",
+      "description": "Add player ownership percentage changes",
+      "config": {
+        "additional_features": [
+          "ownership_change",
+          "transfers_in_out"
+        ]
+      }
+    },
+    "metrics": {
+      "rmse": 1.4572457048465108,
+      "mae": 0.7093120417412017,
+      "spearman": 0.7635463676494579
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T23:30:39.717669",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-003",
+    "hypothesis": {
+      "id": "EXP-032-003",
+      "strategy": "feature_expansion",
+      "tactic": "add_interaction_features",
+      "description": "Add feature interactions (form \u00d7 value)",
+      "config": {
+        "interactions": [
+          [
+            "form_3gw",
+            "value"
+          ],
+          [
+            "form_3gw",
+            "was_home"
+          ]
+        ]
+      }
+    },
+    "metrics": {
+      "rmse": 1.4565006470015462,
+      "mae": 0.7025948995928267,
+      "spearman": 0.7635293342492503
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T23:30:39.726606",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-004",
+    "hypothesis": {
+      "id": "EXP-032-004",
+      "strategy": "feature_expansion",
+      "tactic": "add_fixture_difficulty",
+      "description": "Add FDR (Fixture Difficulty Rating) features",
+      "config": {
+        "additional_features": [
+          "fdr",
+          "opponent_strength"
+        ]
+      }
+    },
+    "metrics": {
+      "rmse": 1.4572457048465108,
+      "mae": 0.7093120417412017,
+      "spearman": 0.7635463676494579
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T23:30:39.734435",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-005",
+    "hypothesis": {
+      "id": "EXP-032-005",
+      "strategy": "feature_expansion",
+      "tactic": "add_interaction_features",
+      "description": "Add feature interactions (form \u00d7 value)",
+      "config": {
+        "interactions": [
+          [
+            "form_3gw",
+            "value"
+          ],
+          [
+            "form_3gw",
+            "was_home"
+          ]
+        ]
+      }
+    },
+    "metrics": {
+      "rmse": 1.4565006470015462,
+      "mae": 0.7025948995928267,
+      "spearman": 0.7635293342492503
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T23:30:39.743307",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-006",
+    "hypothesis": {
+      "id": "EXP-032-006",
+      "strategy": "feature_expansion",
+      "tactic": "add_fixture_difficulty",
+      "description": "Add FDR (Fixture Difficulty Rating) features",
+      "config": {
+        "additional_features": [
+          "fdr",
+          "opponent_strength"
+        ]
+      }
+    },
+    "metrics": {
+      "rmse": 1.4572457048465108,
+      "mae": 0.7093120417412017,
+      "spearman": 0.7635463676494579
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T23:30:39.751381",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-007",
+    "hypothesis": {
+      "id": "EXP-032-007",
+      "strategy": "feature_expansion",
+      "tactic": "add_fixture_difficulty",
+      "description": "Add FDR (Fixture Difficulty Rating) features",
+      "config": {
+        "additional_features": [
+          "fdr",
+          "opponent_strength"
+        ]
+      }
+    },
+    "metrics": {
+      "rmse": 1.4572457048465108,
+      "mae": 0.7093120417412017,
+      "spearman": 0.7635463676494579
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T23:30:39.759054",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-008",
+    "hypothesis": {
+      "id": "EXP-032-008",
+      "strategy": "feature_expansion",
+      "tactic": "add_team_strength",
+      "description": "Add team attack/defense strength ratings",
+      "config": {
+        "additional_features": [
+          "team_attack",
+          "team_defense"
+        ]
+      }
+    },
+    "metrics": {
+      "rmse": 1.4572457048465108,
+      "mae": 0.7093120417412017,
+      "spearman": 0.7635463676494579
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T23:30:39.767010",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-009",
+    "hypothesis": {
+      "id": "EXP-032-009",
+      "strategy": "feature_expansion",
+      "tactic": "add_team_strength",
+      "description": "Add team attack/defense strength ratings",
+      "config": {
+        "additional_features": [
+          "team_attack",
+          "team_defense"
+        ]
+      }
+    },
+    "metrics": {
+      "rmse": 1.4572457048465108,
+      "mae": 0.7093120417412017,
+      "spearman": 0.7635463676494579
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T23:30:39.774834",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-010",
+    "hypothesis": {
+      "id": "EXP-032-010",
+      "strategy": "feature_expansion",
+      "tactic": "add_ownership_trends",
+      "description": "Add player ownership percentage changes",
+      "config": {
+        "additional_features": [
+          "ownership_change",
+          "transfers_in_out"
+        ]
+      }
+    },
+    "metrics": {
+      "rmse": 1.4572457048465108,
+      "mae": 0.7093120417412017,
+      "spearman": 0.7635463676494579
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T23:30:39.784305",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-011",
+    "hypothesis": {
+      "id": "EXP-032-011",
+      "strategy": "feature_expansion",
+      "tactic": "add_interaction_features",
+      "description": "Add feature interactions (form \u00d7 value)",
+      "config": {
+        "interactions": [
+          [
+            "form_3gw",
+            "value"
+          ],
+          [
+            "form_3gw",
+            "was_home"
+          ]
+        ]
+      }
+    },
+    "metrics": {
+      "rmse": 1.4565006470015462,
+      "mae": 0.7025948995928267,
+      "spearman": 0.7635293342492503
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T23:30:39.796125",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-012",
+    "hypothesis": {
+      "id": "EXP-032-012",
+      "strategy": "feature_expansion",
+      "tactic": "add_team_strength",
+      "description": "Add team attack/defense strength ratings",
+      "config": {
+        "additional_features": [
+          "team_attack",
+          "team_defense"
+        ]
+      }
+    },
+    "metrics": {
+      "rmse": 1.4572457048465108,
+      "mae": 0.7093120417412017,
+      "spearman": 0.7635463676494579
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T23:30:39.806599",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-013",
+    "hypothesis": {
+      "id": "EXP-032-013",
+      "strategy": "feature_expansion",
+      "tactic": "add_ownership_trends",
+      "description": "Add player ownership percentage changes",
+      "config": {
+        "additional_features": [
+          "ownership_change",
+          "transfers_in_out"
+        ]
+      }
+    },
+    "metrics": {
+      "rmse": 1.4572457048465108,
+      "mae": 0.7093120417412017,
+      "spearman": 0.7635463676494579
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T23:30:39.816888",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-014",
+    "hypothesis": {
+      "id": "EXP-032-014",
+      "strategy": "feature_expansion",
+      "tactic": "add_team_strength",
+      "description": "Add team attack/defense strength ratings",
+      "config": {
+        "additional_features": [
+          "team_attack",
+          "team_defense"
+        ]
+      }
+    },
+    "metrics": {
+      "rmse": 1.4572457048465108,
+      "mae": 0.7093120417412017,
+      "spearman": 0.7635463676494579
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T23:30:39.827125",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-015",
+    "hypothesis": {
+      "id": "EXP-032-015",
+      "strategy": "feature_expansion",
+      "tactic": "add_interaction_features",
+      "description": "Add feature interactions (form \u00d7 value)",
+      "config": {
+        "interactions": [
+          [
+            "form_3gw",
+            "value"
+          ],
+          [
+            "form_3gw",
+            "was_home"
+          ]
+        ]
+      }
+    },
+    "metrics": {
+      "rmse": 1.4565006470015462,
+      "mae": 0.7025948995928267,
+      "spearman": 0.7635293342492503
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T23:30:39.838849",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-016",
+    "hypothesis": {
+      "id": "EXP-032-016",
+      "strategy": "feature_expansion",
+      "tactic": "add_team_strength",
+      "description": "Add team attack/defense strength ratings",
+      "config": {
+        "additional_features": [
+          "team_attack",
+          "team_defense"
+        ]
+      }
+    },
+    "metrics": {
+      "rmse": 1.4572457048465108,
+      "mae": 0.7093120417412017,
+      "spearman": 0.7635463676494579
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T23:30:39.847264",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-017",
+    "hypothesis": {
+      "id": "EXP-032-017",
+      "strategy": "feature_expansion",
+      "tactic": "add_ownership_trends",
+      "description": "Add player ownership percentage changes",
+      "config": {
+        "additional_features": [
+          "ownership_change",
+          "transfers_in_out"
+        ]
+      }
+    },
+    "metrics": {
+      "rmse": 1.4572457048465108,
+      "mae": 0.7093120417412017,
+      "spearman": 0.7635463676494579
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T23:30:39.855210",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-018",
+    "hypothesis": {
+      "id": "EXP-032-018",
+      "strategy": "feature_expansion",
+      "tactic": "add_team_strength",
+      "description": "Add team attack/defense strength ratings",
+      "config": {
+        "additional_features": [
+          "team_attack",
+          "team_defense"
+        ]
+      }
+    },
+    "metrics": {
+      "rmse": 1.4572457048465108,
+      "mae": 0.7093120417412017,
+      "spearman": 0.7635463676494579
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T23:30:39.863411",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-019",
+    "hypothesis": {
+      "id": "EXP-032-019",
+      "strategy": "feature_expansion",
+      "tactic": "add_team_strength",
+      "description": "Add team attack/defense strength ratings",
+      "config": {
+        "additional_features": [
+          "team_attack",
+          "team_defense"
+        ]
+      }
+    },
+    "metrics": {
+      "rmse": 1.4572457048465108,
+      "mae": 0.7093120417412017,
+      "spearman": 0.7635463676494579
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T23:30:39.871316",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-020",
+    "hypothesis": {
+      "id": "EXP-032-020",
+      "strategy": "feature_expansion",
+      "tactic": "add_interaction_features",
+      "description": "Add feature interactions (form \u00d7 value)",
+      "config": {
+        "interactions": [
+          [
+            "form_3gw",
+            "value"
+          ],
+          [
+            "form_3gw",
+            "was_home"
+          ]
+        ]
+      }
+    },
+    "metrics": {
+      "rmse": 1.4565006470015462,
+      "mae": 0.7025948995928267,
+      "spearman": 0.7635293342492503
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T23:30:39.880181",
+    "artifacts": []
+  }
+]

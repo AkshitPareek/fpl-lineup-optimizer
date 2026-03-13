@@ -2,7 +2,8 @@
 
 > **Active Research:** EXP-032 Parallel Agent Search  
 > **Last Updated:** 2026-03-13  
-> **Current Champion:** EXP-031 (Spearman 0.7263)
+> **Current Champion:** EXP-031 (Spearman 0.7263)  
+> **Dataset:** 75,238 samples (5 seasons)
 
 ---
 
@@ -11,268 +12,118 @@
 ### 🔴 CRITICAL - Do First
 
 #### TASK-001: Collect 2024-25 Season Data via FPL API
-**Status:** 🔄 IN PROGRESS  
+**Status:** ✅ COMPLETED  
 **Priority:** CRITICAL  
-**Assigned:** Agent 2 (Enhanced)  
-**Due:** 2026-03-14
+**Completed:** 2026-03-13
 
-**Description:**
-Current season data (2024-25) is not on GitHub yet (vaastav/FPL) because season is in progress. Need to collect via FPL API directly.
+**Results:**
+- Players collected: ~820
+- Gameweek records: 22,343
+- Master dataset: 75,238 samples (was 52,974)
+- New samples added: 22,264 (+42%)
 
-**Acceptance Criteria:**
-- [ ] Collect all gameweeks up to current
-- [ ] Collect player history data
-- [ ] Collect fixture data with FDR ratings
-- [ ] Aggregate into trainable format
-- [ ] Add to master dataset (target: 15k+ new samples)
-
-**Implementation Notes:**
-```python
-# Use existing FPLService as base
-# Extend to collect historical gameweek data
-# URL pattern: /api/element-summary/{player_id}/
-```
-
-**Related Files:**
-- `backend/fpl_service.py` - Base API client
-- `agents/collect_2024_25_data.py` - Current (GitHub-based, needs FPL API)
+**Files:**
+- `data/current_season/2024-25_fpl_api_data.csv`
+- `datasets/fpl_multi_year/fpl_historical_unified.csv` (updated)
 
 ---
 
 #### TASK-002: Build Real-Time Dashboard
-**Status:** 📋 NOT STARTED  
+**Status:** ✅ COMPLETED (MVP)  
 **Priority:** CRITICAL  
-**Assigned:** TBD  
-**Due:** 2026-03-15
+**Completed:** 2026-03-13
+
+**Results:**
+- Streamlit dashboard running at http://localhost:8501
+- 6 pages: Overview, Model Lab, Team Builder, Research, Analytics, Settings
+- Auto-refresh capability
+
+**Next Enhancement:** Deploy to Streamlit Cloud for public access
+
+---
+
+#### TASK-003: Retrain EXP-031 with 2024-25 Data
+**Status:** 🔄 IN PROGRESS  
+**Priority:** CRITICAL  
+**Started:** 2026-03-13
 
 **Description:**
-Create a visual dashboard that auto-updates to show:
-- Current model performance
-- Team recommendations
-- Model comparisons (EXP-030 vs EXP-031)
-- Live FPL data
+Retrain EXP-031 with the expanded dataset (75k samples vs 53k).
+Expected: Better Spearman correlation with more data.
 
-**Requirements:**
-1. **Auto-refresh:** Updates every hour or on demand
-2. **Model Comparison Panel:** Side-by-side EXP-030 vs EXP-031
-3. **Team Builder:** Interactive team selection with predictions
-4. **Performance Metrics:** RMSE, Spearman over time
-5. **Gameweek Planning:** Upcoming fixture difficulty
+**Steps:**
+- [x] Data collection complete
+- [ ] Regenerate train/test splits
+- [ ] Retrain model
+- [ ] Evaluate new performance
+- [ ] Update champion if improved
 
-**Tech Stack:**
-- Streamlit (primary)
-- Plotly (charts)
-- Pandas (data)
-- APScheduler (auto-refresh)
+---
 
-**Pages:**
-1. **Overview:** Key metrics, champion model info
-2. **Model Lab:** Compare models, run predictions
-3. **Team Builder:** Build optimal team, transfers
-4. **Research:** Experiment results, agent status
-5. **Settings:** API keys, preferences
+#### TASK-004: Re-run Ralph Loop for EXP-032
+**Status:** 📋 NOT STARTED  
+**Priority:** HIGH  
+**Depends on:** TASK-003
 
-**Acceptance Criteria:**
-- [ ] Streamlit app runs without errors
-- [ ] All 5 pages functional
-- [ ] Auto-refresh works
-- [ ] Mobile-responsive
-- [ ] Deployed to Streamlit Cloud or local
+**Description:**
+With 42% more data, try to find model beating EXP-031.
+Target: Spearman ≥ 0.75
 
 ---
 
 ### 🟡 HIGH PRIORITY
 
-#### TASK-003: Implement Real FDR Features
+#### TASK-005: Deploy Dashboard to Streamlit Cloud
 **Status:** 📋 NOT STARTED  
-**Priority:** HIGH  
-**Assigned:** Ralph Loop Agent 3  
-**Due:** 2026-03-16
+**Priority:** HIGH
 
 **Description:**
-The Ralph Loop showed that FDR (Fixture Difficulty Rating) features don't exist in current dataset. Need to:
-1. Extract FDR from FPL API
-2. Add to feature engineering pipeline
-3. Retrain EXP-031 with FDR
-4. Re-run Ralph Loop
-
-**Acceptance Criteria:**
-- [ ] FDR extraction from FPL API
-- [ ] Feature engineering module updated
-- [ ] Model retrained with FDR
-- [ ] Spearman improvement measured
+Deploy dashboard for public access and sharing.
 
 ---
 
-#### TASK-004: Document Ralph Loop Results
+#### TASK-006: Document Ralph Loop Results
 **Status:** 📋 NOT STARTED  
-**Priority:** HIGH  
-**Assigned:** Research Lead  
-**Due:** 2026-03-14
+**Priority:** HIGH
 
 **Description:**
-40 experiments completed but not properly documented. Need comprehensive analysis of:
-- What was tested
-- What worked/didn't work
-- Why EXP-031 is hard to beat
-- Next hypothesis priorities
-
-**Acceptance Criteria:**
-- [ ] Analysis of all 40 experiments
-- [ ] Publication-ready summary
-- [ ] Updated research goals based on findings
-
----
-
-### 🟢 MEDIUM PRIORITY
-
-#### TASK-005: Position-Specific Models
-**Status:** 📋 NOT STARTED  
-**Priority:** MEDIUM  
-**Assigned:** Ralph Loop (Future)  
-**Due:** 2026-03-20
-
-**Description:**
-Train separate models for GK/DEF/MID/FWD. Different features may matter for different positions.
-
----
-
-#### TASK-006: LSTM Time-Series Model
-**Status:** 📋 NOT STARTED  
-**Priority:** MEDIUM  
-**Assigned:** Ralph Loop Agent 4 (Enhanced)  
-**Due:** 2026-03-22
-
-**Description:**
-Implement proper LSTM with sequence data (5-game history per player).
-
-**Acceptance Criteria:**
-- [ ] Sequence data preparation
-- [ ] LSTM architecture
-- [ ] Training pipeline
-- [ ] Evaluation vs EXP-031
+Comprehensive analysis of all experiments.
 
 ---
 
 ## ✅ Completed Tasks
 
-### Recently Completed
-
-#### ✅ TASK-COMPLETED: EXP-031 Historical Training
-**Completed:** 2026-03-13  
-**Result:** 52,974 samples, Spearman 0.7263
-
-#### ✅ TASK-COMPLETED: Parallel Agent System
-**Completed:** 2026-03-13  
-**Result:** 4 agents working, 40 experiments completed
-
-#### ✅ TASK-COMPLETED: Ralph Loop Skill
-**Completed:** 2026-03-13  
-**Result:** Continuous improvement framework ready
+| Task | Date | Result |
+|------|------|--------|
+| EXP-031 Historical Training | 2026-03-13 | 52,974 samples, Spearman 0.7263 |
+| Parallel Agent System | 2026-03-13 | 4 agents working |
+| Ralph Loop Skill | 2026-03-13 | Framework ready |
+| 2024-25 Data Collection | 2026-03-13 | 22,264 new samples added |
+| Dashboard MVP | 2026-03-13 | Running locally |
 
 ---
 
-## 📊 Task Statistics
+## 🎯 Current Session Goals
 
-| Priority | Count | Completed | In Progress | Not Started |
-|----------|-------|-----------|-------------|-------------|
-| 🔴 Critical | 2 | 0 | 1 | 1 |
-| 🟡 High | 2 | 0 | 0 | 2 |
-| 🟢 Medium | 2 | 0 | 0 | 2 |
-| **Total** | **6** | **0** | **1** | **5** |
+### Session: 2026-03-13 Evening
 
----
-
-## 🎯 Research Milestones
-
-### Milestone 1: Data Foundation ⏰ 2026-03-14
-- [ ] 2024-25 data collected (TASK-001)
-- [ ] Dataset > 60k samples
-
-### Milestone 2: Dashboard Launch ⏰ 2026-03-15
-- [ ] Dashboard deployed (TASK-002)
-- [ ] Model comparison live
-
-### Milestone 3: Feature Expansion ⏰ 2026-03-18
-- [ ] FDR features implemented (TASK-003)
-- [ ] EXP-032 candidate identified
-
-### Milestone 4: Publication ⏰ 2026-03-25
-- [ ] All experiments documented
-- [ ] Paper/blog post ready
+1. ✅ ~~Collect 2024-25 data~~ (COMPLETE - 22,264 samples)
+2. ✅ ~~Start dashboard~~ (COMPLETE - running at :8501)
+3. 🔄 Regenerate train/test splits (IN PROGRESS)
+4. 🔄 Retrain EXP-031 with 75k samples (IN PROGRESS)
+5. 📋 Re-run Ralph Loop for EXP-032 (PENDING)
 
 ---
 
-## 🐛 Known Issues
+## 📊 Current System Status
 
-| Issue | Severity | Status | Notes |
-|-------|----------|--------|-------|
-| 2024-25 data not on GitHub | Medium | Workaround | Use FPL API instead |
-| Ralph Loop needs real features | Medium | In Progress | FDR extraction pending |
-| Dashboard missing | High | Not Started | Critical for monitoring |
-
----
-
-## 💡 Ideas Backlog
-
-### Future Experiments
-- [ ] Weather data integration
-- [ ] Betting odds as features
-- [ ] Social media sentiment
-- [ ] Player injury prediction
-- [ ] Team chemistry networks
-
-### Dashboard Features
-- [ ] Push notifications for transfers
-- [ ] Captain pick optimizer
-- [ ] Chip usage advisor
-- [ ] Head-to-head comparison
-- [ ] Expected points timeline
-
-### Infrastructure
-- [ ] MLflow integration
-- [ ] Automated retraining
-- [ ] A/B testing framework
-- [ ] Model versioning
+| Component | Status | Details |
+|-----------|--------|---------|
+| Data Collection | ✅ Complete | 75,238 samples |
+| Dashboard | ✅ Running | http://localhost:8501 |
+| EXP-031 Model | 🔄 Retraining | With new data |
+| Ralph Loop | ⏳ Waiting | For retrain complete |
 
 ---
 
-## 📝 Task Template
-
-When creating new tasks, use this format:
-
-```markdown
-#### TASK-XXX: Task Name
-**Status:** 📋 NOT STARTED / 🔄 IN PROGRESS / ✅ COMPLETED  
-**Priority:** 🔴 CRITICAL / 🟡 HIGH / 🟢 MEDIUM / ⚪ LOW  
-**Assigned:** Name/Agent  
-**Due:** YYYY-MM-DD
-
-**Description:**
-What needs to be done
-
-**Acceptance Criteria:**
-- [ ] Criterion 1
-- [ ] Criterion 2
-
-**Implementation Notes:**
-Technical details
-
-**Related Files:**
-- `path/to/file.py`
-
-**Dependencies:**
-- TASK-XXX (must complete first)
-```
-
----
-
-## 🔄 Update Schedule
-
-- **Daily:** Update task status
-- **Weekly:** Review priorities
-- **Milestone:** Major updates
-
----
-
-*Keep this file updated! It's our source of truth.*
+*Updated: 2026-03-13 23:30*
