@@ -18,7 +18,7 @@ git push origin ml-backend
 3. Click "New app"
 4. Select repository: `AkshitPareek/fpl-lineup-optimizer`
 5. Select branch: `ml-backend`
-6. **Main file path: `streamlit_app.py`** (NOT dashboard/app.py)
+6. **Main file path: `streamlit_app.py`** (at root)
 7. Click "Deploy"
 
 ### 3. Configuration
@@ -28,93 +28,102 @@ The app will automatically use:
 - `.streamlit/config.toml` for theme settings
 - Port 8501 (default Streamlit port)
 
-### 4. Environment Variables (if needed)
+---
 
-If you need API keys or secrets:
-1. Go to app settings on Streamlit Cloud
-2. Click "Secrets"
-3. Add in TOML format:
-```toml
-[fpl]
-api_key = "your_key_here"
-```
+## ⚠️ Important: FPL API Limitations
 
-### 5. Features Enabled
+**The FPL API may block requests from Streamlit Cloud due to CORS restrictions.**
 
-✅ **FPL API Integration**
-- Load real team data by Team ID
-- Live player statistics
-- Transfer recommendations
-- Predicted points using EXP-032 model
+### Workaround Options:
 
-✅ **Model Showcase**
-- EXP-032 champion model (Spearman 0.7666)
-- Feature importance visualization
-- Model comparison (EXP-030 vs EXP-031 vs EXP-032)
+#### Option 1: Use Demo Mode (Recommended for Cloud)
+- Check "Use Demo Team" checkbox
+- See dashboard features with sample data
+- All other features work normally
 
-✅ **Interactive Team Builder**
-- Enter FPL Team ID
-- See predicted points for your squad
-- Get transfer suggestions
-- View top targets
-
-✅ **Research Tracking**
-- Agent status
-- Experiment results
-- Ralph Loop progress
-
-### 6. Troubleshooting
-
-**Issue: "Module not found"**
-- Check `requirements.txt` includes all dependencies
-- Push changes and redeploy
-
-**Issue: "Model not loading"**
-- Ensure `models/exp032_fdr/model.pkl` is in repo
-- File is 100MB, may need Git LFS
-
-**Issue: "FPL API timeout"**
-- API calls are cached for 5 minutes
-- Normal during high traffic
-
-**Issue: "streamlit_app.py not found"**
-- Make sure Main file path is `streamlit_app.py` (at root)
-- NOT `dashboard/app.py`
-
-### 7. Custom Domain (Optional)
-
-To use custom domain:
-1. Go to app settings
-2. Click "Custom domain"
-3. Follow DNS configuration steps
-
-## Local Development
-
+#### Option 2: Run Locally (For Full FPL API Access)
 ```bash
+git clone https://github.com/AkshitPareek/fpl-lineup-optimizer.git
+cd fpl-lineup-optimizer
+pip install -r requirements.txt
 streamlit run streamlit_app.py
 ```
 
 Access at: http://localhost:8501
 
-## File Structure for Deployment
+---
+
+## Features Available
+
+### ✅ Works on Streamlit Cloud
+- **Overview Page:** Champion model stats (EXP-032)
+- **Model Lab:** Compare models, feature importance
+- **Research:** Agent status, experiment results
+- **Analytics:** Dataset statistics, charts
+- **Team Builder (Demo):** Sample team display
+
+### ⚠️ Requires Local Deployment
+- **Team Builder (Live):** Real FPL team loading
+- **Live Predictions:** Real-time player data
+
+---
+
+## Troubleshooting
+
+**Issue: "Failed to load team"**
+- ✅ Enable "Use Demo Team" checkbox
+- FPL API blocks cross-origin requests from cloud
+
+**Issue: "Module not found"**
+- Check `requirements.txt` has all dependencies
+- Push changes and redeploy
+
+**Issue: "Model not loading"**
+- `models/exp032_fdr/model.pkl` is 100MB
+- May need Git LFS for large files
+
+---
+
+## Local Development
+
+For full functionality including live FPL team loading:
+
+```bash
+# Clone repo
+git clone https://github.com/AkshitPareek/fpl-lineup-optimizer.git
+cd fpl-lineup-optimizer
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run locally
+streamlit run streamlit_app.py
+```
+
+Access at: http://localhost:8501
+
+---
+
+## File Structure
 
 ```
 fpl-lineup-optimizer/
-├── streamlit_app.py          # Main entry point (for Streamlit Cloud)
-├── requirements.txt          # Python dependencies
+├── streamlit_app.py          # Main entry point
+├── requirements.txt          # Dependencies
 ├── .streamlit/
-│   └── config.toml          # Theme configuration
-├── pages/
-│   └── 3_Team_Builder.py    # Team builder page
+│   └── config.toml          # Theme settings
+├── pages/                    # Page modules
+│   └── 3_Team_Builder.py    # Team builder
 ├── models/
 │   └── exp032_fdr/
 │       └── model.pkl        # Champion model
-├── dashboard/               # Local development
-│   └── app.py
 └── ...
 ```
 
+---
+
 ## Support
 
-- Streamlit Docs: [docs.streamlit.io](https://docs.streamlit.io)
-- FPL API: [fantasy.premierleague.com/api](https://fantasy.premierleague.com/api)
+- **Streamlit Docs:** [docs.streamlit.io](https://docs.streamlit.io)
+- **FPL API:** [fantasy.premierleague.com/api](https://fantasy.premierleague.com/api)
+- **GitHub Issues:** [Report bugs here](https://github.com/AkshitPareek/fpl-lineup-optimizer/issues)
