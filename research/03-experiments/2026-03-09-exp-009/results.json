@@ -2,7 +2,7 @@
   "experiment_id": "EXP-009",
   "name": "Weighted Ensemble",
   "status": "completed",
-  "timestamp": "2026-03-09T23:58:29.121659",
+  "timestamp": "2026-03-13T17:02:02.365579",
   "hypothesis": "Learn optimal ensemble weights using Ridge regression",
   "results": {
     "rmse": 0.8514175852389188,

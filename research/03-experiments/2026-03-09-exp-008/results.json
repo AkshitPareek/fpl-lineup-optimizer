@@ -2,22 +2,22 @@
   "experiment_id": "EXP-008",
   "name": "Hyperparameter Optimization",
   "status": "completed",
-  "timestamp": "2026-03-09T23:58:26.681341",
+  "timestamp": "2026-03-13T17:01:59.449674",
   "hypothesis": "200+ Optuna trials to find optimal XGBoost hyperparameters",
   "results": {
-    "rmse": 0.8513117095091602,
-    "relative_improvement": 0.6405567799766299,
-    "cohens_d": 0.07950906455516815,
+    "rmse": 0.8516093728286177,
+    "relative_improvement": 0.605815496193079,
+    "cohens_d": 0.09027087688446045,
     "is_significant": false,
     "best_params": {
-      "n_estimators": 135,
-      "max_depth": 8,
-      "learning_rate": 0.02618516118521656,
-      "subsample": 0.625872535725196,
-      "colsample_bytree": 0.5044571732361647,
-      "reg_alpha": 3.9057817309516327,
-      "reg_lambda": 0.0029255238333952965
+      "n_estimators": 68,
+      "max_depth": 4,
+      "learning_rate": 0.02804185182317473,
+      "subsample": 0.9636517056958357,
+      "colsample_bytree": 0.5536973193241005,
+      "reg_alpha": 9.65250952064412,
+      "reg_lambda": 9.968629869823832e-05
     }
   },
-  "conclusion": "Optuna optimization: 0.64% improvement with params {'n_estimators': 135, 'max_depth': 8, 'learning_rate': 0.02618516118521656, 'subsample': 0.625872535725196, 'colsample_bytree': 0.5044571732361647, 'reg_alpha': 3.9057817309516327, 'reg_lambda': 0.0029255238333952965} - Not significant"
+  "conclusion": "Optuna optimization: 0.61% improvement with params {'n_estimators': 68, 'max_depth': 4, 'learning_rate': 0.02804185182317473, 'subsample': 0.9636517056958357, 'colsample_bytree': 0.5536973193241005, 'reg_alpha': 9.65250952064412, 'reg_lambda': 9.968629869823832e-05} - Not significant"
 }

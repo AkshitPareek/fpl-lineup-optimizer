@@ -12,14 +12,14 @@ See experiment runner for implementation details.
 
 | Metric | Value |
 |--------|-------|
-| RMSE | 0.8513 |
+| RMSE | 0.8516 |
 | Baseline RMSE | 0.8568 |
-| Relative Improvement | 0.64% |
-| Cohen's d | 0.0795 |
+| Relative Improvement | 0.61% |
+| Cohen's d | 0.0903 |
 | Significant | ❌ No |
 
 ## Conclusion
-Optuna optimization: 0.64% improvement with params {'n_estimators': 135, 'max_depth': 8, 'learning_rate': 0.02618516118521656, 'subsample': 0.625872535725196, 'colsample_bytree': 0.5044571732361647, 'reg_alpha': 3.9057817309516327, 'reg_lambda': 0.0029255238333952965} - Not significant
+Optuna optimization: 0.61% improvement with params {'n_estimators': 68, 'max_depth': 4, 'learning_rate': 0.02804185182317473, 'subsample': 0.9636517056958357, 'colsample_bytree': 0.5536973193241005, 'reg_alpha': 9.65250952064412, 'reg_lambda': 9.968629869823832e-05} - Not significant
 
 ## Timestamp
-2026-03-09T23:58:26.681225
+2026-03-13T17:01:59.449542

@@ -1,9 +1,9 @@
-# EXP-013: Huber Loss
+# EXP-014: CatBoost
 
 **Status:** ⚠️ Not Significant
 
 ## Hypothesis
-Huber loss to reduce outlier impact
+Ordered boosting for better generalization
 
 ## Methodology
 See experiment runner for implementation details.
@@ -12,14 +12,14 @@ See experiment runner for implementation details.
 
 | Metric | Value |
 |--------|-------|
-| RMSE | 0.8594 |
+| RMSE | 0.8613 |
 | Baseline RMSE | 0.8568 |
-| Relative Improvement | -0.30% |
-| Cohen's d | 0.1651 |
+| Relative Improvement | -0.52% |
+| Cohen's d | 0.0394 |
 | Significant | ❌ No |
 
 ## Conclusion
-Huber loss: -0.30% improvement - Not significant
+CatBoost: -0.52% improvement - Not significant
 
 ## Timestamp
-2026-03-13T17:02:11.101315
+2026-03-13T17:02:13.215936

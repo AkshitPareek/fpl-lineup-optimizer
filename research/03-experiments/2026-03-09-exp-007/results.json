@@ -2,7 +2,7 @@
   "experiment_id": "EXP-007",
   "name": "Position-Specific Models",
   "status": "completed",
-  "timestamp": "2026-03-09T23:58:00.363487",
+  "timestamp": "2026-03-13T17:01:34.440852",
   "hypothesis": "Different positions have different point distributions requiring specialized models",
   "results": {
     "rmse": 0.8956530520421538,
