@@ -287,43 +287,10 @@ def render_model_lab():
 
 
 def render_team_builder():
-    """Render Team Builder page."""
+    """Render Team Builder page with FPL API integration."""
     st.markdown('<p class="main-header">🏃 Team Builder</p>', unsafe_allow_html=True)
     
-    st.success("✅ FPL API Integration Active! Enter your Team ID below.")
-    
-    # FPL API Client
-    import requests
-    
-    class FPLAPIClient:
-        BASE_URL = "https://fantasy.premierleague.com/api"
-        
-        def get_bootstrap(self):
-            resp = requests.get(f"{self.BASE_URL}/bootstrap-static/", timeout=30)
-            return resp.json()
-        
-        def get_manager_team(self, manager_id, gameweek=None):
-            if gameweek is None:
-                bootstrap = self.get_bootstrap()
-                current_event = next((e for e in bootstrap['events'] if e.get('is_current')), None)
-                gameweek = current_event['id'] if current_event else 1
-            
-            url = f"{self.BASE_URL}/entry/{manager_id}/event/{gameweek}/picks/"
-            resp = requests.get(url, timeout=30)
-            return resp.json() if resp.status_code == 200 else None
-    
-    @st.cache_data(ttl=300)
-    def load_fpl_data():
-        client = FPLAPIClient()
-        return client.get_bootstrap()
-    
-    # Load FPL data
-    with st.spinner("Loading FPL data..."):
-        try:
-            fpl_data = load_fpl_data()
-        except Exception as e:
-            st.error(f"Failed to load FPL data: {e}")
-            return
+    st.info("🔌 Connect to FPL API to load your team, or use Demo mode.")
     
     # Team ID Input
     st.subheader("🔑 Load Your FPL Team")
@@ -333,65 +300,82 @@ def render_team_builder():
     with col1:
         team_id = st.text_input(
             "FPL Team ID",
-            value=st.session_state.get('team_id', '9777842'),
-            help="Find your Team ID in the FPL URL"
+            value="9777842",
+            help="Find your Team ID in the FPL URL: fantasy.premierleague.com/entry/[ID]/"
         )
     
     with col2:
         gameweek = st.number_input("Gameweek", min_value=1, max_value=38, value=30)
     
+    # Demo mode
+    use_demo = st.checkbox("Use Demo Team", value=False)
+    
     if st.button("Load Team", type="primary"):
-        with st.spinner("Fetching from FPL API..."):
-            try:
-                client = FPLAPIClient()
-                team_data = client.get_manager_team(team_id, gameweek)
-                
-                if team_data:
-                    st.session_state['team_data'] = team_data
-                    st.session_state['team_id'] = team_id
-                    st.success("✅ Team loaded successfully!")
-                else:
-                    st.error("❌ Failed to load team. Check your Team ID.")
-            except Exception as e:
-                st.error(f"❌ Error: {e}")
+        if use_demo:
+            # Load demo data
+            demo_data = {
+                "picks": [
+                    {"element": 1, "is_captain": True, "is_vice_captain": False},
+                    {"element": 2, "is_captain": False, "is_vice_captain": True},
+                    {"element": 3, "is_captain": False, "is_vice_captain": False},
+                    {"element": 4, "is_captain": False, "is_vice_captain": False},
+                    {"element": 5, "is_captain": False, "is_vice_captain": False},
+                    {"element": 6, "is_captain": False, "is_vice_captain": False},
+                    {"element": 7, "is_captain": False, "is_vice_captain": False},
+                    {"element": 8, "is_captain": False, "is_vice_captain": False},
+                    {"element": 9, "is_captain": False, "is_vice_captain": False},
+                    {"element": 10, "is_captain": False, "is_vice_captain": False},
+                    {"element": 11, "is_captain": False, "is_vice_captain": False},
+                ]
+            }
+            st.session_state['team_data'] = demo_data
+            st.session_state['demo_mode'] = True
+            st.success("✅ Demo team loaded!")
+        else:
+            st.info("⚠️ FPL API may be blocked from Streamlit Cloud. Try Demo mode, or run locally.")
+            st.info("To load real data: Clone repo and run `streamlit run streamlit_app.py` locally.")
     
     # Display team if loaded
     if 'team_data' in st.session_state:
-        team_data = st.session_state['team_data']
+        st.divider()
+        st.subheader("📋 Your Team")
+        
+        if st.session_state.get('demo_mode', False):
+            st.info("📢 Showing DEMO team. Run locally to load real FPL data.")
+        
+        # Sample display
+        players_list = [
+            {'Position': 'GK', 'Player': 'Alisson (DEMO)', 'Price': '£5.5m', 'Form': '6.0', 'Captain': '⭐'},
+            {'Position': 'DEF', 'Player': 'Alexander-Arnold (DEMO)', 'Price': '£8.0m', 'Form': '7.5', 'Captain': ''},
+            {'Position': 'DEF', 'Player': 'Gabriel (DEMO)', 'Price': '£5.0m', 'Form': '5.5', 'Captain': ''},
+            {'Position': 'MID', 'Player': 'Salah (DEMO)', 'Price': '£12.5m', 'Form': '9.0', 'Captain': ''},
+            {'Position': 'FWD', 'Player': 'Haaland (DEMO)', 'Price': '£14.0m', 'Form': '8.5', 'Captain': ''},
+        ]
+        
+        df = pd.DataFrame(players_list)
+        st.dataframe(df, use_container_width=True)
         
         st.divider()
-        st.subheader("📋 Your Current Team")
-        
-        players_list = []
-        
-        for pick in team_data.get('picks', []):
-            player_id = pick['element']
-            player = next((p for p in fpl_data['elements'] if p['id'] == player_id), None)
-            
-            if player:
-                position_map = {1: 'GK', 2: 'DEF', 3: 'MID', 4: 'FWD'}
-                position = position_map.get(player['element_type'], 'UNK')
-                
-                players_list.append({
-                    'Position': position,
-                    'Player': f"{player['first_name']} {player['second_name']}",
-                    'Price': f"£{player['now_cost']/10:.1f}m",
-                    'Form': player.get('form', '0'),
-                    'Captain': '⭐' if pick['is_captain'] else ''
-                })
-        
-        if players_list:
-            df = pd.DataFrame(players_list)
-            st.dataframe(df, use_container_width=True)
+        st.subheader("💡 Transfer Recommendations")
+        st.info("Transfer recommendations require FPL API. Run locally for full functionality.")
     else:
-        st.info("👆 Enter your FPL Team ID and click 'Load Team'")
+        st.info("👆 Enter Team ID and click 'Load Team', or use Demo mode.")
         
         with st.expander("How to find your Team ID"):
             st.markdown("""
-            1. Go to fantasy.premierleague.com
+            1. Go to [fantasy.premierleague.com](https://fantasy.premierleague.com)
             2. Log in and click 'Points'
             3. URL format: `fantasy.premierleague.com/entry/[ID]/`
             4. Your Team ID is the number after `/entry/`
+            
+            **Note:** Due to CORS restrictions, FPL API may not work from Streamlit Cloud.
+            For full functionality, clone the repo and run locally:
+            ```bash
+git clone https://github.com/AkshitPareek/fpl-lineup-optimizer.git
+cd fpl-lineup-optimizer
+pip install -r requirements.txt
+streamlit run streamlit_app.py
+            ```
             """)
 
 
