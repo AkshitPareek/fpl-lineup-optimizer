@@ -277,9 +277,9 @@ class CurrentSeasonCollector:
             fixture_id = gw_record.get('fixture')
             gw = gw_record.get('round')
             
-            # Get opponent team
+            # Get opponent team (use ID for consistency with historical data)
             opponent_team_id = gw_record.get('opponent_team')
-            opponent_team = self.team_map.get(opponent_team_id, 'Unknown')
+            opponent_team = opponent_team_id if opponent_team_id else 0
             
             # Get FDR from fixture if available
             fdr = 3  # Default medium difficulty
@@ -297,7 +297,7 @@ class CurrentSeasonCollector:
             return {
                 'player_id': player['id'],
                 'player_name': f"{player['first_name']} {player['second_name']}",
-                'team': self.team_map.get(player['team'], 'Unknown'),
+                'team': player['team'],
                 'position': self._get_position_name(player['element_type']),
                 'position_code': player['element_type'],
                 'gameweek': gw,
@@ -344,7 +344,7 @@ class CurrentSeasonCollector:
             logger.debug(f"Error processing record: {e}")
             return None
     
-    def calculate_derived_features(self, df: pd.DataForme) -> pd.DataFrame:
+    def calculate_derived_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Calculate derived features (form, etc.)."""
         logger.info("="*70)
         logger.info("STEP 4: Calculating Derived Features")
@@ -411,6 +411,16 @@ class CurrentSeasonCollector:
             master = pd.read_csv(master_path)
             logger.info(f"Loaded existing master: {len(master)} records")
             
+            # Ensure compatible dtypes
+            for col in df.columns:
+                if col in master.columns:
+                    try:
+                        df[col] = df[col].astype(master[col].dtype)
+                    except (ValueError, TypeError):
+                        # If conversion fails, convert both to string
+                        df[col] = df[col].astype(str)
+                        master[col] = master[col].astype(str)
+            
             # Combine
             combined = pd.concat([master, df], ignore_index=True)
             
@@ -435,7 +445,9 @@ class CurrentSeasonCollector:
         
         # Save updated master
         combined.to_csv(master_path, index=False)
-        combined.to_parquet(master_path.with_suffix('.parquet'), compression='gzip')
+        
+        # Save parquet with string conversion for mixed types
+        combined.to_parquet(master_path.with_suffix('.parquet'), compression='gzip', engine='pyarrow')
         
         return combined
     

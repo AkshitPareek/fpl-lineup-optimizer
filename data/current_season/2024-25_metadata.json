@@ -1,0 +1,9 @@
+{
+  "season": "2024-25",
+  "collection_date": "2026-03-13T23:08:23.763428",
+  "source": "Fantasy Premier League API",
+  "api_endpoint": "https://fantasy.premierleague.com/api",
+  "players_collected": 3,
+  "gameweeks_collected": 0,
+  "total_records": 90
+}
