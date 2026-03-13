@@ -18,7 +18,7 @@ git push origin ml-backend
 3. Click "New app"
 4. Select repository: `AkshitPareek/fpl-lineup-optimizer`
 5. Select branch: `ml-backend`
-6. Main file path: `dashboard/app.py`
+6. **Main file path: `streamlit_app.py`** (NOT dashboard/app.py)
 7. Click "Deploy"
 
 ### 3. Configuration
@@ -77,6 +77,10 @@ api_key = "your_key_here"
 - API calls are cached for 5 minutes
 - Normal during high traffic
 
+**Issue: "streamlit_app.py not found"**
+- Make sure Main file path is `streamlit_app.py` (at root)
+- NOT `dashboard/app.py`
+
 ### 7. Custom Domain (Optional)
 
 To use custom domain:
@@ -87,11 +91,28 @@ To use custom domain:
 ## Local Development
 
 ```bash
-cd dashboard
-streamlit run app.py
+streamlit run streamlit_app.py
 ```
 
 Access at: http://localhost:8501
+
+## File Structure for Deployment
+
+```
+fpl-lineup-optimizer/
+├── streamlit_app.py          # Main entry point (for Streamlit Cloud)
+├── requirements.txt          # Python dependencies
+├── .streamlit/
+│   └── config.toml          # Theme configuration
+├── pages/
+│   └── 3_Team_Builder.py    # Team builder page
+├── models/
+│   └── exp032_fdr/
+│       └── model.pkl        # Champion model
+├── dashboard/               # Local development
+│   └── app.py
+└── ...
+```
 
 ## Support
 
