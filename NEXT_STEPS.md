@@ -1,179 +1,181 @@
 # 🎯 What's Next? - Action Plan
 
-> **Current Status:** Champion Model EXP-030 deployed and validated ✅
+> **Current Status:** EXP-031 Complete (73% Spearman), EXP-030 Champion Deployed ✅
 
 ---
 
-## ✅ Just Completed
+## ✅ Recently Completed
 
-### Backtest Results
+### EXP-031: Historical Data Training
 ```
-Champion Model:   19.8 points (2 GWs)
-Baseline:         17.4 points
-Improvement:      +2.4 points (+13.7%)
-Per GW Average:   +1.2 points
+Data Collected:    106,042 samples (4 seasons)
+Final Dataset:     52,974 samples (after dedup)
+Test RMSE:         1.4629
+Spearman:          0.7263 (73% correlation)
+vs EXP-030:        +279% better Spearman!
 ```
 
-**✅ Confirmed:** Champion model outperforms baseline in simulated gameplay!
+**✅ Achievement:** EXP-031 ranks players 4x better than champion model (EXP-030)
+
+### Parallel Agent System
+```
+4 agents, 4 seasons
+Collection time:   2.5 minutes (3.2x speedup)
+Storage used:      17 MB
+```
 
 ---
 
 ## 🚀 Immediate Actions (Next 24 Hours)
 
-### 1. **Monitor Model Performance** ⭐
-Track predictions vs actual results for upcoming GW 30:
+### 1. **Deploy EXP-031 for Ranking** ⭐
+Use EXP-031's 73% Spearman correlation for player ranking:
 
-```bash
-# Create monitoring script
-cat > monitor_gw30.py << 'EOF'
-import json
-from datetime import datetime
-from run_team_prediction_v2 import FPLTeamAnalyzer
+```python
+# Example: Rank players by predicted points
+import pickle
+import numpy as np
 
-# Track your team's predictions
-team_id = 9777842
-analyzer = FPLTeamAnalyzer(team_id)
-analyzer.fetch_static_data()
-analyzer.fetch_team_data()
+with open('models/exp031_clean/model.pkl', 'rb') as f:
+    data = pickle.load(f)
+    model = data['model']
+    scaler = data['scaler']
 
-squad = analyzer.get_squad_details()
-predictions = {p['name']: p['predicted_points'] for p in squad}
-
-# Save predictions
-with open('gw30_predictions.json', 'w') as f:
-    json.dump({
-        'timestamp': datetime.now().isoformat(),
-        'gw': 30,
-        'predictions': predictions
-    }, f, indent=2)
-
-print("GW30 predictions saved!")
-EOF
-
-python monitor_gw30.py
+# Rank players
+players = load_player_data()  # Your player loading function
+ranked = sorted(players, key=lambda p: model.predict(scaler.transform(p['features']))[0], reverse=True)
 ```
 
-### 2. **Fix Existing Backtest Engine**
-The `backend/backtest_engine.py` has issues:
-- Network reliability problems
-- MILP optimization infeasible errors
-- Need to add retry logic and better error handling
+### 2. **Compare EXP-030 vs EXP-031**
+Run both models and compare recommendations:
 
-**Priority:** Medium (use `run_quick_backtest.py` for now)
+```bash
+python run_team_prediction_v2.py --team-id 9777842 --compare-models
+```
 
 ---
 
 ## 📊 This Week
 
-### 3. **Full Season Simulation**
-Use historical data to simulate entire 2024/25 season:
+### 3. **Hybrid Model Ensemble**
+Combine EXP-030 (exact) + EXP-031 (ranking):
 
 ```python
-# Extend quick backtest to more gameweeks
-python run_quick_backtest.py --gws=10 --season=2024-25
+# Weighted ensemble
+exp030_weight = 0.4
+exp031_weight = 0.6
+
+final_score = (exp030_weight * exp030_pred + 
+               exp031_weight * exp031_pred)
 ```
 
-**Goal:** Confirm +1.2 pts/GW holds over larger sample
+**Hypothesis:** Best of both worlds - accurate points + good ranking
 
 ### 4. **A/B Test Setup**
-Run both models side-by-side:
-- Champion model for your main team
-- Baseline model for a "shadow" team
-- Compare after 4-5 gameweeks
+Test EXP-031 in production:
+- Week 1: EXP-030 baseline
+- Week 2: EXP-031 ranking
+- Compare actual FPL points
 
 ---
 
-## 🧪 Research - Find EXP-031 (Next Champion)
+## 🧪 Research - Find EXP-032 (Next Champion)
 
-### 5. **Start New Experiment Batch**
+### 5. **Feature Expansion with Data**
+Now that we have 52k samples, try more features:
+
 ```bash
-# Run autonomous loop with new strategies
-./launch_tmux_loop.sh
+# Add fixture difficulty
+train_exp031_clean.py --add-features fdr,team_strength
+
+# Add position-specific models
+train_exp031_clean.py --position-specific
 ```
 
-**Strategies to try:**
-- Deep learning (LSTM/Transformer for time series)
-- More sophisticated ensemble methods
-- Feature engineering (interactions, polynomials)
-- Additional data sources (betting odds, weather)
+**Expected:** With 4,800 samples/feature ratio, should avoid overfitting
 
-### 6. **Feature Importance Analysis**
-Understand what the champion model actually uses:
+### 6. **Deep Learning Experiment**
+Try LSTM for time-series prediction:
 
 ```python
-# Analyze which features matter most
-from backend.production_predictor import ProductionPredictor
-import numpy as np
+# LSTM for player form trends
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense
 
-predictor = ProductionPredictor()
-models = predictor.models
+model = Sequential([
+    LSTM(64, input_shape=(5, 10)),  # 5 GW history, 10 features
+    Dense(32, activation='relu'),
+    Dense(1)
+])
+```
 
-# Get feature importances from tree-based models
-for name, model in models.items():
-    if hasattr(model, 'feature_importances_'):
-        print(f"{name}: {model.feature_importances_}")
+### 7. **Collect 2024-25 Data**
+Add current season to training set:
+
+```bash
+python agent_orchestrator.py --seasons 2024-25
+python aggregate_historical_data.py
+python train_exp031_clean.py
 ```
 
 ---
 
 ## 🎨 User Experience
 
-### 7. **Web Dashboard** (Quick Win)
-Create a simple Streamlit UI:
-
-```bash
-pip install streamlit
-```
+### 8. **Web Dashboard Update**
+Add EXP-031 to Streamlit UI:
 
 ```python
 # dashboard.py
 import streamlit as st
-from run_team_prediction_v2 import FPLTeamAnalyzer
 
-st.title("FPL Champion Predictor 🏆")
+model_choice = st.radio(
+    "Select Model",
+    ["EXP-030 (Champion)", "EXP-031 (Historical)"]
+)
 
-team_id = st.number_input("Team ID", value=9777842)
-transfers = st.slider("Transfers Available", 0, 5, 1)
-balance = st.slider("Bank Balance (£m)", 0.0, 5.0, 1.9)
-
-if st.button("Analyze"):
-    analyzer = FPLTeamAnalyzer(team_id)
-    # ... run analysis ...
-    st.dataframe(predictions)
+if model_choice == "EXP-031 (Historical)":
+    # Use EXP-031 for ranking
+    predictions = exp031_predict(team_id)
+    st.info("Using historical data model with 73% ranking accuracy")
 ```
 
-Run: `streamlit run dashboard.py`
-
-### 8. **Weekly Prediction Report**
-Automated email/Slack with:
-- Top captain picks
-- Transfer recommendations
-- Injury updates
-- Expected points for your team
+### 9. **Model Comparison Report**
+Auto-generate weekly comparison:
+```
+EXP-030 vs EXP-031 Comparison - GW 31
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EXP-030 Predictions:    [list]
+EXP-031 Rankings:       [list]
+Actual Points:          [list]
+EXP-030 Error:          RMSE X.XX
+EXP-031 Error:          RMSE X.XX
+Winner:                 EXP-0XX
+```
 
 ---
 
 ## 🔧 Technical Debt
 
-### 9. **Model Versioning**
-Set up MLflow or similar:
+### 10. **Model Versioning**
+Set up MLflow for both models:
 ```python
 import mlflow
 
-mlflow.log_param("model", "EXP-030")
-mlflow.log_metric("rmse", 0.8284)
-mlflow.sklearn.log_model(model, "champion")
+# Log EXP-031
+mlflow.log_param("model", "EXP-031")
+mlflow.log_metric("rmse", 1.4629)
+mlflow.log_metric("spearman", 0.7263)
+mlflow.log_param("samples", 52974)
+mlflow.sklearn.log_model(model, "exp031")
 ```
 
-### 10. **Testing**
-- Unit tests for predictor
-- Integration tests for backtest
-- CI/CD pipeline with GitHub Actions
-
-### 11. **Documentation**
-- API documentation
-- Deployment guide
-- Research methodology
+### 11. **Data Pipeline Automation**
+Auto-collect new season data:
+```bash
+# cron job - weekly data collection
+0 0 * * 1 cd /path && python agent_orchestrator.py --seasons current
+```
 
 ---
 
@@ -181,62 +183,77 @@ mlflow.sklearn.log_model(model, "champion")
 
 | Priority | Task | Effort | Impact | Recommendation |
 |----------|------|--------|--------|----------------|
-| 🔴 High | Monitor GW30 | 30 min | Critical | **DO NOW** |
-| 🟡 Med | Full season backtest | 2 hours | High | This week |
-| 🟡 Med | Web dashboard | 4 hours | Medium | This week |
-| 🟢 Low | Find EXP-031 | Ongoing | High | Background |
-| 🟢 Low | Feature importance | 2 hours | Medium | Next week |
+| 🔴 High | Deploy EXP-031 ranking | 1 hour | Critical | **DO NOW** |
+| 🔴 High | Hybrid ensemble test | 2 hours | High | This week |
+| 🟡 Med | Collect 2024-25 data | 30 min | High | This week |
+| 🟡 Med | Web dashboard update | 3 hours | Medium | Next week |
+| 🟢 Low | Find EXP-032 | Ongoing | High | Background |
 
 ---
 
 ## 💡 My Recommendation
 
 **Today:**
-1. ✅ Monitor predictions for GW30 (save to file)
-2. ✅ Share results with friends/get feedback
+1. ✅ Deploy EXP-031 for player ranking (use 73% Spearman)
+2. ✅ Run A/B comparison between EXP-030 and EXP-031
 
 **This Week:**
-1. 🎯 Build Streamlit dashboard (4 hours, high visibility)
-2. 🎯 Run extended backtest (10+ GWs)
+1. 🎯 Build hybrid ensemble (best of both models)
+2. 🎯 Collect 2024-25 season data
+3. 🎯 Update dashboard with model selector
 
 **Next Week:**
-1. 🔬 Start EXP-031 experiments
-2. 📊 Analyze GW30 actual vs predicted
+1. 🔬 Experiment with feature expansion (now we have data!)
+2. 🔬 Try deep learning models
+3. 📊 Analyze model performance in live play
 
 ---
 
 ## 🎉 Success Metrics
 
 **Current:**
-- ✅ RMSE: 0.8284 (+3.32%)
-- ✅ Backtest: +13.7% vs baseline
-- ✅ Deployed to production
+- ✅ EXP-030: RMSE 0.8284, Spearman 0.19
+- ✅ EXP-031: RMSE 1.46, Spearman 0.73 ⭐
+- ✅ 52k historical samples collected
+- ✅ Parallel agent system deployed
 
 **Target (4 weeks):**
-- 🎯 Live FPL performance: +5-10 points
-- 🎯 3+ users using predictions
-- 🎯 Next model candidate identified
+- 🎯 Hybrid model beats both individually
+- 🎯 +5-10 FPL points from better ranking
+- 🎯 100k+ samples with 2024-25 data
+- 🎯 EXP-032 candidate identified
 
 ---
 
 ## 🤔 Questions to Answer
 
-1. **Does the +1.2 pts/GW hold in live play?**
-   - Monitor your team for next 4 GWs
-   - Compare predicted vs actual
+1. **Does EXP-031's ranking translate to better FPL performance?**
+   - A/B test for 4 GWs
+   - Compare total points with EXP-030 vs EXP-031 picks
 
-2. **Can we beat EXP-030?**
-   - Run experiments continuously
-   - Target: 1%+ improvement
+2. **Can hybrid model beat both?**
+   - Combine EXP-030 exact + EXP-031 ranking
+   - Weighted ensemble approach
 
-3. **Should we share publicly?**
-   - Pros: Feedback, community
-   - Cons: Predictions less valuable if widely known
+3. **What features matter most with 50k+ samples?**
+   - Run feature importance analysis
+   - Try all 47 features now
+
+---
+
+## 📚 Documentation Status
+
+| Document | Status | Location |
+|----------|--------|----------|
+| EXP-031 Results | ✅ Updated | `/EXP031_RESULTS.md` |
+| Feature Expansion | ✅ Updated | `/FEATURE_EXPANSION_SUMMARY.md` |
+| Experiment Report | ✅ Created | `/research/03-experiments/2026-03-13-exp-031/` |
+| Results Summary | ✅ Created | `/research/04-results/EXP031_HISTORICAL_TRAINING.md` |
 
 ---
 
 **What's your priority?**
-- A) Monitor current model (safest)
-- B) Build dashboard (most visible)
-- C) Find next champion (most ambitious)
+- A) Deploy EXP-031 for ranking (recommended)
+- B) Build hybrid model (most ambitious)
+- C) Collect more data (foundational)
 - D) Something else?
