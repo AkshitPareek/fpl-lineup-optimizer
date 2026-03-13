@@ -178,3 +178,47 @@ Train separate models for GK/DEF/MID/FWD.
 3. Re-run Ralph Loop with EXP-032 as baseline
 4. Target: EXP-033 with Spearman ≥ 0.77
 
+
+---
+
+## 🚀 TASK-007 UPDATE: Streamlit Cloud Deployment Ready (2026-03-14)
+
+**Status:** ✅ COMPLETED
+
+### Deployment Package Includes:
+
+**Configuration:**
+- `.streamlit/config.toml` - Theme settings
+- `requirements.txt` - All Python dependencies
+- `DEPLOY.md` - Step-by-step deployment guide
+
+**Features Enabled:**
+- ✅ FPL API integration for team loading
+- ✅ Real-time player data
+- ✅ EXP-032 champion model predictions
+- ✅ Transfer recommendations
+- ✅ Model comparison (EXP-030/031/032)
+
+### How to Deploy:
+
+```bash
+# Already done - just deploy from GitHub
+```
+
+1. Visit: https://share.streamlit.io
+2. Connect GitHub account
+3. New app → Select `AkshitPareek/fpl-lineup-optimizer`
+4. Branch: `ml-backend`
+5. Main file: `dashboard/app.py`
+6. Click Deploy
+
+**Public URL will be:** `https://[app-name].streamlit.app`
+
+### User Instructions:
+
+1. Open deployed app
+2. Go to "Team Builder" page
+3. Enter FPL Team ID (from fantasy.premierleague.com URL)
+4. Click "Load Team"
+5. See predictions and recommendations!
+
