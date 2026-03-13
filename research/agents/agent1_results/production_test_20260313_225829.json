@@ -1,0 +1,48 @@
+{
+  "experiment": "EXP-031 Production Test",
+  "timestamp": "2026-03-13T22:58:29.188252",
+  "team_id": 9777842,
+  "model_comparison": {
+    "exp031": {
+      "avg_predicted_points": 19611.46863716895,
+      "total_value": 82.9,
+      "position_distribution": {
+        "DEF": 8,
+        "GK": 3,
+        "MID": 3,
+        "FWD": 1
+      },
+      "player_count": 15
+    },
+    "exp030": {
+      "avg_predicted_points": 10248.731928951518,
+      "total_value": 77.1,
+      "position_distribution": {
+        "MID": 7,
+        "DEF": 5,
+        "GK": 2,
+        "FWD": 1
+      },
+      "player_count": 15
+    },
+    "baseline": {
+      "avg_predicted_points": 5834.411177947882,
+      "total_value": 76.6,
+      "position_distribution": {
+        "DEF": 9,
+        "MID": 5,
+        "FWD": 1
+      },
+      "player_count": 15
+    }
+  },
+  "key_findings": [
+    "EXP-031 avg prediction: 19611.47 pts",
+    "EXP-030 avg prediction: 10248.73 pts",
+    "Baseline avg: 5834.41 pts"
+  ],
+  "recommendations": [
+    "EXP-031 shows 91.4% improvement in team selection",
+    "Deploy EXP-031 for player ranking in production"
+  ]
+}

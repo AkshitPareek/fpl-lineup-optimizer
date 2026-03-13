@@ -1,0 +1,94 @@
+{
+  "timestamp": "2026-03-13T22:59:52.519077",
+  "orchestrator": "ParallelResearchOrchestrator",
+  "agents": [
+    {
+      "id": 1,
+      "name": "EXP-031 Production Testing",
+      "script": "agents/test_exp031_production.py",
+      "args": [
+        "--team-id",
+        "9777842",
+        "--gws",
+        "4"
+      ],
+      "log_file": "research/agents/agent1_production_20260313_225914.log",
+      "status": "completed",
+      "pid": 175998,
+      "start_time": "2026-03-13T22:59:14.491943",
+      "end_time": "2026-03-13T22:59:22.508247",
+      "result": {
+        "return_code": 0,
+        "log_file": "research/agents/agent1_production_20260313_225914.log"
+      }
+    },
+    {
+      "id": 2,
+      "name": "2024-25 Data Collection",
+      "script": "agents/collect_2024_25_data.py",
+      "args": [
+        "--season",
+        "2024-25"
+      ],
+      "log_file": "research/agents/agent2_data_20260313_225914.log",
+      "status": "completed",
+      "pid": 176106,
+      "start_time": "2026-03-13T22:59:16.492556",
+      "end_time": "2026-03-13T22:59:22.508309",
+      "result": {
+        "return_code": 0,
+        "log_file": "research/agents/agent2_data_20260313_225914.log"
+      }
+    },
+    {
+      "id": 3,
+      "name": "EXP-032 Research Loop (Alpha)",
+      "script": "agents/ralph_loop_agent.py",
+      "args": [
+        "--agent-id",
+        "3",
+        "--strategy",
+        "feature_expansion",
+        "--max-iter",
+        "20"
+      ],
+      "log_file": "research/agents/agent3_ralph_20260313_225914.log",
+      "status": "failed",
+      "pid": 176136,
+      "start_time": "2026-03-13T22:59:18.497923",
+      "end_time": "2026-03-13T22:59:22.508364",
+      "result": {
+        "return_code": 1,
+        "log_file": "research/agents/agent3_ralph_20260313_225914.log"
+      }
+    },
+    {
+      "id": 4,
+      "name": "EXP-032 Research Loop (Beta)",
+      "script": "agents/ralph_loop_agent.py",
+      "args": [
+        "--agent-id",
+        "4",
+        "--strategy",
+        "deep_learning",
+        "--max-iter",
+        "20"
+      ],
+      "log_file": "research/agents/agent4_ralph_20260313_225914.log",
+      "status": "failed",
+      "pid": 176193,
+      "start_time": "2026-03-13T22:59:20.503698",
+      "end_time": "2026-03-13T22:59:52.517201",
+      "result": {
+        "return_code": 1,
+        "log_file": "research/agents/agent4_ralph_20260313_225914.log"
+      }
+    }
+  ],
+  "summary": {
+    "total": 4,
+    "completed": 2,
+    "failed": 2,
+    "pending": 0
+  }
+}

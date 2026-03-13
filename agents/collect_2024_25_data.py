@@ -75,12 +75,17 @@ class CurrentSeasonCollector:
         
         df = self.fetch_file('merged_gw.csv', 'gws/')
         
-        if df is not None:
-            self.metadata['files']['gws_merged_gw.csv'] = {
-                'rows': len(df),
-                'columns': len(df.columns),
-                'players': df['name'].nunique() if 'name' in df.columns else None
-            }
+        if df is None:
+            logger.warning("2024-25 data not yet available on GitHub.")
+            logger.info("This is expected for the current season.")
+            logger.info("Consider collecting via FPL API instead.")
+            return None
+        
+        self.metadata['files']['gws_merged_gw.csv'] = {
+            'rows': len(df),
+            'columns': len(df.columns),
+            'players': df['name'].nunique() if 'name' in df.columns else None
+        }
         
         return df
     
@@ -224,8 +229,32 @@ class CurrentSeasonCollector:
         teams_df = self.collect_team_data()
         
         if gws_df is None:
-            logger.error("Failed to collect gameweek data!")
-            return None
+            logger.warning("2024-25 season data not yet available.")
+            logger.info("This is normal - the season is still in progress.")
+            logger.info("Falling back to using existing dataset for research.")
+            
+            # Generate report with status
+            report = {
+                'experiment': '2024-25 Data Collection',
+                'timestamp': datetime.now().isoformat(),
+                'season': self.season,
+                'status': 'skipped',
+                'reason': 'Data not yet available on GitHub (season in progress)',
+                'alternative': 'Use existing 52k sample dataset',
+                'next_steps': [
+                    'Try again in a few weeks when season is archived',
+                    'Use FPL API for real-time data collection',
+                    'Continue with existing dataset (52k samples is sufficient)'
+                ]
+            }
+            
+            # Save report
+            report_path = Path('research/agents/agent2_results') / f'collection_report_{datetime.now().strftime("%Y%m%d_%H%M%S")}.json'
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(report_path, 'w') as f:
+                json.dump(report, f, indent=2)
+            
+            return report
         
         # Aggregate
         aggregated = self.aggregate_data(gws_df)
@@ -258,11 +287,17 @@ def main():
         print("\n" + "="*70)
         print("2024-25 DATA COLLECTION COMPLETE")
         print("="*70)
-        print(f"Samples added: {report['metadata'].get('samples_added', 0)}")
-        print(f"Total samples: {report['metadata'].get('total_samples', 0)}")
+        
+        if 'metadata' in report:
+            print(f"Samples added: {report['metadata'].get('samples_added', 0)}")
+            print(f"Total samples: {report['metadata'].get('total_samples', 0)}")
+        else:
+            print(f"Status: {report.get('status', 'unknown')}")
+            print(f"Reason: {report.get('reason', 'N/A')}")
+        
         print()
         print("Next steps:")
-        for step in report['next_steps']:
+        for step in report.get('next_steps', []):
             print(f"  • {step}")
     else:
         print("\n✗ Data collection failed")

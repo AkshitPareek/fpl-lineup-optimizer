@@ -1,0 +1,498 @@
+[
+  {
+    "id": "EXP-032-001",
+    "hypothesis": {
+      "id": "EXP-032-001",
+      "strategy": "deep_learning",
+      "tactic": "mlp_deep",
+      "description": "Deep neural network (3 layers)",
+      "config": {
+        "hidden_layer_sizes": [
+          64,
+          32,
+          16
+        ],
+        "alpha": 0.001,
+        "max_iter": 1000
+      }
+    },
+    "metrics": {
+      "rmse": 1.457921869096687,
+      "mae": 0.6740337592100603,
+      "spearman": 0.725730146985164
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T22:59:22.488741",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-002",
+    "hypothesis": {
+      "id": "EXP-032-002",
+      "strategy": "deep_learning",
+      "tactic": "mlp_small",
+      "description": "Small neural network (32 hidden units)",
+      "config": {
+        "hidden_layer_sizes": [
+          32
+        ],
+        "alpha": 0.001,
+        "max_iter": 500
+      }
+    },
+    "metrics": {
+      "rmse": 1.4585139411639623,
+      "mae": 0.694842773070382,
+      "spearman": 0.7259540761645581
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T22:59:22.834439",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-003",
+    "hypothesis": {
+      "id": "EXP-032-003",
+      "strategy": "deep_learning",
+      "tactic": "mlp_large",
+      "description": "Large neural network (128 hidden units)",
+      "config": {
+        "hidden_layer_sizes": [
+          128,
+          64
+        ],
+        "alpha": 0.001,
+        "max_iter": 500
+      }
+    },
+    "metrics": {
+      "rmse": 1.4580444555506311,
+      "mae": 0.6939886152497826,
+      "spearman": 0.726562714471751
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T22:59:25.829219",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-004",
+    "hypothesis": {
+      "id": "EXP-032-004",
+      "strategy": "deep_learning",
+      "tactic": "mlp_deep",
+      "description": "Deep neural network (3 layers)",
+      "config": {
+        "hidden_layer_sizes": [
+          64,
+          32,
+          16
+        ],
+        "alpha": 0.001,
+        "max_iter": 1000
+      }
+    },
+    "metrics": {
+      "rmse": 1.457921869096687,
+      "mae": 0.6740337592100603,
+      "spearman": 0.725730146985164
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T22:59:27.029405",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-005",
+    "hypothesis": {
+      "id": "EXP-032-005",
+      "strategy": "deep_learning",
+      "tactic": "mlp_small",
+      "description": "Small neural network (32 hidden units)",
+      "config": {
+        "hidden_layer_sizes": [
+          32
+        ],
+        "alpha": 0.001,
+        "max_iter": 500
+      }
+    },
+    "metrics": {
+      "rmse": 1.4585139411639623,
+      "mae": 0.694842773070382,
+      "spearman": 0.7259540761645581
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T22:59:27.379838",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-006",
+    "hypothesis": {
+      "id": "EXP-032-006",
+      "strategy": "deep_learning",
+      "tactic": "mlp_small",
+      "description": "Small neural network (32 hidden units)",
+      "config": {
+        "hidden_layer_sizes": [
+          32
+        ],
+        "alpha": 0.001,
+        "max_iter": 500
+      }
+    },
+    "metrics": {
+      "rmse": 1.4585139411639623,
+      "mae": 0.694842773070382,
+      "spearman": 0.7259540761645581
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T22:59:27.714545",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-007",
+    "hypothesis": {
+      "id": "EXP-032-007",
+      "strategy": "deep_learning",
+      "tactic": "mlp_large",
+      "description": "Large neural network (128 hidden units)",
+      "config": {
+        "hidden_layer_sizes": [
+          128,
+          64
+        ],
+        "alpha": 0.001,
+        "max_iter": 500
+      }
+    },
+    "metrics": {
+      "rmse": 1.4580444555506311,
+      "mae": 0.6939886152497826,
+      "spearman": 0.726562714471751
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T22:59:30.608918",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-008",
+    "hypothesis": {
+      "id": "EXP-032-008",
+      "strategy": "deep_learning",
+      "tactic": "mlp_large",
+      "description": "Large neural network (128 hidden units)",
+      "config": {
+        "hidden_layer_sizes": [
+          128,
+          64
+        ],
+        "alpha": 0.001,
+        "max_iter": 500
+      }
+    },
+    "metrics": {
+      "rmse": 1.4580444555506311,
+      "mae": 0.6939886152497826,
+      "spearman": 0.726562714471751
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T22:59:33.558362",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-009",
+    "hypothesis": {
+      "id": "EXP-032-009",
+      "strategy": "deep_learning",
+      "tactic": "mlp_small",
+      "description": "Small neural network (32 hidden units)",
+      "config": {
+        "hidden_layer_sizes": [
+          32
+        ],
+        "alpha": 0.001,
+        "max_iter": 500
+      }
+    },
+    "metrics": {
+      "rmse": 1.4585139411639623,
+      "mae": 0.694842773070382,
+      "spearman": 0.7259540761645581
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T22:59:33.901949",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-010",
+    "hypothesis": {
+      "id": "EXP-032-010",
+      "strategy": "deep_learning",
+      "tactic": "mlp_small",
+      "description": "Small neural network (32 hidden units)",
+      "config": {
+        "hidden_layer_sizes": [
+          32
+        ],
+        "alpha": 0.001,
+        "max_iter": 500
+      }
+    },
+    "metrics": {
+      "rmse": 1.4585139411639623,
+      "mae": 0.694842773070382,
+      "spearman": 0.7259540761645581
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T22:59:34.245799",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-011",
+    "hypothesis": {
+      "id": "EXP-032-011",
+      "strategy": "deep_learning",
+      "tactic": "mlp_small",
+      "description": "Small neural network (32 hidden units)",
+      "config": {
+        "hidden_layer_sizes": [
+          32
+        ],
+        "alpha": 0.001,
+        "max_iter": 500
+      }
+    },
+    "metrics": {
+      "rmse": 1.4585139411639623,
+      "mae": 0.694842773070382,
+      "spearman": 0.7259540761645581
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T22:59:34.600773",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-012",
+    "hypothesis": {
+      "id": "EXP-032-012",
+      "strategy": "deep_learning",
+      "tactic": "mlp_large",
+      "description": "Large neural network (128 hidden units)",
+      "config": {
+        "hidden_layer_sizes": [
+          128,
+          64
+        ],
+        "alpha": 0.001,
+        "max_iter": 500
+      }
+    },
+    "metrics": {
+      "rmse": 1.4580444555506311,
+      "mae": 0.6939886152497826,
+      "spearman": 0.726562714471751
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T22:59:37.679619",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-013",
+    "hypothesis": {
+      "id": "EXP-032-013",
+      "strategy": "deep_learning",
+      "tactic": "mlp_large",
+      "description": "Large neural network (128 hidden units)",
+      "config": {
+        "hidden_layer_sizes": [
+          128,
+          64
+        ],
+        "alpha": 0.001,
+        "max_iter": 500
+      }
+    },
+    "metrics": {
+      "rmse": 1.4580444555506311,
+      "mae": 0.6939886152497826,
+      "spearman": 0.726562714471751
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T22:59:40.800356",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-014",
+    "hypothesis": {
+      "id": "EXP-032-014",
+      "strategy": "deep_learning",
+      "tactic": "mlp_small",
+      "description": "Small neural network (32 hidden units)",
+      "config": {
+        "hidden_layer_sizes": [
+          32
+        ],
+        "alpha": 0.001,
+        "max_iter": 500
+      }
+    },
+    "metrics": {
+      "rmse": 1.4585139411639623,
+      "mae": 0.694842773070382,
+      "spearman": 0.7259540761645581
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T22:59:41.145841",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-015",
+    "hypothesis": {
+      "id": "EXP-032-015",
+      "strategy": "deep_learning",
+      "tactic": "mlp_deep",
+      "description": "Deep neural network (3 layers)",
+      "config": {
+        "hidden_layer_sizes": [
+          64,
+          32,
+          16
+        ],
+        "alpha": 0.001,
+        "max_iter": 1000
+      }
+    },
+    "metrics": {
+      "rmse": 1.457921869096687,
+      "mae": 0.6740337592100603,
+      "spearman": 0.725730146985164
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T22:59:42.352195",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-016",
+    "hypothesis": {
+      "id": "EXP-032-016",
+      "strategy": "deep_learning",
+      "tactic": "mlp_deep",
+      "description": "Deep neural network (3 layers)",
+      "config": {
+        "hidden_layer_sizes": [
+          64,
+          32,
+          16
+        ],
+        "alpha": 0.001,
+        "max_iter": 1000
+      }
+    },
+    "metrics": {
+      "rmse": 1.457921869096687,
+      "mae": 0.6740337592100603,
+      "spearman": 0.725730146985164
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T22:59:43.599315",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-017",
+    "hypothesis": {
+      "id": "EXP-032-017",
+      "strategy": "deep_learning",
+      "tactic": "mlp_small",
+      "description": "Small neural network (32 hidden units)",
+      "config": {
+        "hidden_layer_sizes": [
+          32
+        ],
+        "alpha": 0.001,
+        "max_iter": 500
+      }
+    },
+    "metrics": {
+      "rmse": 1.4585139411639623,
+      "mae": 0.694842773070382,
+      "spearman": 0.7259540761645581
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T22:59:43.949431",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-018",
+    "hypothesis": {
+      "id": "EXP-032-018",
+      "strategy": "deep_learning",
+      "tactic": "mlp_small",
+      "description": "Small neural network (32 hidden units)",
+      "config": {
+        "hidden_layer_sizes": [
+          32
+        ],
+        "alpha": 0.001,
+        "max_iter": 500
+      }
+    },
+    "metrics": {
+      "rmse": 1.4585139411639623,
+      "mae": 0.694842773070382,
+      "spearman": 0.7259540761645581
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T22:59:44.274515",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-019",
+    "hypothesis": {
+      "id": "EXP-032-019",
+      "strategy": "deep_learning",
+      "tactic": "mlp_deep",
+      "description": "Deep neural network (3 layers)",
+      "config": {
+        "hidden_layer_sizes": [
+          64,
+          32,
+          16
+        ],
+        "alpha": 0.001,
+        "max_iter": 1000
+      }
+    },
+    "metrics": {
+      "rmse": 1.457921869096687,
+      "mae": 0.6740337592100603,
+      "spearman": 0.725730146985164
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T22:59:45.447981",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-020",
+    "hypothesis": {
+      "id": "EXP-032-020",
+      "strategy": "deep_learning",
+      "tactic": "mlp_large",
+      "description": "Large neural network (128 hidden units)",
+      "config": {
+        "hidden_layer_sizes": [
+          128,
+          64
+        ],
+        "alpha": 0.001,
+        "max_iter": 500
+      }
+    },
+    "metrics": {
+      "rmse": 1.4580444555506311,
+      "mae": 0.6939886152497826,
+      "spearman": 0.726562714471751
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T22:59:48.555932",
+    "artifacts": []
+  }
+]

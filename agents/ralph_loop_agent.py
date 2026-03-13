@@ -62,39 +62,41 @@ class ChampionTracker:
         self.champion_path = Path(champion_path)
         self.champion = self._load_champion()
         
-        logger.info(f"Champion loaded: Spearman={self.champion['spearman']:.4f}, "
-                   f"RMSE={self.champion['rmse']:.4f}")
+        spearman = self.champion.get('spearman', self.champion.get('test_spearman', 0.7263))
+        rmse = self.champion.get('rmse', self.champion.get('test_rmse', 1.4629))
+        logger.info(f"Champion loaded: Spearman={spearman:.4f}, RMSE={rmse:.4f}")
     
     def _load_champion(self) -> Dict:
         """Load current champion metrics."""
         metrics_path = self.champion_path / 'metrics.json'
         
-        if metrics_path.exists():
+        if metrics_path.exists()        :
             with open(metrics_path) as f:
-                return json.load(f)
+                data = json.load(f)
+                # Handle nested structure {model: {metrics}}
+                if 'ridge' in data:
+                    return data['ridge']
+                return data
         else:
             # Default to EXP-031 known values
             return {
-                'ridge': {
-                    'test_rmse': 1.4629,
-                    'spearman': 0.7263
-                }
+                'test_rmse': 1.4629,
+                'spearman': 0.7263
             }
     
     def is_better(self, candidate_metrics: Dict) -> Tuple[bool, str]:
         """Check if candidate beats champion."""
-        champ_metrics = self.champion.get('ridge', self.champion)
+        champ_spearman = self.champion.get('spearman', 0.7263)
+        champ_rmse = self.champion.get('test_rmse', self.champion.get('rmse', 1.4629))
         
         # Primary: Spearman improvement > 2%
         spearman_improvement = (
-            (candidate_metrics['spearman'] - champ_metrics['spearman']) /
-            champ_metrics['spearman']
+            (candidate_metrics['spearman'] - champ_spearman) / champ_spearman
         )
         
         # Secondary: RMSE improvement > 1%
         rmse_improvement = (
-            (champ_metrics['test_rmse'] - candidate_metrics['rmse']) /
-            champ_metrics['test_rmse']
+            (champ_rmse - candidate_metrics['rmse']) / champ_rmse
         )
         
         # Success criteria

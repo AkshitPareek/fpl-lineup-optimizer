@@ -1,0 +1,13 @@
+{
+  "experiment": "2024-25 Data Collection",
+  "timestamp": "2026-03-13T22:58:31.103354",
+  "season": "2024-25",
+  "status": "skipped",
+  "reason": "Data not yet available on GitHub (season in progress)",
+  "alternative": "Use existing 52k sample dataset",
+  "next_steps": [
+    "Try again in a few weeks when season is archived",
+    "Use FPL API for real-time data collection",
+    "Continue with existing dataset (52k samples is sufficient)"
+  ]
+}

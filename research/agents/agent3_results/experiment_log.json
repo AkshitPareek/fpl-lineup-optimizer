@@ -1,0 +1,486 @@
+[
+  {
+    "id": "EXP-032-001",
+    "hypothesis": {
+      "id": "EXP-032-001",
+      "strategy": "feature_expansion",
+      "tactic": "add_interaction_features",
+      "description": "Add feature interactions (form \u00d7 value)",
+      "config": {
+        "interactions": [
+          [
+            "form_3gw",
+            "value"
+          ],
+          [
+            "form_3gw",
+            "was_home"
+          ]
+        ]
+      }
+    },
+    "metrics": {
+      "rmse": 1.4631652446469035,
+      "mae": 0.6865266580770605,
+      "spearman": 0.7262113066131822
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T22:59:19.359789",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-002",
+    "hypothesis": {
+      "id": "EXP-032-002",
+      "strategy": "feature_expansion",
+      "tactic": "add_ownership_trends",
+      "description": "Add player ownership percentage changes",
+      "config": {
+        "additional_features": [
+          "ownership_change",
+          "transfers_in_out"
+        ]
+      }
+    },
+    "metrics": {
+      "rmse": 1.465246332860357,
+      "mae": 0.6898196551306971,
+      "spearman": 0.7260434245580677
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T22:59:19.365857",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-003",
+    "hypothesis": {
+      "id": "EXP-032-003",
+      "strategy": "feature_expansion",
+      "tactic": "add_team_strength",
+      "description": "Add team attack/defense strength ratings",
+      "config": {
+        "additional_features": [
+          "team_attack",
+          "team_defense"
+        ]
+      }
+    },
+    "metrics": {
+      "rmse": 1.465246332860357,
+      "mae": 0.6898196551306971,
+      "spearman": 0.7260434245580677
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T22:59:19.371723",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-004",
+    "hypothesis": {
+      "id": "EXP-032-004",
+      "strategy": "feature_expansion",
+      "tactic": "add_fixture_difficulty",
+      "description": "Add FDR (Fixture Difficulty Rating) features",
+      "config": {
+        "additional_features": [
+          "fdr",
+          "opponent_strength"
+        ]
+      }
+    },
+    "metrics": {
+      "rmse": 1.465246332860357,
+      "mae": 0.6898196551306971,
+      "spearman": 0.7260434245580677
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T22:59:19.377586",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-005",
+    "hypothesis": {
+      "id": "EXP-032-005",
+      "strategy": "feature_expansion",
+      "tactic": "add_fixture_difficulty",
+      "description": "Add FDR (Fixture Difficulty Rating) features",
+      "config": {
+        "additional_features": [
+          "fdr",
+          "opponent_strength"
+        ]
+      }
+    },
+    "metrics": {
+      "rmse": 1.465246332860357,
+      "mae": 0.6898196551306971,
+      "spearman": 0.7260434245580677
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T22:59:19.383367",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-006",
+    "hypothesis": {
+      "id": "EXP-032-006",
+      "strategy": "feature_expansion",
+      "tactic": "add_ownership_trends",
+      "description": "Add player ownership percentage changes",
+      "config": {
+        "additional_features": [
+          "ownership_change",
+          "transfers_in_out"
+        ]
+      }
+    },
+    "metrics": {
+      "rmse": 1.465246332860357,
+      "mae": 0.6898196551306971,
+      "spearman": 0.7260434245580677
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T22:59:19.389340",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-007",
+    "hypothesis": {
+      "id": "EXP-032-007",
+      "strategy": "feature_expansion",
+      "tactic": "add_fixture_difficulty",
+      "description": "Add FDR (Fixture Difficulty Rating) features",
+      "config": {
+        "additional_features": [
+          "fdr",
+          "opponent_strength"
+        ]
+      }
+    },
+    "metrics": {
+      "rmse": 1.465246332860357,
+      "mae": 0.6898196551306971,
+      "spearman": 0.7260434245580677
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T22:59:19.395206",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-008",
+    "hypothesis": {
+      "id": "EXP-032-008",
+      "strategy": "feature_expansion",
+      "tactic": "add_fixture_difficulty",
+      "description": "Add FDR (Fixture Difficulty Rating) features",
+      "config": {
+        "additional_features": [
+          "fdr",
+          "opponent_strength"
+        ]
+      }
+    },
+    "metrics": {
+      "rmse": 1.465246332860357,
+      "mae": 0.6898196551306971,
+      "spearman": 0.7260434245580677
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T22:59:19.401151",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-009",
+    "hypothesis": {
+      "id": "EXP-032-009",
+      "strategy": "feature_expansion",
+      "tactic": "add_fixture_difficulty",
+      "description": "Add FDR (Fixture Difficulty Rating) features",
+      "config": {
+        "additional_features": [
+          "fdr",
+          "opponent_strength"
+        ]
+      }
+    },
+    "metrics": {
+      "rmse": 1.465246332860357,
+      "mae": 0.6898196551306971,
+      "spearman": 0.7260434245580677
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T22:59:19.407019",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-010",
+    "hypothesis": {
+      "id": "EXP-032-010",
+      "strategy": "feature_expansion",
+      "tactic": "add_team_strength",
+      "description": "Add team attack/defense strength ratings",
+      "config": {
+        "additional_features": [
+          "team_attack",
+          "team_defense"
+        ]
+      }
+    },
+    "metrics": {
+      "rmse": 1.465246332860357,
+      "mae": 0.6898196551306971,
+      "spearman": 0.7260434245580677
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T22:59:19.412949",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-011",
+    "hypothesis": {
+      "id": "EXP-032-011",
+      "strategy": "feature_expansion",
+      "tactic": "add_interaction_features",
+      "description": "Add feature interactions (form \u00d7 value)",
+      "config": {
+        "interactions": [
+          [
+            "form_3gw",
+            "value"
+          ],
+          [
+            "form_3gw",
+            "was_home"
+          ]
+        ]
+      }
+    },
+    "metrics": {
+      "rmse": 1.4631652446469035,
+      "mae": 0.6865266580770605,
+      "spearman": 0.7262113066131822
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T22:59:19.419611",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-012",
+    "hypothesis": {
+      "id": "EXP-032-012",
+      "strategy": "feature_expansion",
+      "tactic": "add_fixture_difficulty",
+      "description": "Add FDR (Fixture Difficulty Rating) features",
+      "config": {
+        "additional_features": [
+          "fdr",
+          "opponent_strength"
+        ]
+      }
+    },
+    "metrics": {
+      "rmse": 1.465246332860357,
+      "mae": 0.6898196551306971,
+      "spearman": 0.7260434245580677
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T22:59:19.425668",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-013",
+    "hypothesis": {
+      "id": "EXP-032-013",
+      "strategy": "feature_expansion",
+      "tactic": "add_interaction_features",
+      "description": "Add feature interactions (form \u00d7 value)",
+      "config": {
+        "interactions": [
+          [
+            "form_3gw",
+            "value"
+          ],
+          [
+            "form_3gw",
+            "was_home"
+          ]
+        ]
+      }
+    },
+    "metrics": {
+      "rmse": 1.4631652446469035,
+      "mae": 0.6865266580770605,
+      "spearman": 0.7262113066131822
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T22:59:19.432638",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-014",
+    "hypothesis": {
+      "id": "EXP-032-014",
+      "strategy": "feature_expansion",
+      "tactic": "add_ownership_trends",
+      "description": "Add player ownership percentage changes",
+      "config": {
+        "additional_features": [
+          "ownership_change",
+          "transfers_in_out"
+        ]
+      }
+    },
+    "metrics": {
+      "rmse": 1.465246332860357,
+      "mae": 0.6898196551306971,
+      "spearman": 0.7260434245580677
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T22:59:19.438710",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-015",
+    "hypothesis": {
+      "id": "EXP-032-015",
+      "strategy": "feature_expansion",
+      "tactic": "add_fixture_difficulty",
+      "description": "Add FDR (Fixture Difficulty Rating) features",
+      "config": {
+        "additional_features": [
+          "fdr",
+          "opponent_strength"
+        ]
+      }
+    },
+    "metrics": {
+      "rmse": 1.465246332860357,
+      "mae": 0.6898196551306971,
+      "spearman": 0.7260434245580677
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T22:59:19.444853",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-016",
+    "hypothesis": {
+      "id": "EXP-032-016",
+      "strategy": "feature_expansion",
+      "tactic": "add_team_strength",
+      "description": "Add team attack/defense strength ratings",
+      "config": {
+        "additional_features": [
+          "team_attack",
+          "team_defense"
+        ]
+      }
+    },
+    "metrics": {
+      "rmse": 1.465246332860357,
+      "mae": 0.6898196551306971,
+      "spearman": 0.7260434245580677
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T22:59:19.451011",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-017",
+    "hypothesis": {
+      "id": "EXP-032-017",
+      "strategy": "feature_expansion",
+      "tactic": "add_team_strength",
+      "description": "Add team attack/defense strength ratings",
+      "config": {
+        "additional_features": [
+          "team_attack",
+          "team_defense"
+        ]
+      }
+    },
+    "metrics": {
+      "rmse": 1.465246332860357,
+      "mae": 0.6898196551306971,
+      "spearman": 0.7260434245580677
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T22:59:19.457493",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-018",
+    "hypothesis": {
+      "id": "EXP-032-018",
+      "strategy": "feature_expansion",
+      "tactic": "add_fixture_difficulty",
+      "description": "Add FDR (Fixture Difficulty Rating) features",
+      "config": {
+        "additional_features": [
+          "fdr",
+          "opponent_strength"
+        ]
+      }
+    },
+    "metrics": {
+      "rmse": 1.465246332860357,
+      "mae": 0.6898196551306971,
+      "spearman": 0.7260434245580677
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T22:59:19.463705",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-019",
+    "hypothesis": {
+      "id": "EXP-032-019",
+      "strategy": "feature_expansion",
+      "tactic": "add_fixture_difficulty",
+      "description": "Add FDR (Fixture Difficulty Rating) features",
+      "config": {
+        "additional_features": [
+          "fdr",
+          "opponent_strength"
+        ]
+      }
+    },
+    "metrics": {
+      "rmse": 1.465246332860357,
+      "mae": 0.6898196551306971,
+      "spearman": 0.7260434245580677
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T22:59:19.470177",
+    "artifacts": []
+  },
+  {
+    "id": "EXP-032-020",
+    "hypothesis": {
+      "id": "EXP-032-020",
+      "strategy": "feature_expansion",
+      "tactic": "add_interaction_features",
+      "description": "Add feature interactions (form \u00d7 value)",
+      "config": {
+        "interactions": [
+          [
+            "form_3gw",
+            "value"
+          ],
+          [
+            "form_3gw",
+            "was_home"
+          ]
+        ]
+      }
+    },
+    "metrics": {
+      "rmse": 1.4631652446469035,
+      "mae": 0.6865266580770605,
+      "spearman": 0.7262113066131822
+    },
+    "improved": false,
+    "timestamp": "2026-03-13T22:59:19.477234",
+    "artifacts": []
+  }
+]
