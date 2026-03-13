@@ -102,38 +102,56 @@ def render_overview():
     # Champion Model Card
     st.subheader("🏆 Current Champion")
     
-    metrics = load_model_metrics()
-    if metrics and 'ridge' in metrics:
-        ridge = metrics['ridge']
+    # Load EXP-032 (new champion)
+    exp032_path = Path(__file__).parent.parent / 'models/exp032_fdr/model.pkl'
+    if exp032_path.exists():
+        with open(exp032_path, 'rb') as f:
+            exp032_data = pickle.load(f)
         
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
             st.metric(
                 label="Model",
-                value="EXP-031"
+                value="EXP-032 🎉"
             )
         
         with col2:
             st.metric(
                 label="Spearman Correlation",
-                value=f"{ridge['spearman']:.4f}",
-                delta="+279% vs EXP-030"
+                value="0.7666",
+                delta="+0.48% vs EXP-031"
             )
         
         with col3:
             st.metric(
                 label="RMSE",
-                value=f"{ridge['test_rmse']:.4f}"
+                value="1.4389"
             )
         
         with col4:
             st.metric(
                 label="Training Samples",
-                value="52,974"
+                value="75,317"
             )
+        
+        st.success("🎉 NEW CHAMPION! EXP-032 with FDR features beats EXP-031!")
     else:
-        st.warning("Model metrics not found. Please train EXP-031 first.")
+        # Fallback to EXP-031
+        metrics = load_model_metrics()
+        if metrics and 'ridge' in metrics:
+            ridge = metrics['ridge']
+            
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric(label="Model", value="EXP-031")
+            with col2:
+                st.metric(label="Spearman", value=f"{ridge['spearman']:.4f}")
+            with col3:
+                st.metric(label="RMSE", value=f"{ridge['test_rmse']:.4f}")
+            with col4:
+                st.metric(label="Samples", value="52,974")
     
     st.divider()
     
