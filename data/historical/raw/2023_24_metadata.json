@@ -1,0 +1,22 @@
+{
+  "season": "2023-24",
+  "source": "github/vaastav/Fantasy-Premier-League",
+  "collection_date": "2026-03-13T17:56:21.829094",
+  "files": {
+    "players_raw.csv": {
+      "rows": 865,
+      "columns": 88,
+      "path": "data/historical/raw/2023_24_players_raw.csv"
+    },
+    "gws/merged_gw.csv": {
+      "rows": 29725,
+      "columns": 41,
+      "path": "data/historical/raw/2023_24_gws_merged_gw.csv"
+    },
+    "teams.csv": {
+      "rows": 20,
+      "columns": 21,
+      "path": "data/historical/raw/2023_24_teams.csv"
+    }
+  }
+}
