@@ -142,6 +142,73 @@ Train separate models for GK/DEF/MID/FWD.
 
 ---
 
+## 📋 PENDING TASKS (Store for Later)
+
+### TASK-P1: Integrate All Agent Outputs into Dashboard [PENDING]
+**Priority:** HIGH  
+**Status:** 📋 Not Started  
+**Depends on:** Agent 1, 2, 3 completed
+
+**Description:**
+Merge all parallel agent outputs into working dashboard.
+
+**Components to Integrate:**
+- [ ] Agent 1: EXP-032 predictions for team display
+- [ ] Agent 3: Captain optimizer component
+- [ ] Agent 3: Chip advisor component
+- [ ] Agent 3: Enhanced charts
+- [ ] Agent 3: Dark mode toggle
+
+**Files Ready:**
+- `research/agents/agent1_results/dashboard_integration.py`
+- `research/agents/agent3_results/captain_optimizer.py`
+- `research/agents/agent3_results/chip_advisor.py`
+- `research/agents/agent3_results/enhanced_charts.py`
+- `research/agents/agent3_results/dark_mode.py`
+
+**Steps:**
+1. Merge prediction code into `streamlit_app.py`
+2. Add captain optimizer to Team Builder page
+3. Add chip advisor sidebar
+4. Test all components
+5. Deploy updated dashboard
+
+---
+
+### TASK-P2: Build EXP-033 Hybrid Model [PENDING]
+**Priority:** HIGH  
+**Status:** 📋 Not Started  
+**Potential Impact:** Spearman 0.78+ (NEW CHAMPION)
+
+**Description:**
+Create hybrid model using best position-specific models.
+
+**Research Results (Agent 2):**
+| Position | Best Model | Spearman |
+|----------|-----------|----------|
+| GK | EXP-032 | 0.6938 |
+| DEF | EXP-032 | 0.7224 |
+| MID | MID-specific | **0.7927** ✅ |
+| FWD | FWD-specific | **0.7995** ✅ |
+
+**Hybrid Strategy:**
+```python
+if position == 'MID':
+    use mid_model.pkl  # 0.7927
+elif position == 'FWD':
+    use fwd_model.pkl  # 0.7995
+else:
+    use exp032_model.pkl  # 0.7666
+```
+
+**Expected Result:** 0.78+ Spearman
+
+**Files Ready:**
+- `models/exp033_position/mid_model.pkl`
+- `models/exp033_position/fwd_model.pkl`
+
+---
+
 ## 🎉 BREAKTHROUGH: EXP-032 DISCOVERED! (2026-03-13 23:35)
 
 ### NEW CHAMPION: EXP-032 (FDR Features)
@@ -242,4 +309,53 @@ Train separate models for GK/DEF/MID/FWD.
 streamlit run streamlit_app.py
 # http://localhost:8501
 ```
+
+
+---
+
+## 🚀 PARALLEL AGENTS SYSTEM (2026-03-14)
+
+### Active Agents Status
+
+| Agent | Task | Status | Result |
+|-------|------|--------|--------|
+| 1 | Dashboard Predictions | ✅ Complete | Integration code ready |
+| 2 | EXP-033 Position Models | ✅ Complete | MID: 0.7927, FWD: 0.7995 |
+| 3 | Dashboard UI | ✅ Complete | 4 components generated |
+| 4 | LSTM Neural Net | 🔄 Running | Training in background |
+| 5 | Weather Features | ✅ Complete | Framework ready |
+| 6 | Betting Odds | ✅ Complete | Research complete |
+
+### Agent 4 (LSTM) Running
+- **PID:** 189932
+- **Log:** `research/agents/agent4_launch.log`
+- **ETA:** 10-15 minutes
+
+---
+
+### NEW RESEARCH OPPORTUNITIES DISCOVERED
+
+#### 1. EXP-033 Hybrid Model (HIGH PRIORITY)
+**Finding:** MID (0.7927) and FWD (0.7995) models beat EXP-032!
+
+**Strategy:** Use different models per position
+- GK/DEF: EXP-032 (0.7666)
+- MID: MID-specific (0.7927)
+- FWD: FWD-specific (0.7995)
+
+**Expected Result:** 0.78+ Spearman
+
+#### 2. Weather Integration
+**Expected Impact:** +1-2% Spearman
+**Cost:** Free (OpenWeatherMap API)
+**Status:** Framework ready, needs API key
+
+#### 3. Betting Odds Integration
+**Expected Impact:** +1-2% Spearman
+**Cost:** $29-99/month
+**Status:** Research complete, needs API subscription
+
+#### 4. LSTM Neural Networks
+**Status:** Training in progress
+**Potential:** Time-series patterns
 
