@@ -1,0 +1,32 @@
+{
+  "agent": 2,
+  "task": "EXP-033 Position-Specific Models",
+  "status": "complete",
+  "timestamp": "2026-03-14T00:02:50.016205",
+  "results": {
+    "rmse": 1.4845711771021841,
+    "spearman": 0.7647691506664211
+  },
+  "position_models": {
+    "1": {
+      "position": "GK",
+      "trained": true,
+      "spearman": 0.6937659786186572
+    },
+    "2": {
+      "position": "DEF",
+      "trained": true,
+      "spearman": 0.7223642307368028
+    },
+    "3": {
+      "position": "MID",
+      "trained": true,
+      "spearman": 0.7927095236053031
+    },
+    "4": {
+      "position": "FWD",
+      "trained": true,
+      "spearman": 0.7995326140491313
+    }
+  }
+}
