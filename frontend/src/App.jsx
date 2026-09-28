@@ -8,7 +8,6 @@ const API_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 axios.defaults.baseURL = API_URL;
 
 function App() {
-  const [data, setData] = useState(null)
   const [lineup, setLineup] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -47,23 +46,9 @@ function App() {
   const [selectedGwIndex, setSelectedGwIndex] = useState(0)
 
   useEffect(() => {
-    // Fetch initial data just to verify connection
-    axios.get('/api/data')
-      .then(res => setData(res.data))
-      .catch(err => console.error("Error fetching data", err))
-
-    // Fetch chip recommendations (POST endpoint)
+    // Chip suggestions stay optional. Applying one changes the solve, so the user opts in.
     axios.post('/api/chip-recommendations', { manager_id: null, current_squad: [], chips_used: [], horizon: 5 })
-      .then(res => {
-        setChipRecommendations(res.data)
-        // Auto-apply best chip if available
-        if (res.data.best_chip) {
-          setSelectedChip({
-            chip: res.data.best_chip.chip,
-            gw: res.data.best_chip.recommended_gameweek
-          })
-        }
-      })
+      .then(res => setChipRecommendations(res.data))
       .catch(err => console.error("Error fetching chip recommendations", err))
   }, [])
 
@@ -71,20 +56,17 @@ function App() {
   useEffect(() => {
     if (managerId) {
       axios.get(`/api/manager-chips/${managerId}`)
-        .then(res => setManagerChips(res.data))
+        .then(res => {
+          setManagerChips(res.data)
+          if (Number.isInteger(res.data.banked_transfers)) {
+            setBankedTransfers(res.data.banked_transfers)
+          }
+        })
         .catch(err => console.error("Error fetching manager chips", err))
 
       // Also fetch chip recommendations with manager context
       axios.post('/api/chip-recommendations', { manager_id: parseInt(managerId), current_squad: [], chips_used: [], horizon: parseInt(gameweeks) || 5 })
-        .then(res => {
-          setChipRecommendations(res.data)
-          if (res.data.best_chip) {
-            setSelectedChip({
-              chip: res.data.best_chip.chip,
-              gw: res.data.best_chip.recommended_gameweek
-            })
-          }
-        })
+        .then(res => setChipRecommendations(res.data))
         .catch(err => console.error("Error", err))
     }
   }, [managerId, gameweeks])
@@ -124,10 +106,17 @@ function App() {
           chip_to_use: selectedChip ? [selectedChip.chip, selectedChip.gw] : null
         })
         setCompareData(response.data)
-        // Default to the recommended strategy
-        const recommended = response.data.comparison.with_hits.recommended ? 'with_hits' : 'no_hits'
+        const withHits = response.data.comparison.with_hits
+        const noHits = response.data.comparison.no_hits
+        const recommended = noHits?.feasible !== false && noHits?.recommended
+          ? 'no_hits'
+          : 'with_hits'
+        const chosen = response.data[recommended]
         setSelectedHitStrategy(recommended)
-        setLineup(response.data[recommended])
+        setLineup(chosen && chosen.status !== 'Infeasible' ? chosen : response.data.with_hits)
+        if (withHits && !withHits.feasible && noHits && !noHits.feasible) {
+          setError(response.data.comparison.note || "Neither plan could be solved.")
+        }
         setLoading(false)
       } else if (mode === "backtest") {
         // Streaming implementation
@@ -171,7 +160,10 @@ function App() {
                     setLoading(false);
                     // Select first GW automatically
                     if (event.result.weekly_results.length > 0) {
-                      setSelectedBacktestGw(event.result.weekly_results[0].gameweek);
+                      const withTransfers = event.result.weekly_results.find(
+                        (week) => week.transfers?.in?.length || week.transfers?.out?.length
+                      )
+                      setSelectedBacktestGw((withTransfers || event.result.weekly_results[0]).gameweek);
                     }
                   } else {
                     setBacktestProgress({
@@ -214,7 +206,7 @@ function App() {
         actual: result.actual_points,
         squad: result.squad || [],
         gameweek: result.gameweek,
-        transfers: null // TODO: pass transfer details if needed
+        transfers: result.transfers || null
       }
     }
 
@@ -224,7 +216,7 @@ function App() {
       return {
         points: lineup.total_expected_points,
         cost: lineup.budget_used,
-        squad: lineup.squad,
+        squad: lineup.lineup || lineup.squad || [],
         transfers: lineup.transfers
       }
     } else {
@@ -286,7 +278,32 @@ function App() {
               <div>
                 <label className="block text-gray-400 mb-2 text-sm">Manager ID</label>
                 <input type="text" value={managerId} onChange={(e) => setManagerId(e.target.value)} placeholder="123456" className="w-full bg-gray-700 rounded-lg p-3 text-sm outline-none" />
+                {managerChips && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Chips left: {(managerChips.available || []).join(", ") || "none"}
+                    {Number.isInteger(managerChips.banked_transfers) ? ` · ${managerChips.banked_transfers} free transfers saved` : ""}
+                  </p>
+                )}
               </div>
+              {mode === "multi" && chipRecommendations?.best_chip && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const chip = chipRecommendations.best_chip
+                    const gw = chip.gw ?? chip.recommended_gameweek
+                    if (selectedChip?.chip === chip.chip && selectedChip?.gw === gw) {
+                      setSelectedChip(null)
+                    } else {
+                      setSelectedChip({ chip: chip.chip, gw })
+                    }
+                  }}
+                  className={`w-full text-left text-xs rounded-lg p-3 border ${selectedChip ? "border-fpl-cyan bg-fpl-cyan/10 text-white" : "border-gray-600 text-gray-300"}`}
+                >
+                  {selectedChip
+                    ? `Using ${selectedChip.chip.replaceAll("_", " ")} in GW${selectedChip.gw}. Click to remove.`
+                    : `Suggested chip: ${(chipRecommendations.best_chip.chip || "").replaceAll("_", " ")} in GW${chipRecommendations.best_chip.gw ?? chipRecommendations.best_chip.recommended_gameweek}. Click to apply.`}
+                </button>
+              )}
               <div>
                 <label className="block text-gray-400 mb-2 text-sm">Planning Horizon (GWs)</label>
                 <div className="flex items-center gap-4">
@@ -397,6 +414,12 @@ function App() {
                       ))}
                     </div>
                   )}
+                </div>
+              )}
+              {mode === "single" && strategy === "transfers" && (
+                <div>
+                  <label className="block text-gray-400 mb-2 text-sm">Free Transfers</label>
+                  <input type="number" min="0" max="5" value={freeTransfers} onChange={(e) => setFreeTransfers(e.target.value)} className="w-full bg-gray-700 rounded-lg p-3 text-sm outline-none" />
                 </div>
               )}
               {mode === "single" && (
@@ -536,6 +559,15 @@ function App() {
                               <button onClick={() => setViewMode("list")} className={`px-2 py-1 rounded text-xs ${viewMode === 'list' ? 'bg-fpl-green text-black' : 'bg-gray-700'}`}>List</button>
                             </div>
                           </div>
+                          {currentData.transfers && (currentData.transfers.in?.length || currentData.transfers.out?.length) ? (
+                            <div className="mx-2 mb-2 text-sm text-gray-300 bg-gray-900/50 p-3 rounded border-l-2 border-fpl-cyan">
+                              <p>Out: {(currentData.transfers.out || []).map((p) => p.name || p).join(", ") || "none"}</p>
+                              <p>In: {(currentData.transfers.in || []).map((p) => p.name || p).join(", ") || "none"}</p>
+                              {currentData.transfers.hits > 0 && <p>Hit cost: -{currentData.transfers.hits * 4}</p>}
+                            </div>
+                          ) : (
+                            <p className="px-2 pb-2 text-xs text-gray-500">No transfers this gameweek.</p>
+                          )}
                           <div className="flex-1 overflow-y-auto">
                             {viewMode === 'pitch' ? (
                               <Pitch lineup={currentData.squad} />
@@ -691,18 +723,22 @@ function App() {
                             <span className="text-[10px] bg-green-900/50 text-green-400 px-1.5 py-0.5 rounded">Recommended</span>
                           )}
                         </div>
-                        <div className="text-lg font-bold text-white">{compareData.comparison.with_hits.net_xp} pts</div>
+                        <div className="text-lg font-bold text-white">{compareData.comparison.with_hits.feasible === false ? "Unavailable" : `${compareData.comparison.with_hits.net_xp} pts`}</div>
                         <div className="text-xs text-gray-400">
-                          {compareData.comparison.with_hits.total_xp} xP - {compareData.comparison.with_hits.hit_cost} hits
+                          {compareData.comparison.with_hits.feasible === false
+                            ? "Could not solve"
+                            : `${compareData.comparison.with_hits.total_xp} xP - ${compareData.comparison.with_hits.hit_cost} hit pts`}
                         </div>
                       </button>
 
                       {/* No Hits Option */}
                       <button
                         onClick={() => {
+                          if (compareData.comparison.no_hits.feasible === false) return
                           setSelectedHitStrategy('no_hits')
                           setLineup(compareData.no_hits)
                         }}
+                        disabled={compareData.comparison.no_hits.feasible === false}
                         className={`p-3 rounded-lg transition ${selectedHitStrategy === 'no_hits'
                           ? 'bg-green-900/50 border-2 border-green-500'
                           : 'bg-gray-800 border border-gray-700 hover:border-gray-600'}`}
@@ -713,15 +749,17 @@ function App() {
                             <span className="text-[10px] bg-green-900/50 text-green-400 px-1.5 py-0.5 rounded">Recommended</span>
                           )}
                         </div>
-                        <div className="text-lg font-bold text-white">{compareData.comparison.no_hits.net_xp} pts</div>
+                        <div className="text-lg font-bold text-white">{compareData.comparison.no_hits.feasible === false ? "Unavailable" : `${compareData.comparison.no_hits.net_xp} pts`}</div>
                         <div className="text-xs text-gray-400">
-                          Free transfers only
+                          {compareData.comparison.no_hits.feasible === false ? "Needs more transfers than you have" : "Free transfers only"}
                         </div>
                       </button>
                     </div>
                     <div className="mt-2 text-center">
                       <span className={`text-xs ${compareData.comparison.difference > 0 ? 'text-yellow-400' : 'text-green-400'}`}>
-                        {compareData.comparison.difference > 0
+                        {compareData.comparison.difference == null
+                          ? (compareData.comparison.note || "One plan could not be solved")
+                          : compareData.comparison.difference > 0
                           ? `Hits gain +${compareData.comparison.difference} pts`
                           : `No-hit saves ${Math.abs(compareData.comparison.difference)} pts`}
                       </span>
@@ -738,6 +776,13 @@ function App() {
                           GW {currentData.gameweek || 'Selection'}
                           <span className="text-fpl-green ml-2">{currentData.points.toFixed(1)} xP</span>
                         </h3>
+                        {currentData.transfers && !currentData.transfers.explanation && (currentData.transfers.in?.length || currentData.transfers.out?.length) ? (
+                          <div className="text-sm text-gray-300 max-w-2xl bg-gray-900/50 p-3 rounded border-l-2 border-fpl-cyan mt-2">
+                            <p>Out: {(currentData.transfers.out || []).map((p) => p.name || p).join(", ") || "none"}</p>
+                            <p>In: {(currentData.transfers.in || []).map((p) => p.name || p).join(", ") || "none"}</p>
+                            {currentData.transfers.cost > 0 && <p>Hit cost: -{currentData.transfers.cost}</p>}
+                          </div>
+                        ) : null}
                         {currentData.transfers?.explanation ? (
                           <div className="text-sm text-gray-300 max-w-2xl bg-gray-900/50 p-3 rounded border-l-2 border-fpl-cyan mt-2">
                             {/* xP Gain and Hit Analysis */}

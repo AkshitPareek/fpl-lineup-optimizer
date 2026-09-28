@@ -30,7 +30,6 @@ function EVCharts() {
     const EVBar = ({ floor, expected, ceiling, maxVal = 15 }) => {
         const left = (floor / maxVal) * 100
         const width = ((ceiling - floor) / maxVal) * 100
-        const expectedPos = ((expected - floor) / (ceiling - floor)) * 100
 
         return (
             <div className="relative w-full h-8 bg-gray-900 rounded-full mt-2 overflow-hidden border border-gray-700">
