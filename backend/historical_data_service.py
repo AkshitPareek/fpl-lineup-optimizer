@@ -15,8 +15,8 @@ from typing import Dict, List, Any, Optional
 
 class HistoricalDataService:
     BASE_URL = "https://fantasy.premierleague.com/api"
-    CACHE_DIR = "data/cache"
-    HISTORY_FILE = "data/cache/all_player_history.json"
+    CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "cache")
+    HISTORY_FILE = os.path.join(CACHE_DIR, "all_player_history.json")
     CACHE_DURATION = 86400 * 7  # 1 week cache for history (doesn't change often for past)
     
     def __init__(self):

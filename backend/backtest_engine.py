@@ -259,12 +259,16 @@ class BacktestEngine:
             
             # 5. Update State for Next Turn
             # New squad is the squad from the plan
+            built_from_scratch = not current_squad_ids
             current_squad_ids = [p['id'] for p in starters + bench]
             
-            # Update banked transfers
-            # Logic: min(5, prev_banked + 1 - used)
+            # A blank starting squad is a free build. Later weeks bank unused
+            # transfers and always keep at least one for the next deadline.
             ft_used = plan.transfers.free_transfers_used
-            banked_transfers = min(5, banked_transfers + 1 - ft_used)
+            if built_from_scratch:
+                banked_transfers = 1
+            else:
+                banked_transfers = max(1, min(5, banked_transfers + 1 - ft_used))
             
             # Budget update?
             # We should recalculate budget based on new squad value.
@@ -299,14 +303,29 @@ class BacktestEngine:
                 'net_score': gw_net_score,
                 'transfers_in': len(plan.transfers.transfers_in),
                 'banked_transfers_next': banked_transfers,
-                'squad_value': cost_of_squad
+                'squad_value': cost_of_squad,
+                'squad': starters + bench,
+                'transfers': {
+                    'in': plan.transfers.transfers_in,
+                    'out': plan.transfers.transfers_out,
+                    'hits': plan.transfers.hits_taken,
+                    'hit_cost': plan.transfers.hit_cost,
+                    'xp_gain': plan.transfers.xp_gain,
+                    'hit_worth_it': plan.transfers.hit_worth_it,
+                    'explanation': plan.transfers.explanation,
+                    'alternatives': plan.transfers.alternatives,
+                } if plan.transfers else None,
             })
             
         metrics = {
             'total_actual_points': total_actual_points,
             'total_predicted_points': total_predicted_points,
             'prediction_error': total_predicted_points - total_actual_points,
-            'avg_points_per_gw': total_actual_points / len(range_gws)
+            'avg_points_per_gw': total_actual_points / len(range_gws) if range_gws else 0
+        }
+        return {
+            'metrics': metrics,
+            'weekly_results': results
         }
         
     def run_backtest_generator(self, 
@@ -438,6 +457,16 @@ class BacktestEngine:
                 'banked_transfers_next': banked_transfers,
                 'squad_value': cost_of_squad,
                 'squad': starters + bench,
+                'transfers': {
+                    'in': plan.transfers.transfers_in,
+                    'out': plan.transfers.transfers_out,
+                    'hits': plan.transfers.hits_taken,
+                    'hit_cost': plan.transfers.hit_cost,
+                    'xp_gain': plan.transfers.xp_gain,
+                    'hit_worth_it': plan.transfers.hit_worth_it,
+                    'explanation': plan.transfers.explanation,
+                    'alternatives': plan.transfers.alternatives,
+                } if plan.transfers else None,
                 **analytics_metrics
             })
             
