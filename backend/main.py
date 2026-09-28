@@ -189,10 +189,13 @@ def _enrich_with_analytics(response_dict: Dict, players_df: pd.DataFrame, teams_
         
         # Get all distributions once
         ev_dists = ev_calc.get_all_distributions()
-        ev_map = ev_dists.set_index('player_id').to_dict(orient='index')
+        own_frame = own_tracker.get_all_ownership()
+        if ev_dists.empty or "id" not in ev_dists.columns or own_frame.empty or "id" not in own_frame.columns:
+            return response_dict
+        ev_map = ev_dists.set_index('id').to_dict(orient='index')
         
         # Get all ownership
-        own_data = own_tracker.get_all_ownership().set_index('player_id').to_dict(orient='index')
+        own_data = own_frame.set_index('id').to_dict(orient='index')
         
         def enrich_list(player_list):
             for p in player_list:
@@ -334,11 +337,6 @@ async def optimize_multi_period(request: MultiPeriodRequest):
                     # User provided bank, not total budget
                     actual_budget = squad_value + request.budget
                     print(f"Manager {request.manager_id}: Squad value £{squad_value:.1f}m + Bank £{request.budget:.1f}m = £{actual_budget:.1f}m total")
-                
-                # Get actual banked transfers from entry_history if available
-                if "entry_history" in manager_team:
-                    # FPL stores event_transfers_cost, we can infer FTs
-                    pass  # Use provided value for now
             except Exception as e:
                 print(f"Error fetching manager team: {e}")
         
@@ -390,6 +388,29 @@ async def optimize_multi_period(request: MultiPeriodRequest):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+def _comparison_entry(solution, net_xp, total_hits, hit_cost, recommended):
+    """Summarize one strategy. An unsolved plan is not scored as zero."""
+    if getattr(solution, "status", None) != "Optimal":
+        return {
+            "status": getattr(solution, "status", "Unknown"),
+            "feasible": False,
+            "total_xp": None,
+            "total_hits": None,
+            "hit_cost": None,
+            "net_xp": None,
+            "recommended": False,
+        }
+    return {
+        "status": "Optimal",
+        "feasible": True,
+        "total_xp": round(solution.total_expected_points, 1),
+        "total_hits": total_hits,
+        "hit_cost": hit_cost,
+        "net_xp": round(net_xp, 1),
+        "recommended": recommended,
+    }
 
 
 @app.post("/api/optimize/compare")
@@ -493,6 +514,20 @@ async def optimize_compare(request: MultiPeriodRequest):
                 detail="Optimization timed out. Try reducing the gameweek horizon."
             )
         
+        if solution_with_hits.status != "Optimal":
+            return {
+                "current_gw": current_gw,
+                "strategy": request.strategy,
+                "comparison": {
+                    "with_hits": _comparison_entry(solution_with_hits, 0, 0, 0, False),
+                    "no_hits": _comparison_entry(solution_with_hits, 0, 0, 0, False),
+                    "difference": None,
+                    "note": "The hit plan could not be solved for this squad."
+                },
+                "with_hits": _enrich_with_analytics(optimizer.to_dict(solution_with_hits), players_df, teams_df),
+                "no_hits": None,
+            }
+
         # Check if any hits were taken
         total_hits = sum(tp.hits_taken for tp in solution_with_hits.transfer_summary)
         
@@ -504,20 +539,12 @@ async def optimize_compare(request: MultiPeriodRequest):
                 "current_gw": current_gw,
                 "strategy": request.strategy,
                 "comparison": {
-                    "with_hits": {
-                        "total_xp": round(solution_with_hits.total_expected_points, 1),
-                        "total_hits": 0,
-                        "hit_cost": 0,
-                        "net_xp": round(solution_with_hits.total_expected_points, 1),
-                        "recommended": True
-                    },
-                    "no_hits": {
-                        "total_xp": round(solution_with_hits.total_expected_points, 1),
-                        "total_hits": 0,
-                        "hit_cost": 0,
-                        "net_xp": round(solution_with_hits.total_expected_points, 1),
-                        "recommended": True
-                    },
+                    "with_hits": _comparison_entry(
+                        solution_with_hits, solution_with_hits.total_expected_points, 0, 0, True
+                    ),
+                    "no_hits": _comparison_entry(
+                        solution_with_hits, solution_with_hits.total_expected_points, 0, 0, True
+                    ),
                     "difference": 0,
                     "note": "No hits required - both strategies produce identical results"
                 },
@@ -542,15 +569,21 @@ async def optimize_compare(request: MultiPeriodRequest):
                 "current_gw": current_gw,
                 "strategy": request.strategy,
                 "comparison": {
-                    "with_hits": {
-                        "total_xp": round(solution_with_hits.total_expected_points, 1),
-                        "total_hits": total_hits,
-                        "hit_cost": total_hits * 4,
-                        "net_xp": round(with_hits_net, 1),
-                        "recommended": True
+                    "with_hits": _comparison_entry(
+                        solution_with_hits, with_hits_net, total_hits, total_hits * 4, True
+                    ),
+                    "no_hits": {
+                        "status": "Timeout",
+                        "feasible": False,
+                        "total_xp": None,
+                        "total_hits": None,
+                        "hit_cost": None,
+                        "net_xp": None,
+                        "recommended": False,
+                        "error": "Timed out - could not calculate",
                     },
-                    "no_hits": {"error": "Timed out - could not calculate"},
-                    "difference": 0
+                    "difference": None,
+                    "note": "The free-transfer plan timed out, so it is not scored as zero."
                 },
                 "with_hits": _enrich_with_analytics(optimizer.to_dict(solution_with_hits), players_df, teams_df),
                 "no_hits": None,
@@ -561,27 +594,31 @@ async def optimize_compare(request: MultiPeriodRequest):
         with_hits_net = solution_with_hits.total_expected_points - sum(
             tp.hit_cost for tp in solution_with_hits.transfer_summary
         )
-        no_hits_net = solution_no_hits.total_expected_points
+        no_hits_feasible = solution_no_hits.status == "Optimal"
+        no_hits_net = solution_no_hits.total_expected_points if no_hits_feasible else None
+        hit_cost = sum(tp.hit_cost for tp in solution_with_hits.transfer_summary)
+        difference = round(with_hits_net - no_hits_net, 1) if no_hits_feasible else None
         
         return {
             "current_gw": current_gw,
             "strategy": request.strategy,
             "comparison": {
-                "with_hits": {
-                    "total_xp": round(solution_with_hits.total_expected_points, 1),
-                    "total_hits": total_hits,
-                    "hit_cost": sum(tp.hit_cost for tp in solution_with_hits.transfer_summary),
-                    "net_xp": round(with_hits_net, 1),
-                    "recommended": with_hits_net > no_hits_net
-                },
-                "no_hits": {
-                    "total_xp": round(solution_no_hits.total_expected_points, 1),
-                    "total_hits": 0,
-                    "hit_cost": 0,
-                    "net_xp": round(no_hits_net, 1),
-                    "recommended": no_hits_net >= with_hits_net
-                },
-                "difference": round(with_hits_net - no_hits_net, 1)
+                "with_hits": _comparison_entry(
+                    solution_with_hits,
+                    with_hits_net,
+                    total_hits,
+                    hit_cost,
+                    (not no_hits_feasible) or with_hits_net > no_hits_net,
+                ),
+                "no_hits": _comparison_entry(
+                    solution_no_hits,
+                    no_hits_net or 0,
+                    0,
+                    0,
+                    bool(no_hits_feasible and no_hits_net >= with_hits_net),
+                ),
+                "difference": difference,
+                "note": None if no_hits_feasible else "Free-transfer plan could not be solved. It needs more moves than the free-transfer bank allows, so it is not scored as zero."
             },
             "with_hits": _enrich_with_analytics(optimizer.to_dict(solution_with_hits), players_df, teams_df),
             "no_hits": _enrich_with_analytics(optimizer.to_dict(solution_no_hits), players_df, teams_df)

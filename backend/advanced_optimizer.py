@@ -157,6 +157,21 @@ class MultiPeriodFPLOptimizer:
             fixtures=fixtures
         )
             
+    @staticmethod
+    def _unlimited_transfers(active_chip, chip_gw, gameweek) -> bool:
+        """Wildcard and Free Hit weeks do not spend free transfers or take hits."""
+        return active_chip in ("wildcard", "freehit", "free_hit") and chip_gw == gameweek
+
+    def _set_bank_after(self, prob, ft_banked_var, available, ft_used_var, cap_binary) -> None:
+        """Set the next deadline's free transfers to min(5, available - used + 1)."""
+        raw_next = available + 1 - ft_used_var
+        cap = self.MAX_BANKED_TRANSFERS
+        big_m = cap + 1
+        prob += ft_banked_var <= cap
+        prob += ft_banked_var <= raw_next
+        prob += ft_banked_var >= raw_next - big_m * cap_binary
+        prob += ft_banked_var >= cap - big_m * (1 - cap_binary)
+
     def _get_predictions(self, gameweeks: int) -> pd.DataFrame:
         """Get or compute predictions for the planning horizon."""
         if self.predictions is None:
@@ -344,6 +359,7 @@ class MultiPeriodFPLOptimizer:
         """
         import time
         start_time = time.time()
+        banked_transfers = max(0, min(self.MAX_BANKED_TRANSFERS, int(banked_transfers)))
         
         gameweeks = max(3, min(8, gameweeks))  # Clamp to 3-8
         horizon = list(range(self.current_gw, self.current_gw + gameweeks))
@@ -465,6 +481,7 @@ class MultiPeriodFPLOptimizer:
         ft_used = pulp.LpVariable.dicts("ft_used", horizon, lowBound=0, upBound=self.MAX_BANKED_TRANSFERS, cat='Integer')
         hits = pulp.LpVariable.dicts("hits", horizon, lowBound=0, upBound=max_hits, cat='Integer')  # Controlled by max_hits param
         ft_banked = pulp.LpVariable.dicts("ft_banked", horizon, lowBound=0, upBound=self.MAX_BANKED_TRANSFERS, cat='Integer')
+        bank_cap = pulp.LpVariable.dicts("bank_cap", horizon, cat='Binary')
         
         # Objective: Maximize total expected points over horizon minus hit costs
         # Plus small incentive to use free transfers when beneficial
@@ -576,8 +593,13 @@ class MultiPeriodFPLOptimizer:
                             prob += z_out[(j, t)] == 0
                             prob += squad[(j, t)] == z_in[(j, t)]
                     
-                    # Initial FT banked
-                    prob += ft_banked[t] <= banked_transfers + 1 - ft_used[t]
+                    # Free transfers left after this gameweek can be 0.
+                    # The next deadline grants one more, up to the cap.
+                    if self._unlimited_transfers(active_chip, chip_gw, t):
+                        prob += ft_used[t] == 0
+                        prob += ft_banked[t] == min(self.MAX_BANKED_TRANSFERS, banked_transfers + 1)
+                    else:
+                        self._set_bank_after(prob, ft_banked[t], banked_transfers, ft_used[t], bank_cap[t])
                 else:
                     # Fresh squad selection (Wildcard-like)
                     for j in player_ids:
@@ -592,13 +614,10 @@ class MultiPeriodFPLOptimizer:
                     # Can't transfer in and out same player
                     prob += z_in[(j, t)] + z_out[(j, t)] <= 1
                 
-                # Transfer banking
-                # You get 1 new FT each GW. If you don't use it, you can bank up to 2.
-                # ft_banked[t] = min(2, ft_banked[t-1] + 1 - ft_used[t])
-                # But ft_banked[t] >= 1 always (you always have at least 1 FT)
-                prob += ft_banked[t] <= ft_banked[prev_t] + 1 - ft_used[t]
-                prob += ft_banked[t] <= self.MAX_BANKED_TRANSFERS
-                prob += ft_banked[t] >= 1  # Always have at least 1 FT
+                # Saved free transfers carry forward. Wildcard and Free Hit do not spend them.
+                if self._unlimited_transfers(active_chip, chip_gw, t):
+                    prob += ft_used[t] == 0
+                self._set_bank_after(prob, ft_banked[t], ft_banked[prev_t], ft_used[t], bank_cap[t])
             
             # Transfer balance: transfers in = transfers out
             # Note: This is removed because it is implied by the squad size (15) 
@@ -606,16 +625,23 @@ class MultiPeriodFPLOptimizer:
             # if some current players are excluded (e.g. injured).
             # prob += pulp.lpSum([z_in[(j, t)] for j in player_ids]) == pulp.lpSum([z_out[(j, t)] for j in player_ids])
             
-            # Free transfers and hits
+            # Free transfers and hits.
+            # ft_banked[t] is the number available at the next deadline, so later
+            # weeks spend that balance directly instead of granting another FT.
             transfers_made = pulp.lpSum([z_in[(j, t)] for j in player_ids])
             if idx == 0:
                 available_ft = banked_transfers
             else:
-                available_ft = ft_banked[horizon[idx - 1]] + 1
+                available_ft = ft_banked[horizon[idx - 1]]
             
-            # hits = max(0, transfers_made - available_ft)
-            prob += hits[t] >= transfers_made - available_ft
-            prob += ft_used[t] >= transfers_made - hits[t]
+            # Wildcard and Free Hit allow every transfer without a hit.
+            if self._unlimited_transfers(active_chip, chip_gw, t):
+                prob += hits[t] == 0
+            else:
+                prob += ft_used[t] <= transfers_made
+                prob += ft_used[t] <= available_ft
+                prob += hits[t] >= transfers_made - available_ft
+                prob += ft_used[t] >= transfers_made - hits[t]
         
         # Solve with optimized settings:
         # - timeLimit=15: Max 15 seconds per solve
