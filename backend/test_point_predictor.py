@@ -1,9 +1,11 @@
+import tempfile
+import threading
 import unittest
 
 import pandas as pd
 
 from point_predictor import PointPredictor
-from prior_season import previous_season_name, totals_from_summary
+from prior_season import PriorSeasonStats, previous_season_name, totals_from_summary
 
 
 def make_predictor(players, fixtures=None, current_gw=7):
@@ -35,11 +37,16 @@ class BlendedPointsPerGameTests(unittest.TestCase):
         # Six games at 9.0 and six "prior games" at 4.0 meet halfway.
         self.assertAlmostEqual(make_predictor([player()]).blended_points_per_game(p), 6.5)
 
-    def test_ignores_thin_or_missing_prior_seasons(self):
+    def test_thin_or_missing_prior_seasons_shrink_toward_the_newcomer_baseline(self):
         predictor = make_predictor([player()])
-        self.assertEqual(predictor.blended_points_per_game(pd.Series(player(points_per_game="7.0"))), 7.0)
+        # Six games at 7.0 against six games at the 3.0 baseline.
+        self.assertEqual(predictor.blended_points_per_game(pd.Series(player(points_per_game="7.0"))), 5.0)
         thin = pd.Series(player(points_per_game="7.0", prior_points=30, prior_minutes=400, prior_starts=4))
-        self.assertEqual(predictor.blended_points_per_game(thin), 7.0)
+        self.assertEqual(predictor.blended_points_per_game(thin), 5.0)
+
+    def test_two_big_games_do_not_make_a_captain(self):
+        lucky = pd.Series(player(points_per_game="10.0", minutes=180, starts=2))
+        self.assertEqual(make_predictor([player()]).blended_points_per_game(lucky), 4.75)
 
 
 class FormIndependenceTests(unittest.TestCase):
@@ -48,6 +55,23 @@ class FormIndependenceTests(unittest.TestCase):
         hot = predictor.predict_gameweek(pd.Series(player(form="10.0")), 7)[0]
         cold = predictor.predict_gameweek(pd.Series(player(form="1.0")), 7)[0]
         self.assertAlmostEqual(hot, cold)
+
+
+class MinutesTests(unittest.TestCase):
+    def test_live_data_without_recent_minutes_uses_season_minutes(self):
+        predictor = make_predictor([player()])
+        regular = predictor.predict_gameweek(pd.Series(player()), 7)[0]
+        fringe = predictor.predict_gameweek(pd.Series(player(minutes=27, starts=0)), 7)[0]
+        self.assertAlmostEqual(predictor.average_minutes_per_gameweek(pd.Series(player(minutes=27))), 4.5)
+        self.assertLess(fringe, 0.35 * regular)
+
+    def test_tiny_understat_samples_are_ignored(self):
+        predictor = make_predictor([player()])
+        predictor._understat_enriched = True
+        cameo = pd.Series(player(minutes=27, understat_matched=True, understat_minutes=27,
+                                 understat_xG_per_90=12.0, understat_xA_per_90=3.0))
+        self.assertEqual(predictor._get_xg_per_90(cameo), PointPredictor.BASELINE_XG[3])
+        self.assertEqual(predictor._get_xa_per_90(cameo), PointPredictor.BASELINE_XA[3])
 
 
 class AvailabilityTests(unittest.TestCase):
@@ -79,6 +103,35 @@ class FixtureCountTests(unittest.TestCase):
         single = predictor.predict_gameweek(pd.Series(player()), 7)[0]
         double = predictor.predict_gameweek(pd.Series(player()), 8)[0]
         self.assertGreater(double, 1.5 * single)
+
+
+class UnderstatSeasonTests(unittest.TestCase):
+    def test_season_comes_from_the_fixture_list(self):
+        fixtures = [{"event": 7, "team_h": 1, "team_a": 2, "team_h_difficulty": 3, "team_a_difficulty": 3,
+                     "kickoff_time": "2026-10-17T11:30:00Z"},
+                    {"event": 1, "team_h": 2, "team_a": 1, "team_h_difficulty": 3, "team_a_difficulty": 3,
+                     "kickoff_time": "2026-08-21T19:00:00Z"}]
+        self.assertEqual(make_predictor([player()], fixtures=fixtures)._season_start_year(), "2026")
+
+
+class PriorSeasonStatsTests(unittest.TestCase):
+    def test_wait_joins_a_load_that_is_already_running(self):
+        release = threading.Event()
+
+        class SlowStats(PriorSeasonStats):
+            def _fetch_one(self, element, season_name):
+                release.wait(5)
+                return str(element["code"]), {"prior_points": 162, "prior_minutes": 3330, "prior_starts": 37}
+
+        with tempfile.TemporaryDirectory() as cache_dir:
+            stats = SlowStats(cache_dir=cache_dir)
+            static = {"events": [{"deadline_time": "2026-08-21T17:30:00Z"}],
+                      "elements": [{"id": 1, "code": 154561}]}
+            stats.attach(static)
+            self.assertNotIn("prior_points", static["elements"][0])
+            threading.Timer(0.05, release.set).start()
+            stats.attach(static, wait=True)
+            self.assertEqual(static["elements"][0]["prior_points"], 162)
 
 
 class PriorSeasonHelperTests(unittest.TestCase):

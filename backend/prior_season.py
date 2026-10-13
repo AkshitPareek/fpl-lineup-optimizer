@@ -49,6 +49,7 @@ class PriorSeasonStats:
         self._season: Optional[str] = None
         self._lock = threading.Lock()
         self._loading = False
+        self._loader: Optional[threading.Thread] = None
 
     def _cache_path(self, season_name: str) -> str:
         return os.path.join(self.cache_dir, f"prior_season_{season_name.replace('/', '-')}.json")
@@ -91,23 +92,25 @@ class PriorSeasonStats:
         """
         Add prior_points / prior_minutes / prior_starts to each element in place.
 
-        The first call starts the background load and returns straight away;
-        until it finishes, predictions fall back to this season's numbers only.
+        The first call starts the background load and returns straight away
+        unless `wait` is set; until it finishes, predictions shrink toward the
+        newcomer baseline instead of last season.
         """
         season_name = previous_season_name(static_data.get("events", []))
         if not season_name:
             return
         with self._lock:
-            ready = self._season == season_name
-            start = not ready and not self._loading
-            if start:
+            if self._season != season_name and not self._loading:
                 self._loading = True
-        if start:
-            elements = list(static_data.get("elements", []))
-            if wait:
-                self._load(elements, season_name)
-            else:
-                threading.Thread(target=self._load, args=(elements, season_name), daemon=True).start()
+                self._loader = threading.Thread(
+                    target=self._load,
+                    args=(list(static_data.get("elements", [])), season_name),
+                    daemon=True,
+                )
+                self._loader.start()
+            loader = self._loader
+        if wait and loader:
+            loader.join()
         with self._lock:
             if self._season != season_name:
                 return

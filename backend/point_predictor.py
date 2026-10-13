@@ -107,7 +107,7 @@ class PointPredictor:
             self.players = service.sync_with_fpl(
                 self.players, 
                 self.teams,
-                season="2025"  # Current season
+                season=self._season_start_year()
             )
             
             self._understat_enriched = True
@@ -118,6 +118,14 @@ class PointPredictor:
             logging.warning(f"Failed to enrich with Understat data: {e}")
             self._understat_enriched = False
         
+    def _season_start_year(self) -> str:
+        """Understat names seasons by their starting year ('2026' for 2026/27)."""
+        kickoffs = [f.get('kickoff_time') for f in self.fixtures if f.get('kickoff_time')]
+        if kickoffs:
+            return min(kickoffs)[:4]
+        today = pd.Timestamp.now()
+        return str(today.year if today.month >= 7 else today.year - 1)
+
     def _compute_team_strengths(self):
         """Compute attack and defense strength ratings for each team."""
         # Use FPL's built-in strength ratings
@@ -192,6 +200,11 @@ class PointPredictor:
     # Calibration factor based on historical FPL prediction accuracy
     CALIBRATION_FACTOR = 0.85
     
+    def _has_understat_rates(self, player: pd.Series) -> bool:
+        if not (self._understat_enriched and player.get('understat_matched', False)):
+            return False
+        return float(player.get('understat_minutes', 0) or 0) >= self.MIN_MINUTES_FOR_RATES
+
     def _get_xg_per_90(self, player: pd.Series) -> float:
         """
         Get xG per 90 for a player, preferring Understat data if available.
@@ -202,7 +215,7 @@ class PointPredictor:
         element_type = player['element_type']
         
         # Try Understat data first (more accurate)
-        if self._understat_enriched and player.get('understat_matched', False):
+        if self._has_understat_rates(player):
             understat_xg_per_90 = float(player.get('understat_xG_per_90', 0) or 0)
             if understat_xg_per_90 > 0:
                 return understat_xg_per_90
@@ -227,7 +240,7 @@ class PointPredictor:
         element_type = player['element_type']
         
         # Try Understat data first (more accurate)
-        if self._understat_enriched and player.get('understat_matched', False):
+        if self._has_understat_rates(player):
             understat_xa_per_90 = float(player.get('understat_xA_per_90', 0) or 0)
             if understat_xa_per_90 > 0:
                 return understat_xa_per_90
@@ -509,11 +522,14 @@ class PointPredictor:
     # Last season's points per game counts as this many games of this season.
     PRIOR_SEASON_GAMES = 6
     MIN_PRIOR_MINUTES = 900
+    # Stand-in prior for players without a usable last season (promoted, new
+    # signings, fringe players); such regular starters went on to average ~2-2.5.
+    NEWCOMER_PPG = 3.0
     # Each week a flagged player is likelier to be back (75% -> 87.5% -> 94%).
     DOUBT_RECOVERY_PER_GW = 0.5
 
     def blended_points_per_game(self, player: pd.Series) -> float:
-        """This season's points per game, shrunk toward last season's while the sample is small."""
+        """This season's points per game, shrunk toward last season's (or a newcomer baseline) while the sample is small."""
         def num(key):
             value = player.get(key)
             try:
@@ -523,11 +539,22 @@ class PointPredictor:
 
         current = num('points_per_game')
         prior_minutes = num('prior_minutes')
-        if prior_minutes < self.MIN_PRIOR_MINUTES:
-            return current
-        prior = num('prior_points') / max(num('prior_starts'), prior_minutes / 90, 1)
+        if prior_minutes >= self.MIN_PRIOR_MINUTES:
+            prior = num('prior_points') / max(num('prior_starts'), prior_minutes / 90, 1)
+        else:
+            prior = self.NEWCOMER_PPG
         games = max(num('starts'), num('minutes') / 90)
         return (games * current + self.PRIOR_SEASON_GAMES * prior) / (games + self.PRIOR_SEASON_GAMES)
+
+    def average_minutes_per_gameweek(self, player: pd.Series) -> float:
+        """Last four gameweeks when known; live bootstrap data only has season minutes."""
+        recent = player.get('recent_4_minutes')
+        if recent is not None and not pd.isna(recent):
+            return float(recent) / 4.0
+        played_gameweeks = self.current_gw - 1
+        if played_gameweeks < 1:
+            return 90.0
+        return float(player.get('minutes', 0) or 0) / played_gameweeks
 
     def availability(self, player: pd.Series, gameweek: int) -> float:
         """Chance of playing in `gameweek`; doubts fade over later weeks, ruled-out players stay out."""
@@ -582,10 +609,8 @@ class PointPredictor:
         total = (self.MODEL_WEIGHT * model_total
                  + (1 - self.MODEL_WEIGHT) * blended_ppg * fixture_count)
         
-        # Minutes decay: Players losing playing time get lower predictions
-        # Check recent 4 games - if averaging < 70 mins, apply penalty
-        recent_4_mins = float(player.get('recent_4_minutes', 360) or 360)  # Default 4*90
-        avg_recent_mins = recent_4_mins / 4.0
+        # Minutes decay: players averaging under 70 minutes get lower predictions
+        avg_recent_mins = self.average_minutes_per_gameweek(player)
         if avg_recent_mins < 70:
             minutes_decay = max(0.3, avg_recent_mins / 70.0)
             total *= minutes_decay
