@@ -67,19 +67,23 @@ class PriorSeasonStats:
                     by_code = json.load(f)
             else:
                 by_code = {}
+                failures = 0
                 with ThreadPoolExecutor(max_workers=self.workers) as pool:
                     futures = [pool.submit(self._fetch_one, e, season_name) for e in elements]
                     for future in futures:
                         try:
                             code, totals = future.result()
                         except requests.RequestException as e:
+                            failures += 1
                             print(f"Prior-season fetch failed: {e}")
                             continue
                         if totals:
                             by_code[code] = totals
-                os.makedirs(self.cache_dir, exist_ok=True)
-                with open(path, "w") as f:
-                    json.dump(by_code, f)
+                # A partial result is used for this process only, so the next start retries.
+                if not failures:
+                    os.makedirs(self.cache_dir, exist_ok=True)
+                    with open(path, "w") as f:
+                        json.dump(by_code, f)
             with self._lock:
                 self._by_code = by_code
                 self._season = season_name
@@ -88,12 +92,12 @@ class PriorSeasonStats:
             with self._lock:
                 self._loading = False
 
-    def attach(self, static_data: Dict, wait: bool = False) -> None:
+    def attach(self, static_data: Dict, wait: float = 0) -> None:
         """
         Add prior_points / prior_minutes / prior_starts to each element in place.
 
-        The first call starts the background load and returns straight away
-        unless `wait` is set; until it finishes, predictions shrink toward the
+        The first call starts the background load and waits up to `wait`
+        seconds for it; until it finishes, predictions shrink toward the
         newcomer baseline instead of last season.
         """
         season_name = previous_season_name(static_data.get("events", []))
@@ -110,7 +114,7 @@ class PriorSeasonStats:
                 self._loader.start()
             loader = self._loader
         if wait and loader:
-            loader.join()
+            loader.join(timeout=wait)
         with self._lock:
             if self._season != season_name:
                 return

@@ -130,7 +130,7 @@ class PriorSeasonStatsTests(unittest.TestCase):
             stats.attach(static)
             self.assertNotIn("prior_points", static["elements"][0])
             threading.Timer(0.05, release.set).start()
-            stats.attach(static, wait=True)
+            stats.attach(static, wait=5)
             self.assertEqual(static["elements"][0]["prior_points"], 162)
 
 

@@ -15,6 +15,7 @@ from typing import List, Optional, Dict
 from pydantic import BaseModel, Field
 import pandas as pd
 import json
+import threading
 
 from fpl_service import FPLService
 from optimizer import FPLOptimizer
@@ -98,6 +99,8 @@ app.add_middleware(
 async def startup_event():
     print(f"🚀 FPL Optimizer API starting...")
     print(f"📋 CORS allowed origins: {ALLOWED_ORIGINS}")
+    # Warm the FPL cache and last season's totals before the first request.
+    threading.Thread(target=fpl_service.get_latest_data, daemon=True).start()
 
 
 # Custom exception handler to ensure CORS headers on errors
@@ -157,7 +160,7 @@ class OptimizationRequest(BaseModel):
 class MultiPeriodRequest(BaseModel):
     """Request for multi-period optimization."""
     budget: float = 100.0
-    gameweeks: int = Field(default=5, ge=3, le=8, description="Planning horizon (3-8)")
+    gameweeks: int = Field(default=8, ge=3, le=8, description="Planning horizon (3-8)")
     manager_id: Optional[int] = None
     excluded_players: List[int] = []
     banked_transfers: int = Field(default=1, ge=0, le=5, description="Currently banked FTs (0-5)")
@@ -425,8 +428,7 @@ async def optimize_compare(request: MultiPeriodRequest):
     import asyncio
     from concurrent.futures import ThreadPoolExecutor
     
-    # Keep full gameweek horizon - we've optimized to skip 2nd optimization when possible
-    effective_gameweeks = min(request.gameweeks, 5)
+    effective_gameweeks = request.gameweeks
     
     try:
         data = fpl_service.get_latest_data()
@@ -502,7 +504,7 @@ async def optimize_compare(request: MultiPeriodRequest):
         loop = asyncio.get_event_loop()
         
         try:
-            # Run the with-hits optimization first (45s timeout for full 5 GW horizon)
+            # Run the with-hits optimization first (45s timeout)
             solution_with_hits = await asyncio.wait_for(
                 loop.run_in_executor(None, run_with_hits),
                 timeout=45.0

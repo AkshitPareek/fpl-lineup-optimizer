@@ -8,6 +8,8 @@ FPL_HEADERS = {
     "User-Agent": "Mozilla/5.0 (compatible; FPLLineupOptimizer/1.0)"
 }
 MAX_BANKED_TRANSFERS = 5
+# The first request after a cold start waits this long for last season's totals.
+PRIOR_SEASON_WAIT_SECONDS = 30
 
 
 def banked_transfers_for_next_deadline(events, chips=None):
@@ -55,7 +57,7 @@ class FPLService:
     def get_latest_data(self):
         """Fetches bootstrap-static and fixtures data."""
         if self._is_cache_valid("bootstrap-static") and self._is_cache_valid("fixtures"):
-            self.prior_season.attach(self._cache["bootstrap-static"])
+            self.prior_season.attach(self._cache["bootstrap-static"], wait=PRIOR_SEASON_WAIT_SECONDS)
             return {
                 "static": self._cache["bootstrap-static"],
                 "fixtures": self._cache["fixtures"]
@@ -64,7 +66,7 @@ class FPLService:
         # Fetch Bootstrap Static
         try:
             static_data = self._get_json(f"{self.BASE_URL}/bootstrap-static/")
-            self.prior_season.attach(static_data)
+            self.prior_season.attach(static_data, wait=PRIOR_SEASON_WAIT_SECONDS)
             self._update_cache("bootstrap-static", static_data)
 
             # Fetch Fixtures
