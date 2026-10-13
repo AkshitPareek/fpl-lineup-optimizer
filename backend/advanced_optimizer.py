@@ -719,6 +719,7 @@ class MultiPeriodFPLOptimizer:
                         'id': int(j),
                         'name': str(get_attr(j, 'web_name')),
                         'cost': float(get_attr(j, 'now_cost') / 10.0),
+                        'expected_points': float(get_attr(j, f'xp_gw{t}')),
                         'element_type': int(get_attr(j, 'element_type'))
                     })
             
@@ -730,8 +731,7 @@ class MultiPeriodFPLOptimizer:
             
             # Calculate xP gain from transfers
             total_in_xp = sum(t.get('expected_points', 0) for t in gw_transfers_in)
-            out_ids = [t_out['id'] for t_out in gw_transfers_out]
-            total_out_xp = float(predictions.loc[predictions['id'].isin(out_ids), f'xp_gw{t}'].sum())
+            total_out_xp = sum(t.get('expected_points', 0) for t in gw_transfers_out)
             
             xp_gain = total_in_xp - total_out_xp
             hits_taken = int(hits[t].value() or 0)

@@ -441,11 +441,12 @@ Average FDR: {avg_fdr:.2f}
             if pos in out_by_position and out_by_position[pos]:
                 t_out = out_by_position[pos].pop(0)
                 replacing_id = t_out['id']
-                # Get expected points for player being sold
-                out_player = self._get_player_stats(replacing_id)
-                if out_player:
-                    form = float(out_player.get('form', 0) or 0)
-                    out_xp = form  # Estimate xP based on recent form
+                if 'expected_points' in t_out:
+                    out_xp = float(t_out['expected_points'])
+                else:
+                    out_player = self._get_player_stats(replacing_id)
+                    if out_player:
+                        out_xp = float(out_player.get('form', 0) or 0)
             
             xp_gain = in_xp - out_xp
             
