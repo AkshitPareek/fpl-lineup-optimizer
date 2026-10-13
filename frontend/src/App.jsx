@@ -15,7 +15,7 @@ function App() {
   // Controls
   const [mode, setMode] = useState("multi") // 'single', 'multi', 'backtest', 'dream'
   const [budget, setBudget] = useState(100.0)
-  const [gameweeks, setGameweeks] = useState(5) // Default 5
+  const [gameweeks, setGameweeks] = useState(8)
   const [strategy, setStrategy] = useState("standard")
   const [managerId, setManagerId] = useState("")
   const [freeTransfers, setFreeTransfers] = useState(1)
@@ -269,7 +269,7 @@ function App() {
               </div>
               <div>
                 <label className="block text-gray-400 mb-2 text-sm">Optimizer Horizon</label>
-                <input type="range" min="3" max="5" value={gameweeks} onChange={(e) => setGameweeks(e.target.value)} className="w-full accent-fpl-pink" />
+                <input type="range" min="3" max="8" value={gameweeks} onChange={(e) => setGameweeks(e.target.value)} className="w-full accent-fpl-pink" />
                 <div className="text-right text-xs text-gray-400">{gameweeks} GWs lookahead</div>
               </div>
             </div>
