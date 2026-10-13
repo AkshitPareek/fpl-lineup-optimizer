@@ -502,6 +502,44 @@ class PointPredictor:
         # Scale to 0-3 range (max 3 bonus points possible)
         return min(1.2, expected_bonus)  # Cap at ~1.2 expected per game
     
+    # Share of the projection taken from the xG/fixture model; the rest is the
+    # blended points-per-game average. predictor_eval.py scored this split best
+    # on 2024/25 and 2025/26, well ahead of scaling by FPL's 30-day form.
+    MODEL_WEIGHT = 0.5
+    # Last season's points per game counts as this many games of this season.
+    PRIOR_SEASON_GAMES = 6
+    MIN_PRIOR_MINUTES = 900
+    # Each week a flagged player is likelier to be back (75% -> 87.5% -> 94%).
+    DOUBT_RECOVERY_PER_GW = 0.5
+
+    def blended_points_per_game(self, player: pd.Series) -> float:
+        """This season's points per game, shrunk toward last season's while the sample is small."""
+        def num(key):
+            value = player.get(key)
+            try:
+                return 0.0 if value is None or pd.isna(value) else float(value)
+            except (TypeError, ValueError):
+                return 0.0
+
+        current = num('points_per_game')
+        prior_minutes = num('prior_minutes')
+        if prior_minutes < self.MIN_PRIOR_MINUTES:
+            return current
+        prior = num('prior_points') / max(num('prior_starts'), prior_minutes / 90, 1)
+        games = max(num('starts'), num('minutes') / 90)
+        return (games * current + self.PRIOR_SEASON_GAMES * prior) / (games + self.PRIOR_SEASON_GAMES)
+
+    def availability(self, player: pd.Series, gameweek: int) -> float:
+        """Chance of playing in `gameweek`; doubts fade over later weeks, ruled-out players stay out."""
+        chance = player.get('chance_of_playing_next_round')
+        if chance is None or pd.isna(chance):
+            return 1.0
+        chance = float(chance) / 100.0
+        if chance <= 0:
+            return 0.0
+        weeks_ahead = max(0, gameweek - self.current_gw)
+        return 1.0 - (1.0 - chance) * self.DOUBT_RECOVERY_PER_GW ** weeks_ahead
+
     def predict_gameweek(self, player: pd.Series, gameweek: int) -> Tuple[float, Dict[str, float]]:
         """
         Predict total expected points for a player in a specific gameweek.
@@ -509,6 +547,10 @@ class PointPredictor:
         Returns:
             Tuple of (total_points, breakdown_dict)
         """
+        fixture_count = len(self.fixture_map.get((player['team'], gameweek), []))
+        if fixture_count == 0:
+            return 0.0, {'fixtures': 0}
+
         # Calculate regression factor for xG/xA adjustments
         regression_factor = self.calculate_regression_factor(player)
         
@@ -522,26 +564,23 @@ class PointPredictor:
             'regression_factor': regression_factor,
         }
         
-        total = sum(v for k, v in breakdown.items() if k != 'regression_factor')
+        model_total = sum(v for k, v in breakdown.items() if k != 'regression_factor')
         
         # Dynamic calibration factor - decreases as season progresses
         # GW1: 0.85, GW19: 0.65, GW38: 0.50
         # This compensates for xG/xA accumulation making predictions drift upward
         dynamic_calibration = max(0.50, 0.85 - (gameweek - 1) * 0.01)
         
-        total *= dynamic_calibration
+        model_total *= dynamic_calibration
         breakdown['calibration'] = dynamic_calibration
         
-        # Form factor: Weight recent performance (last 4 games average)
-        # 5 pts/game = baseline (factor = 1.0), higher = smaller boost, lower = bigger penalty
-        # More aggressive to capture late-season form drops
-        form = float(player.get('form', 0) or 0)
-        if form > 0:
-            form_factor = min(1.3, max(0.3, form / 5.0))  # 0.3 to 1.3 range
-        else:
-            form_factor = 0.5  # New/inactive players get strong penalty
-        total *= form_factor
-        breakdown['form_factor'] = form_factor
+        # Cap the model at a realistic max per fixture (top player ~8 pts/gw on average)
+        model_total = min(model_total, 8.0 * fixture_count)
+
+        blended_ppg = self.blended_points_per_game(player)
+        breakdown['blended_ppg'] = blended_ppg
+        total = (self.MODEL_WEIGHT * model_total
+                 + (1 - self.MODEL_WEIGHT) * blended_ppg * fixture_count)
         
         # Minutes decay: Players losing playing time get lower predictions
         # Check recent 4 games - if averaging < 70 mins, apply penalty
@@ -552,14 +591,8 @@ class PointPredictor:
             total *= minutes_decay
             breakdown['minutes_decay'] = minutes_decay
         
-        # Cap total prediction at realistic max (top player ~8 pts/gw on average)
-        total = min(total, 8.0)
-        
-        # Adjust for availability (Injury news)
-        # chance_of_playing_next_round is 0-100 or None (assumed 100)
-        chance = player.get('chance_of_playing_next_round')
-        if chance is not None and not pd.isna(chance):
-            availability_factor = float(chance) / 100.0
+        availability_factor = self.availability(player, gameweek)
+        if availability_factor < 1.0:
             total *= availability_factor
             breakdown['availability_adj'] = availability_factor
             

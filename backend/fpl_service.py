@@ -1,6 +1,8 @@
 import requests
 import time
 
+from prior_season import PriorSeasonStats
+
 # FPL rejects clients that do not send a browser-like user agent.
 FPL_HEADERS = {
     "User-Agent": "Mozilla/5.0 (compatible; FPLLineupOptimizer/1.0)"
@@ -43,6 +45,7 @@ class FPLService:
         self._cache = {}
         self._cache_expiry = {}
         self.CACHE_DURATION = 3600  # 1 hour
+        self.prior_season = PriorSeasonStats()
 
     def _get_json(self, url):
         response = requests.get(url, headers=FPL_HEADERS, timeout=30)
@@ -52,6 +55,7 @@ class FPLService:
     def get_latest_data(self):
         """Fetches bootstrap-static and fixtures data."""
         if self._is_cache_valid("bootstrap-static") and self._is_cache_valid("fixtures"):
+            self.prior_season.attach(self._cache["bootstrap-static"])
             return {
                 "static": self._cache["bootstrap-static"],
                 "fixtures": self._cache["fixtures"]
@@ -60,6 +64,7 @@ class FPLService:
         # Fetch Bootstrap Static
         try:
             static_data = self._get_json(f"{self.BASE_URL}/bootstrap-static/")
+            self.prior_season.attach(static_data)
             self._update_cache("bootstrap-static", static_data)
 
             # Fetch Fixtures
