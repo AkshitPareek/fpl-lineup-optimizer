@@ -483,10 +483,9 @@ class MultiPeriodFPLOptimizer:
         ft_banked = pulp.LpVariable.dicts("ft_banked", horizon, lowBound=0, upBound=self.MAX_BANKED_TRANSFERS, cat='Integer')
         bank_cap = pulp.LpVariable.dicts("bank_cap", horizon, cat='Binary')
         
-        # Objective: Maximize total expected points over horizon minus hit costs
-        # Plus small incentive to use free transfers when beneficial
-        FREE_TRANSFER_INCENTIVE = 0.5  # Small bonus for using FTs productively
-        
+        # Objective: Maximize total expected points over horizon minus hit costs.
+        # Transfers earn nothing by themselves; unused ones carry over in the bank.
+
         # Parse chip to use
         active_chip = None
         chip_gw = None
@@ -531,9 +530,6 @@ class MultiPeriodFPLOptimizer:
                 pass  # No penalty for unlimited transfers
             else:
                 objective_terms.append(-self.TRANSFER_PENALTY * hits[t])
-            
-            # Add small incentive to use free transfers (encourages 1 FT per week)
-            objective_terms.append(FREE_TRANSFER_INCENTIVE * ft_used[t])
         
         prob += pulp.lpSum(objective_terms)
         
@@ -734,13 +730,8 @@ class MultiPeriodFPLOptimizer:
             
             # Calculate xP gain from transfers
             total_in_xp = sum(t.get('expected_points', 0) for t in gw_transfers_in)
-            # Estimate out xP based on form
-            total_out_xp = 0
-            for t_out in gw_transfers_out:
-                player = self.players[self.players['id'] == t_out['id']]
-                if not player.empty:
-                    form = float(player.iloc[0].get('form', 0) or 0)
-                    total_out_xp += form
+            out_ids = [t_out['id'] for t_out in gw_transfers_out]
+            total_out_xp = float(predictions.loc[predictions['id'].isin(out_ids), f'xp_gw{t}'].sum())
             
             xp_gain = total_in_xp - total_out_xp
             hits_taken = int(hits[t].value() or 0)
