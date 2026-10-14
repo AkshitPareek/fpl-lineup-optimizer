@@ -180,6 +180,27 @@ class RobustRequest(BaseModel):
 
 
 
+def _manager_squad(manager_id: int, players_df: pd.DataFrame):
+    """
+    The squad a manager takes into the next deadline, what each player sells for,
+    and the squad's total selling value in millions.
+    """
+    try:
+        state = fpl_service.get_manager_squad_state(manager_id)
+    except Exception as e:
+        print(f"Error reading manager transfers, selling at current prices: {e}")
+        state = None
+    if state:
+        squad_ids = state["squad"]
+        selling_prices = state["selling_prices"]
+    else:
+        squad_ids = [p["element"] for p in fpl_service.get_manager_team(manager_id).get("picks", [])]
+        selling_prices = {}
+    now_cost = dict(zip(players_df["id"], players_df["now_cost"] / 10.0))
+    squad_value = sum(selling_prices.get(pid, now_cost.get(pid, 0.0)) for pid in squad_ids)
+    return squad_ids, selling_prices, squad_value
+
+
 # Helper for analytics enrichment
 def _enrich_with_analytics(response_dict: Dict, players_df: pd.DataFrame, teams_df: pd.DataFrame):
     """Enrich optimization result with EV and ownership analytics."""
@@ -322,24 +343,19 @@ async def optimize_multi_period(request: MultiPeriodRequest):
         
         # Get current squad if manager_id provided
         current_squad_ids = []
+        selling_prices = None
         banked_transfers = request.banked_transfers
         actual_budget = request.budget
         
         if request.manager_id:
             try:
-                manager_team = fpl_service.get_manager_team(request.manager_id)
-                current_squad_ids = [p["element"] for p in manager_team.get("picks", [])]
-                
-                # Calculate actual budget = squad value + bank (the budget field is the bank)
-                # Get current squad player costs
-                current_squad_players = players_df[players_df['id'].isin(current_squad_ids)]
-                squad_value = current_squad_players['now_cost'].sum() / 10.0  # Convert to millions
+                current_squad_ids, selling_prices, squad_value = _manager_squad(request.manager_id, players_df)
                 
                 # If budget is less than squad value, treat it as bank balance
                 if request.budget < squad_value * 0.5:
                     # User provided bank, not total budget
                     actual_budget = squad_value + request.budget
-                    print(f"Manager {request.manager_id}: Squad value £{squad_value:.1f}m + Bank £{request.budget:.1f}m = £{actual_budget:.1f}m total")
+                    print(f"Manager {request.manager_id}: Selling value £{squad_value:.1f}m + Bank £{request.budget:.1f}m = £{actual_budget:.1f}m total")
             except Exception as e:
                 print(f"Error fetching manager team: {e}")
         
@@ -361,7 +377,8 @@ async def optimize_multi_period(request: MultiPeriodRequest):
             chips_used=request.chips_used,
             robust=request.robust,
             uncertainty_budget=request.uncertainty_budget,
-            strategy=request.strategy
+            strategy=request.strategy,
+            selling_prices=selling_prices
         )
         
         # Generate transfer explanations
@@ -444,16 +461,12 @@ async def optimize_compare(request: MultiPeriodRequest):
         
         # Get current squad if manager_id provided
         current_squad_ids = []
+        selling_prices = None
         actual_budget = request.budget
         banked_transfers = request.banked_transfers
         
         if request.manager_id:
-            manager_team = fpl_service.get_manager_team(request.manager_id)
-            current_squad_ids = [p["element"] for p in manager_team.get("picks", [])]
-            
-            # Calculate actual budget = squad value + bank
-            squad_players = players_df[players_df['id'].isin(current_squad_ids)]
-            squad_value = squad_players['now_cost'].sum() / 10.0
+            current_squad_ids, selling_prices, squad_value = _manager_squad(request.manager_id, players_df)
             actual_budget = squad_value + request.budget
         
         optimizer = MultiPeriodFPLOptimizer(
@@ -481,7 +494,8 @@ async def optimize_compare(request: MultiPeriodRequest):
                 robust=request.robust,
                 uncertainty_budget=request.uncertainty_budget,
                 strategy=request.strategy,
-                max_hits=10  # Allow hits
+                max_hits=10,  # Allow hits
+                selling_prices=selling_prices
             )
         
         def run_no_hits():
@@ -496,7 +510,8 @@ async def optimize_compare(request: MultiPeriodRequest):
                 robust=request.robust,
                 uncertainty_budget=request.uncertainty_budget,
                 strategy=request.strategy,
-                max_hits=0  # No hits allowed
+                max_hits=0,  # No hits allowed
+                selling_prices=selling_prices
             )
         
         # Run optimizations - smart strategy to minimize runtime
@@ -980,12 +995,7 @@ async def analyze_transfers(request: TransferAnalysisRequest):
         teams_df = pd.DataFrame(static_data["teams"])
         
         # Get manager's current team
-        manager_team = fpl_service.get_manager_team(request.manager_id)
-        current_squad_ids = [p["element"] for p in manager_team.get("picks", [])]
-        
-        # Get current squad value
-        current_squad = players_df[players_df['id'].isin(current_squad_ids)]
-        squad_value = current_squad['now_cost'].sum() / 10.0
+        current_squad_ids, selling_prices, squad_value = _manager_squad(request.manager_id, players_df)
         budget = squad_value + request.bank
         
         # Get current gameweek
@@ -1010,7 +1020,8 @@ async def analyze_transfers(request: TransferAnalysisRequest):
                 gameweeks=request.gameweeks_horizon,
                 current_squad_ids=current_squad_ids,
                 banked_transfers=request.free_transfers,
-                chips_used=[]
+                chips_used=[],
+                selling_prices=selling_prices
             )
             
             if solution.status == "Optimal" and solution.gameweek_plans:

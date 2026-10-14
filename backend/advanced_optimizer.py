@@ -68,6 +68,7 @@ class GameweekPlan:
     chip_used: Optional[Chip] = None
     transfers: Optional[TransferPlan] = None
     captain_recommendation: Optional[CaptainRecommendation] = None
+    bank: Optional[float] = None  # In the bank after this week's transfers, in millions
 
 
 @dataclass
@@ -202,16 +203,17 @@ class MultiPeriodFPLOptimizer:
     
     def _filter_available_players(self, 
                                    excluded_ids: List[int] = [],
-                                   include_injured: bool = False) -> pd.DataFrame:
-        """Filter players who are available for selection."""
+                                   include_injured: bool = False,
+                                   keep_ids: List[int] = ()) -> pd.DataFrame:
+        """Filter players who are available for selection. Players in keep_ids stay in the pool even when injured."""
         df = self.players.copy()
         
         # Exclude specified players
         df = df[~df['id'].isin(excluded_ids)]
         
-        # Exclude unavailable/injured unless specified
+        # An injured squad player can be benched; dropping him would force a transfer.
         if not include_injured:
-            df = df[~df['status'].isin(['u', 'i'])]
+            df = df[~df['status'].isin(['u', 'i']) | df['id'].isin(list(keep_ids))]
         
         return df
     
@@ -357,12 +359,15 @@ class MultiPeriodFPLOptimizer:
                                robust: bool = False,
                                uncertainty_budget: float = 0.3,
                                strategy: str = "standard",
-                               max_hits: int = 5) -> MultiPeriodSolution:
+                               max_hits: int = 5,
+                               selling_prices: Optional[Dict[int, float]] = None) -> MultiPeriodSolution:
         """
         Multi-period optimization over rolling horizon.
         
         Args:
-            budget: Total budget in millions
+            budget: Total budget in millions: the current squad's selling value plus the bank
+            selling_prices: What each current squad player sells for, in millions.
+                Players missing here sell at their current price.
             gameweeks: Planning horizon (3-15, stopping at the last gameweek)
             current_squad_ids: Current squad (if any)
             excluded_players: Players to exclude
@@ -409,7 +414,8 @@ class MultiPeriodFPLOptimizer:
             # Players < 10% owned get bonus, up to +1.5 xP per gameweek
             differential_bonus = (10 - ownership).clip(lower=0) * 0.15
             for col in [c for c in predictions.columns if c.startswith('xp_gw')]:
-                predictions[col] = predictions[col] + differential_bonus
+                # A blank gameweek stays at zero.
+                predictions[col] = predictions[col] + differential_bonus * (predictions[col] > 0)
             print(f"Strategy: Differential - boosting {(ownership < 10).sum()} low-owned players")
         elif strategy == "template":
             # Favor high-ownership (safe picks), penalize low-ownership
@@ -417,10 +423,11 @@ class MultiPeriodFPLOptimizer:
             # Players > 20% owned get bonus, < 5% get penalty
             template_bonus = (ownership - 10).clip(lower=-5, upper=10) * 0.05
             for col in [c for c in predictions.columns if c.startswith('xp_gw')]:
-                predictions[col] = predictions[col] + template_bonus
+                predictions[col] = predictions[col] + template_bonus * (predictions[col] > 0)
             print(f"Strategy: Template - favoring {(ownership > 20).sum()} popular players")
         
-        available = self._filter_available_players(excluded_ids=excluded_players)
+        available = self._filter_available_players(excluded_ids=excluded_players,
+                                                   keep_ids=current_squad_ids or [])
         
         # Merge predictions
         gw_cols = [f'xp_gw{gw}' for gw in horizon]
@@ -506,6 +513,8 @@ class MultiPeriodFPLOptimizer:
         hits = pulp.LpVariable.dicts("hits", horizon, lowBound=0, upBound=max_hits, cat='Integer')  # Controlled by max_hits param
         ft_banked = pulp.LpVariable.dicts("ft_banked", horizon, lowBound=0, upBound=self.MAX_BANKED_TRANSFERS, cat='Integer')
         bank_cap = pulp.LpVariable.dicts("bank_cap", horizon, cat='Binary')
+        # Money in the bank after each week's transfers, in tenths of a million.
+        itb = pulp.LpVariable.dicts("itb", horizon, lowBound=0)
         
         # Objective: Maximize total expected points over horizon minus hit costs.
         # Transfers earn nothing by themselves; unused ones carry over in the bank.
@@ -556,6 +565,38 @@ class MultiPeriodFPLOptimizer:
                 objective_terms.append(-self.TRANSFER_PENALTY * hits[t])
         
         prob += pulp.lpSum(objective_terms)
+
+        # Prices in tenths. Squad players sell at their selling price; anyone bought
+        # in the plan sells for what he cost, since price changes are not forecast.
+        current_set = set(current_squad_ids or [])
+        selling_prices = selling_prices or {}
+        buy_price = {j: int(get_attr(j, 'now_cost')) for j in player_ids}
+        sell_price = {
+            j: int(round(10 * selling_prices[j])) if j in current_set and j in selling_prices else buy_price[j]
+            for j in player_ids
+        }
+        if current_set:
+            start_bank = int(round(10 * budget)) - sum(sell_price[j] for j in current_set if j in sell_price)
+        else:
+            start_bank = int(round(10 * budget))
+        free_hit_gw = chip_gw if active_chip in ('free_hit', 'freehit') else None
+
+        def base_index(idx):
+            """The week a squad is built from; a Free Hit squad is dropped at the next deadline. -1 is today's squad."""
+            prev = idx - 1
+            if prev >= 0 and horizon[prev] == free_hit_gw:
+                prev -= 1
+            return prev
+
+        def owned_before(j, idx):
+            prev = base_index(idx)
+            if prev < 0:
+                return 1 if j in current_set else 0
+            return squad[(j, horizon[prev])]
+
+        def bank_before(idx):
+            prev = base_index(idx)
+            return start_bank if prev < 0 else itb[horizon[prev]]
         
         # Constraints per gameweek
         for idx, t in enumerate(horizon):
@@ -591,53 +632,28 @@ class MultiPeriodFPLOptimizer:
                 team_players = [j for j in player_ids if get_attr(j, 'team') == team_id]
                 prob += pulp.lpSum([squad[(j, t)] for j in team_players]) <= self.MAX_PER_TEAM
             
-            # Budget constraint
-            prob += pulp.lpSum([
-                get_attr(j, 'now_cost') / 10.0 * squad[(j, t)] 
-                for j in player_ids
-            ]) <= budget
-            
-            # Squad continuity (for t > first gameweek)
-            if idx == 0:
-                # First gameweek: establish initial squad
-                if current_squad_ids:
-                    # Track transfers from current squad
-                    for j in player_ids:
-                        if j in current_squad_ids:
-                            # Can keep or transfer out
-                            prob += z_out[(j, t)] <= 1
-                            prob += z_in[(j, t)] == 0  # Can't transfer in existing players
-                            prob += squad[(j, t)] == 1 - z_out[(j, t)]
-                        else:
-                            # Can only be in squad if transferred in
-                            prob += z_out[(j, t)] == 0
-                            prob += squad[(j, t)] == z_in[(j, t)]
-                    
-                    # Free transfers left after this gameweek can be 0.
-                    # The next deadline grants one more, up to the cap.
-                    if self._unlimited_transfers(active_chip, chip_gw, t):
-                        prob += ft_used[t] == 0
-                        prob += ft_banked[t] == min(self.MAX_BANKED_TRANSFERS, banked_transfers + 1)
-                    else:
-                        self._set_bank_after(prob, ft_banked[t], banked_transfers, ft_used[t], bank_cap[t])
-                else:
-                    # Fresh squad selection (Wildcard-like)
-                    for j in player_ids:
-                        prob += z_in[(j, t)] == 0
-                        prob += z_out[(j, t)] == 0
-                    prob += ft_banked[t] == 1
-            else:
-                prev_t = horizon[idx - 1]
+            fresh_squad = idx == 0 and not current_set
+            available_ft = banked_transfers if idx == 0 else ft_banked[horizon[idx - 1]]
+            if fresh_squad:
+                # Picking a squad from scratch is not a transfer.
                 for j in player_ids:
-                    # Flow conservation: squad[t] = squad[t-1] + in - out
-                    prob += squad[(j, t)] == squad[(j, prev_t)] + z_in[(j, t)] - z_out[(j, t)]
-                    # Can't transfer in and out same player
+                    prob += z_in[(j, t)] == 0
+                    prob += z_out[(j, t)] == 0
+                prob += itb[t] == start_bank - pulp.lpSum(buy_price[j] * squad[(j, t)] for j in player_ids)
+                prob += ft_banked[t] == 1
+            else:
+                for j in player_ids:
+                    prob += squad[(j, t)] == owned_before(j, idx) + z_in[(j, t)] - z_out[(j, t)]
                     prob += z_in[(j, t)] + z_out[(j, t)] <= 1
-                
-                # Saved free transfers carry forward. Wildcard and Free Hit do not spend them.
+                prob += itb[t] == bank_before(idx) + pulp.lpSum(
+                    sell_price[j] * z_out[(j, t)] - buy_price[j] * z_in[(j, t)] for j in player_ids
+                )
                 if self._unlimited_transfers(active_chip, chip_gw, t):
+                    # Saved transfers are kept through a Wildcard or Free Hit, but the week grants none.
                     prob += ft_used[t] == 0
-                self._set_bank_after(prob, ft_banked[t], ft_banked[prev_t], ft_used[t], bank_cap[t])
+                    prob += ft_banked[t] == available_ft
+                else:
+                    self._set_bank_after(prob, ft_banked[t], available_ft, ft_used[t], bank_cap[t])
             
             # Transfer balance: transfers in = transfers out
             # Note: This is removed because it is implied by the squad size (15) 
@@ -649,10 +665,6 @@ class MultiPeriodFPLOptimizer:
             # ft_banked[t] is the number available at the next deadline, so later
             # weeks spend that balance directly instead of granting another FT.
             transfers_made = pulp.lpSum([z_in[(j, t)] for j in player_ids])
-            if idx == 0:
-                available_ft = banked_transfers
-            else:
-                available_ft = ft_banked[horizon[idx - 1]]
             
             # Wildcard and Free Hit allow every transfer without a hit.
             if self._unlimited_transfers(active_chip, chip_gw, t):
@@ -734,7 +746,7 @@ class MultiPeriodFPLOptimizer:
                     gw_transfers_out.append({
                         'id': int(j),
                         'name': str(get_attr(j, 'web_name')),
-                        'cost': float(get_attr(j, 'now_cost') / 10.0),
+                        'cost': sell_price[j] / 10.0,
                         'expected_points': float(get_attr(j, f'xp_gw{t}')),
                         'element_type': int(get_attr(j, 'element_type'))
                     })
@@ -799,13 +811,14 @@ class MultiPeriodFPLOptimizer:
                 vice_captain_id=gw_starters[1]['id'] if len(gw_starters) > 1 else None,
                 expected_points=gw_xp,
                 chip_used=gw_chip_used,
-                transfers=transfer_plan
+                transfers=transfer_plan,
+                bank=round((itb[t].value() or 0) / 10.0, 1)
             ))
             
             if gw_transfers_in or gw_transfers_out:
                 transfer_summary.append(transfer_plan)
             
-            if idx == len(horizon) - 1:
+            if t != free_hit_gw or not final_squad:
                 final_squad = gw_squad
         
         total_xp = sum(gp.expected_points for gp in gameweek_plans)
@@ -983,6 +996,7 @@ class MultiPeriodFPLOptimizer:
                     'vice_captain_id': gp.vice_captain_id,
                     'expected_points': gp.expected_points,
                     'chip_used': gp.chip_used.value if gp.chip_used else None,
+                    'bank': gp.bank,
                     'transfers': {
                         'in': gp.transfers.transfers_in if gp.transfers else [],
                         'out': gp.transfers.transfers_out if gp.transfers else [],
