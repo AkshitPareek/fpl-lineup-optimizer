@@ -3,7 +3,7 @@ FPL Optimizer API - FastAPI Backend
 
 Provides endpoints for:
 - Single gameweek optimization
-- Multi-period optimization (3-8 GWs)
+- Multi-period optimization (3-15 GWs)
 - Robust optimization with uncertainty handling
 - Manager team and data fetching
 """
@@ -15,6 +15,7 @@ from typing import List, Optional, Dict
 from pydantic import BaseModel, Field
 import pandas as pd
 import json
+import threading
 
 from fpl_service import FPLService
 from optimizer import FPLOptimizer
@@ -98,6 +99,8 @@ app.add_middleware(
 async def startup_event():
     print(f"🚀 FPL Optimizer API starting...")
     print(f"📋 CORS allowed origins: {ALLOWED_ORIGINS}")
+    # Warm the FPL cache and last season's totals before the first request.
+    threading.Thread(target=fpl_service.get_latest_data, daemon=True).start()
 
 
 # Custom exception handler to ensure CORS headers on errors
@@ -157,7 +160,7 @@ class OptimizationRequest(BaseModel):
 class MultiPeriodRequest(BaseModel):
     """Request for multi-period optimization."""
     budget: float = 100.0
-    gameweeks: int = Field(default=5, ge=3, le=8, description="Planning horizon (3-8)")
+    gameweeks: int = Field(default=8, ge=3, le=15, description="Planning horizon (3-15)")
     manager_id: Optional[int] = None
     excluded_players: List[int] = []
     banked_transfers: int = Field(default=1, ge=0, le=5, description="Currently banked FTs (0-5)")
@@ -175,6 +178,38 @@ class RobustRequest(BaseModel):
     excluded_players: List[int] = []
     manager_id: Optional[int] = None
 
+
+
+def _manager_squad(manager_id: int, players_df: pd.DataFrame):
+    """
+    The squad a manager takes into the next deadline, what each player sells for,
+    and the squad's total selling value in millions.
+    """
+    try:
+        state = fpl_service.get_manager_squad_state(manager_id)
+    except Exception as e:
+        print(f"Error reading manager transfers, selling at current prices: {e}")
+        state = None
+    if state:
+        squad_ids = state["squad"]
+        selling_prices = state["selling_prices"]
+    else:
+        squad_ids = [p["element"] for p in fpl_service.get_manager_team(manager_id).get("picks", [])]
+        selling_prices = {}
+    now_cost = dict(zip(players_df["id"], players_df["now_cost"] / 10.0))
+    squad_value = sum(selling_prices.get(pid, now_cost.get(pid, 0.0)) for pid in squad_ids)
+    return squad_ids, selling_prices, squad_value
+
+
+def _chips_used(manager_id: Optional[int], requested: List[str]) -> List[str]:
+    """Chips to treat as played. An empty request is filled from the manager's history for this half of the season."""
+    if requested or not manager_id:
+        return list(requested)
+    try:
+        return fpl_service.get_manager_chips(manager_id).get("used_this_half", [])
+    except Exception as e:
+        print(f"Error fetching manager chips: {e}")
+        return []
 
 
 # Helper for analytics enrichment
@@ -294,7 +329,7 @@ async def optimize_team(request: OptimizationRequest):
 @app.post("/api/optimize/multi-period")
 async def optimize_multi_period(request: MultiPeriodRequest):
     """
-    Multi-period optimization over rolling horizon (3-8 gameweeks).
+    Multi-period optimization over rolling horizon (3-15 gameweeks).
     
     Returns optimal 15-man squad, starting XI, bench order, captain,
     and transfer plan for each gameweek with explanations.
@@ -319,24 +354,19 @@ async def optimize_multi_period(request: MultiPeriodRequest):
         
         # Get current squad if manager_id provided
         current_squad_ids = []
+        selling_prices = None
         banked_transfers = request.banked_transfers
         actual_budget = request.budget
         
         if request.manager_id:
             try:
-                manager_team = fpl_service.get_manager_team(request.manager_id)
-                current_squad_ids = [p["element"] for p in manager_team.get("picks", [])]
-                
-                # Calculate actual budget = squad value + bank (the budget field is the bank)
-                # Get current squad player costs
-                current_squad_players = players_df[players_df['id'].isin(current_squad_ids)]
-                squad_value = current_squad_players['now_cost'].sum() / 10.0  # Convert to millions
+                current_squad_ids, selling_prices, squad_value = _manager_squad(request.manager_id, players_df)
                 
                 # If budget is less than squad value, treat it as bank balance
                 if request.budget < squad_value * 0.5:
                     # User provided bank, not total budget
                     actual_budget = squad_value + request.budget
-                    print(f"Manager {request.manager_id}: Squad value £{squad_value:.1f}m + Bank £{request.budget:.1f}m = £{actual_budget:.1f}m total")
+                    print(f"Manager {request.manager_id}: Selling value £{squad_value:.1f}m + Bank £{request.budget:.1f}m = £{actual_budget:.1f}m total")
             except Exception as e:
                 print(f"Error fetching manager team: {e}")
         
@@ -355,10 +385,11 @@ async def optimize_multi_period(request: MultiPeriodRequest):
             current_squad_ids=current_squad_ids,
             excluded_players=request.excluded_players,
             banked_transfers=banked_transfers,
-            chips_used=request.chips_used,
+            chips_used=_chips_used(request.manager_id, request.chips_used),
             robust=request.robust,
             uncertainty_budget=request.uncertainty_budget,
-            strategy=request.strategy
+            strategy=request.strategy,
+            selling_prices=selling_prices
         )
         
         # Generate transfer explanations
@@ -425,8 +456,7 @@ async def optimize_compare(request: MultiPeriodRequest):
     import asyncio
     from concurrent.futures import ThreadPoolExecutor
     
-    # Keep full gameweek horizon - we've optimized to skip 2nd optimization when possible
-    effective_gameweeks = min(request.gameweeks, 5)
+    effective_gameweeks = request.gameweeks
     
     try:
         data = fpl_service.get_latest_data()
@@ -442,16 +472,12 @@ async def optimize_compare(request: MultiPeriodRequest):
         
         # Get current squad if manager_id provided
         current_squad_ids = []
+        selling_prices = None
         actual_budget = request.budget
         banked_transfers = request.banked_transfers
         
         if request.manager_id:
-            manager_team = fpl_service.get_manager_team(request.manager_id)
-            current_squad_ids = [p["element"] for p in manager_team.get("picks", [])]
-            
-            # Calculate actual budget = squad value + bank
-            squad_players = players_df[players_df['id'].isin(current_squad_ids)]
-            squad_value = squad_players['now_cost'].sum() / 10.0
+            current_squad_ids, selling_prices, squad_value = _manager_squad(request.manager_id, players_df)
             actual_budget = squad_value + request.budget
         
         optimizer = MultiPeriodFPLOptimizer(
@@ -465,6 +491,7 @@ async def optimize_compare(request: MultiPeriodRequest):
         chip_to_use = None
         if request.chip_to_use:
             chip_to_use = tuple(request.chip_to_use)  # [name, gw] -> (name, gw)
+        chips_used = _chips_used(request.manager_id, request.chips_used)
         
         # Define optimization functions for concurrent execution
         def run_with_hits():
@@ -474,12 +501,13 @@ async def optimize_compare(request: MultiPeriodRequest):
                 current_squad_ids=current_squad_ids,
                 excluded_players=request.excluded_players,
                 banked_transfers=banked_transfers,
-                chips_used=request.chips_used,
+                chips_used=_chips_used(request.manager_id, request.chips_used),
                 chip_to_use=chip_to_use,
                 robust=request.robust,
                 uncertainty_budget=request.uncertainty_budget,
                 strategy=request.strategy,
-                max_hits=10  # Allow hits
+                max_hits=10,  # Allow hits
+                selling_prices=selling_prices
             )
         
         def run_no_hits():
@@ -489,12 +517,13 @@ async def optimize_compare(request: MultiPeriodRequest):
                 current_squad_ids=current_squad_ids,
                 excluded_players=request.excluded_players,
                 banked_transfers=banked_transfers,
-                chips_used=request.chips_used,
+                chips_used=_chips_used(request.manager_id, request.chips_used),
                 chip_to_use=chip_to_use,
                 robust=request.robust,
                 uncertainty_budget=request.uncertainty_budget,
                 strategy=request.strategy,
-                max_hits=0  # No hits allowed
+                max_hits=0,  # No hits allowed
+                selling_prices=selling_prices
             )
         
         # Run optimizations - smart strategy to minimize runtime
@@ -502,7 +531,7 @@ async def optimize_compare(request: MultiPeriodRequest):
         loop = asyncio.get_event_loop()
         
         try:
-            # Run the with-hits optimization first (45s timeout for full 5 GW horizon)
+            # Run the with-hits optimization first (45s timeout)
             solution_with_hits = await asyncio.wait_for(
                 loop.run_in_executor(None, run_with_hits),
                 timeout=45.0
@@ -978,12 +1007,7 @@ async def analyze_transfers(request: TransferAnalysisRequest):
         teams_df = pd.DataFrame(static_data["teams"])
         
         # Get manager's current team
-        manager_team = fpl_service.get_manager_team(request.manager_id)
-        current_squad_ids = [p["element"] for p in manager_team.get("picks", [])]
-        
-        # Get current squad value
-        current_squad = players_df[players_df['id'].isin(current_squad_ids)]
-        squad_value = current_squad['now_cost'].sum() / 10.0
+        current_squad_ids, selling_prices, squad_value = _manager_squad(request.manager_id, players_df)
         budget = squad_value + request.bank
         
         # Get current gameweek
@@ -1008,7 +1032,8 @@ async def analyze_transfers(request: TransferAnalysisRequest):
                 gameweeks=request.gameweeks_horizon,
                 current_squad_ids=current_squad_ids,
                 banked_transfers=request.free_transfers,
-                chips_used=[]
+                chips_used=[],
+                selling_prices=selling_prices
             )
             
             if solution.status == "Optimal" and solution.gameweek_plans:
@@ -1216,7 +1241,7 @@ async def get_chip_recommendations(request: ChipAdviceRequest):
         
         recommendations = advisor.get_all_recommendations(
             current_squad=current_squad,
-            chips_used=request.chips_used
+            chips_used=_chips_used(request.manager_id, request.chips_used)
         )
         
         # Determine best chip to use based on urgency/value

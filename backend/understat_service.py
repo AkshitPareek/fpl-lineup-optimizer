@@ -67,7 +67,7 @@ class UnderstatService:
     - Provide enriched data for point predictions
     """
     
-    CACHE_DIR = "data/cache/understat"
+    CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "cache", "understat")
     CACHE_DURATION = 86400  # 24 hours
     
     # Team name mappings between FPL and Understat

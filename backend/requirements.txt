@@ -3,6 +3,7 @@ uvicorn
 gunicorn
 httpx
 pulp[cbc]==3.3.2
+highspy==1.15.1
 pandas
 requests
 python-multipart

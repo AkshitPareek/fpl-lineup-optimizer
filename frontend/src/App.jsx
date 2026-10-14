@@ -15,7 +15,7 @@ function App() {
   // Controls
   const [mode, setMode] = useState("multi") // 'single', 'multi', 'backtest', 'dream'
   const [budget, setBudget] = useState(100.0)
-  const [gameweeks, setGameweeks] = useState(5) // Default 5
+  const [gameweeks, setGameweeks] = useState(8)
   const [strategy, setStrategy] = useState("standard")
   const [managerId, setManagerId] = useState("")
   const [freeTransfers, setFreeTransfers] = useState(1)
@@ -60,6 +60,9 @@ function App() {
           setManagerChips(res.data)
           if (Number.isInteger(res.data.banked_transfers)) {
             setBankedTransfers(res.data.banked_transfers)
+          }
+          if (typeof res.data.bank === 'number') {
+            setBudget(res.data.bank)
           }
         })
         .catch(err => console.error("Error fetching manager chips", err))
@@ -229,7 +232,8 @@ function App() {
         cost: 0,
         squad: fullSquad,
         transfers: plan.transfers,
-        gameweek: plan.gameweek
+        gameweek: plan.gameweek,
+        bank: plan.bank
       }
     }
   }
@@ -269,7 +273,7 @@ function App() {
               </div>
               <div>
                 <label className="block text-gray-400 mb-2 text-sm">Optimizer Horizon</label>
-                <input type="range" min="3" max="5" value={gameweeks} onChange={(e) => setGameweeks(e.target.value)} className="w-full accent-fpl-pink" />
+                <input type="range" min="3" max="15" value={gameweeks} onChange={(e) => setGameweeks(e.target.value)} className="w-full accent-fpl-pink" />
                 <div className="text-right text-xs text-gray-400">{gameweeks} GWs lookahead</div>
               </div>
             </div>
@@ -281,7 +285,8 @@ function App() {
                 {managerChips && (
                   <p className="text-xs text-gray-500 mt-1">
                     Chips left: {(managerChips.available || []).join(", ") || "none"}
-                    {Number.isInteger(managerChips.banked_transfers) ? ` · ${managerChips.banked_transfers} free transfers saved` : ""}
+                    {Number.isInteger(managerChips.banked_transfers) ? ` · ${managerChips.banked_transfers} free transfer${managerChips.banked_transfers === 1 ? "" : "s"} for the next deadline` : ""}
+                    {managerChips.pending_transfers > 0 ? ` (after the ${managerChips.pending_transfers} already made)` : ""}
                   </p>
                 )}
               </div>
@@ -307,7 +312,7 @@ function App() {
               <div>
                 <label className="block text-gray-400 mb-2 text-sm">Planning Horizon (GWs)</label>
                 <div className="flex items-center gap-4">
-                  <input type="range" min={mode === 'single' ? "1" : "3"} max={mode === 'single' ? "1" : "8"} value={gameweeks} onChange={(e) => setGameweeks(e.target.value)} className="w-full accent-fpl-cyan" />
+                  <input type="range" min={mode === 'single' ? "1" : "3"} max={mode === 'single' ? "1" : "15"} value={gameweeks} onChange={(e) => setGameweeks(e.target.value)} className="w-full accent-fpl-cyan" />
                   <span className="font-bold text-fpl-cyan w-8">{gameweeks}</span>
                 </div>
               </div>
@@ -695,6 +700,11 @@ function App() {
                     <div className="ml-auto flex flex-col items-end justify-center text-right px-4">
                       <span className="text-xs text-gray-400">Total Horizon</span>
                       <span className="text-xl font-bold text-fpl-green">{lineup.total_expected_points.toFixed(0)} pts</span>
+                      {lineup.proven_optimal === false && (
+                        <span className="text-xs text-yellow-400" title="The solver hit its time limit. A shorter horizon solves fully.">
+                          Best plan found in time limit
+                        </span>
+                      )}
                     </div>
                   </div>
                 )}
@@ -776,6 +786,9 @@ function App() {
                           GW {currentData.gameweek || 'Selection'}
                           <span className="text-fpl-green ml-2">{currentData.points.toFixed(1)} xP</span>
                         </h3>
+                        {typeof currentData.bank === 'number' && (
+                          <p className="text-xs text-gray-400">£{currentData.bank.toFixed(1)}m in the bank after this week's transfers</p>
+                        )}
                         {currentData.transfers && !currentData.transfers.explanation && (currentData.transfers.in?.length || currentData.transfers.out?.length) ? (
                           <div className="text-sm text-gray-300 max-w-2xl bg-gray-900/50 p-3 rounded border-l-2 border-fpl-cyan mt-2">
                             <p>Out: {(currentData.transfers.out || []).map((p) => p.name || p).join(", ") || "none"}</p>
