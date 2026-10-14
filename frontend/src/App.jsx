@@ -269,7 +269,7 @@ function App() {
               </div>
               <div>
                 <label className="block text-gray-400 mb-2 text-sm">Optimizer Horizon</label>
-                <input type="range" min="3" max="8" value={gameweeks} onChange={(e) => setGameweeks(e.target.value)} className="w-full accent-fpl-pink" />
+                <input type="range" min="3" max="15" value={gameweeks} onChange={(e) => setGameweeks(e.target.value)} className="w-full accent-fpl-pink" />
                 <div className="text-right text-xs text-gray-400">{gameweeks} GWs lookahead</div>
               </div>
             </div>
@@ -307,7 +307,7 @@ function App() {
               <div>
                 <label className="block text-gray-400 mb-2 text-sm">Planning Horizon (GWs)</label>
                 <div className="flex items-center gap-4">
-                  <input type="range" min={mode === 'single' ? "1" : "3"} max={mode === 'single' ? "1" : "8"} value={gameweeks} onChange={(e) => setGameweeks(e.target.value)} className="w-full accent-fpl-cyan" />
+                  <input type="range" min={mode === 'single' ? "1" : "3"} max={mode === 'single' ? "1" : "15"} value={gameweeks} onChange={(e) => setGameweeks(e.target.value)} className="w-full accent-fpl-cyan" />
                   <span className="font-bold text-fpl-cyan w-8">{gameweeks}</span>
                 </div>
               </div>
@@ -695,6 +695,11 @@ function App() {
                     <div className="ml-auto flex flex-col items-end justify-center text-right px-4">
                       <span className="text-xs text-gray-400">Total Horizon</span>
                       <span className="text-xl font-bold text-fpl-green">{lineup.total_expected_points.toFixed(0)} pts</span>
+                      {lineup.proven_optimal === false && (
+                        <span className="text-xs text-yellow-400" title="The solver hit its time limit. A shorter horizon solves fully.">
+                          Best plan found in time limit
+                        </span>
+                      )}
                     </div>
                   </div>
                 )}

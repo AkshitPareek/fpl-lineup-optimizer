@@ -3,7 +3,7 @@ FPL Optimizer API - FastAPI Backend
 
 Provides endpoints for:
 - Single gameweek optimization
-- Multi-period optimization (3-8 GWs)
+- Multi-period optimization (3-15 GWs)
 - Robust optimization with uncertainty handling
 - Manager team and data fetching
 """
@@ -160,7 +160,7 @@ class OptimizationRequest(BaseModel):
 class MultiPeriodRequest(BaseModel):
     """Request for multi-period optimization."""
     budget: float = 100.0
-    gameweeks: int = Field(default=8, ge=3, le=8, description="Planning horizon (3-8)")
+    gameweeks: int = Field(default=8, ge=3, le=15, description="Planning horizon (3-15)")
     manager_id: Optional[int] = None
     excluded_players: List[int] = []
     banked_transfers: int = Field(default=1, ge=0, le=5, description="Currently banked FTs (0-5)")
@@ -297,7 +297,7 @@ async def optimize_team(request: OptimizationRequest):
 @app.post("/api/optimize/multi-period")
 async def optimize_multi_period(request: MultiPeriodRequest):
     """
-    Multi-period optimization over rolling horizon (3-8 gameweeks).
+    Multi-period optimization over rolling horizon (3-15 gameweeks).
     
     Returns optimal 15-man squad, starting XI, bench order, captain,
     and transfer plan for each gameweek with explanations.

@@ -1,7 +1,7 @@
 """
 Advanced Multi-Period MILP Optimizer for FPL 2025/26
 
-Implements a rolling horizon optimization over 3-8 gameweeks with:
+Implements a rolling horizon optimization over 3-15 gameweeks with:
 - Transfer flow constraints with banking (up to 5 FTs)
 - Chip strategy logic (Wildcard, Free Hit, Triple Captain, Bench Boost)
 - Squad continuity across gameweeks
@@ -84,6 +84,8 @@ class MultiPeriodSolution:
     chip_suggestion: Optional[Dict[str, Any]] = None  # Legacy: single best chip
     chip_recommendations: Optional[List[Dict[str, Any]]] = None  # All chip recommendations
     captain_recommendations: Optional[List[Dict[str, Any]]] = None  # Per-GW captain suggestions
+    # False when the solver stopped at its time limit with its best plan so far.
+    proven_optimal: bool = True
 
 
 class MultiPeriodFPLOptimizer:
@@ -91,7 +93,7 @@ class MultiPeriodFPLOptimizer:
     Multi-period MILP optimizer for FPL 2025/26 season.
     
     Features:
-    - Rolling horizon optimization (3-8 gameweeks)
+    - Rolling horizon optimization (3-15 gameweeks)
     - Transfer banking (up to 5 FTs)
     - Chip strategy (Wildcard, Free Hit, Triple Captain, Bench Boost)
     - CBIT/CBIRT expected point bonuses
@@ -107,6 +109,8 @@ class MultiPeriodFPLOptimizer:
     MAX_PER_TEAM = 3
     MAX_BANKED_TRANSFERS = 5  # 2025/26 season: can bank up to 5 FTs
     TRANSFER_PENALTY = 4
+    LAST_GAMEWEEK = 38
+    MAX_HORIZON = 15
     
     def __init__(self, 
                  players_df: pd.DataFrame,
@@ -157,6 +161,24 @@ class MultiPeriodFPLOptimizer:
             fixtures=fixtures
         )
             
+    @staticmethod
+    def _multi_period_solver():
+        """HiGHS proves 12-15 week plans in seconds where CBC runs out of time."""
+        options = dict(timeLimit=15, gapRel=0.01, threads=1)
+        highs = pulp.HiGHS(msg=False, **options)
+        if highs.available():
+            return highs
+        return pulp.PULP_CBC_CMD(msg=0, **options)
+
+    @staticmethod
+    def _chosen(var) -> bool:
+        # HiGHS returns binaries within tolerance, e.g. 0.9999999.
+        return (var.value() or 0) > 0.5
+
+    @staticmethod
+    def _count(var) -> int:
+        return int(round(var.value() or 0))
+
     @staticmethod
     def _unlimited_transfers(active_chip, chip_gw, gameweek) -> bool:
         """Wildcard and Free Hit weeks do not spend free transfers or take hits."""
@@ -341,7 +363,7 @@ class MultiPeriodFPLOptimizer:
         
         Args:
             budget: Total budget in millions
-            gameweeks: Planning horizon (3-8)
+            gameweeks: Planning horizon (3-15, stopping at the last gameweek)
             current_squad_ids: Current squad (if any)
             excluded_players: Players to exclude
             banked_transfers: Currently banked free transfers
@@ -361,7 +383,8 @@ class MultiPeriodFPLOptimizer:
         start_time = time.time()
         banked_transfers = max(0, min(self.MAX_BANKED_TRANSFERS, int(banked_transfers)))
         
-        gameweeks = max(3, min(8, gameweeks))  # Clamp to 3-8
+        remaining = max(1, self.LAST_GAMEWEEK + 1 - self.current_gw)
+        gameweeks = min(max(3, min(self.MAX_HORIZON, gameweeks)), remaining)
         horizon = list(range(self.current_gw, self.current_gw + gameweeks))
         
         # Get predictions for all gameweeks
@@ -441,10 +464,11 @@ class MultiPeriodFPLOptimizer:
         
         player_ids = available['id'].tolist()
         
-        # Helper function
+        # Constraint building looks attributes up per player per gameweek.
+        attrs_by_id = available.set_index('id').to_dict('index')
+
         def get_attr(pid, attr):
-            val = available.loc[available['id'] == pid, attr].values
-            return val[0] if len(val) > 0 else 0
+            return attrs_by_id.get(pid, {}).get(attr, 0)
         
         # Create MILP problem
         prob = pulp.LpProblem("FPL_Multi_Period", pulp.LpMaximize)
@@ -639,19 +663,11 @@ class MultiPeriodFPLOptimizer:
                 prob += hits[t] >= transfers_made - available_ft
                 prob += ft_used[t] >= transfers_made - hits[t]
         
-        # Solve with optimized settings:
-        # - timeLimit=15: Max 15 seconds per solve
-        # - gapRel=0.01: Accept solutions within 1% of optimal (much faster)
-        # - threads=1: Single thread to avoid memory issues on free tier
         solve_start = time.time()
-        prob.solve(pulp.PULP_CBC_CMD(
-            msg=0,
-            timeLimit=15,
-            gapRel=0.01,  # 1% optimality gap - good enough for FPL
-            threads=1
-        ))
+        prob.solve(self._multi_period_solver())
         solve_time = time.time() - solve_start
-        print(f"MILP Solve time: {solve_time:.1f}s, Status: {pulp.LpStatus[prob.status]}")
+        proven = prob.sol_status == pulp.LpSolutionOptimal
+        print(f"MILP Solve time: {solve_time:.1f}s, Status: {pulp.LpStatus[prob.status]}, proven optimal: {proven}")
         
         end_time = time.time()
         
@@ -863,7 +879,8 @@ class MultiPeriodFPLOptimizer:
             optimization_time_seconds=end_time - start_time,
             chip_suggestion=chip_suggestion,
             chip_recommendations=chip_recommendations,
-            captain_recommendations=captain_recommendations
+            captain_recommendations=captain_recommendations,
+            proven_optimal=proven
         )
     
     def _generate_transfer_explanation(self, 
@@ -951,6 +968,7 @@ class MultiPeriodFPLOptimizer:
         """Convert solution to JSON-serializable dict."""
         return {
             'status': solution.status,
+            'proven_optimal': solution.proven_optimal,
             'squad': solution.squad,
             'total_expected_points': solution.total_expected_points,
             'banked_transfers_after': solution.banked_transfers_after,
