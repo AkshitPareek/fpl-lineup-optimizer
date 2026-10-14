@@ -1,6 +1,7 @@
 import contextlib
 import io
 import unittest
+from unittest import mock
 
 import pandas as pd
 import pulp
@@ -49,6 +50,25 @@ class LongHorizonTests(unittest.TestCase):
         for gw_plan in solution.gameweek_plans:
             self.assertEqual((len(gw_plan.starting_xi), len(gw_plan.bench)), (11, 4))
             self.assertIn(gw_plan.captain_id, [p['id'] for p in gw_plan.starting_xi])
+
+    def test_lineups_survive_solver_tolerance(self):
+        class NearIntegerSolver(pulp.PULP_CBC_CMD):
+            def actualSolve(self, lp, **kwargs):
+                status = super().actualSolve(lp, **kwargs)
+                for var in lp.variables():
+                    if var.varValue and var.varValue > 0.5:
+                        var.varValue -= 1e-7
+                return status
+
+        _, exact = plan(current_gw=5, gameweeks=4)
+        nudging = staticmethod(lambda: NearIntegerSolver(msg=0))
+        with mock.patch.object(MultiPeriodFPLOptimizer, '_multi_period_solver', nudging):
+            _, nudged = plan(current_gw=5, gameweeks=4)
+        for gw_plan in nudged.gameweek_plans:
+            self.assertEqual((len(gw_plan.starting_xi), len(gw_plan.bench)), (11, 4))
+            self.assertIsNotNone(gw_plan.captain_id)
+        self.assertEqual(nudged.banked_transfers_after, exact.banked_transfers_after)
+        self.assertGreater(nudged.banked_transfers_after, 1)
 
     def test_near_integer_solver_values_are_read_as_whole(self):
         binary = pulp.LpVariable('picked', cat='Binary')

@@ -697,7 +697,7 @@ class MultiPeriodFPLOptimizer:
             gw_transfers_out = []
             
             for j in player_ids:
-                if squad[(j, t)].value() == 1:
+                if self._chosen(squad[(j, t)]):
                     player_data = available[available['id'] == j].to_dict('records')[0]
                     
                     # Clean up for JSON (NaN -> None)
@@ -709,8 +709,8 @@ class MultiPeriodFPLOptimizer:
                            cleaned_data[k] = v
                     player_data = cleaned_data
 
-                    player_data['is_starter'] = starter[(j, t)].value() == 1
-                    player_data['is_captain'] = captain[(j, t)].value() == 1
+                    player_data['is_starter'] = self._chosen(starter[(j, t)])
+                    player_data['is_captain'] = self._chosen(captain[(j, t)])
                     player_data['expected_points'] = get_attr(j, f'xp_gw{t}')
                     
                     gw_squad.append(player_data)
@@ -722,7 +722,7 @@ class MultiPeriodFPLOptimizer:
                     else:
                         gw_bench.append(player_data)
                 
-                if z_in[(j, t)].value() == 1:
+                if self._chosen(z_in[(j, t)]):
                     gw_transfers_in.append({
                         'id': int(j),
                         'name': str(get_attr(j, 'web_name')),
@@ -730,7 +730,7 @@ class MultiPeriodFPLOptimizer:
                         'expected_points': float(get_attr(j, f'xp_gw{t}')),
                         'element_type': int(get_attr(j, 'element_type'))
                     })
-                if z_out[(j, t)].value() == 1:
+                if self._chosen(z_out[(j, t)]):
                     gw_transfers_out.append({
                         'id': int(j),
                         'name': str(get_attr(j, 'web_name')),
@@ -750,7 +750,7 @@ class MultiPeriodFPLOptimizer:
             total_out_xp = sum(t.get('expected_points', 0) for t in gw_transfers_out)
             
             xp_gain = total_in_xp - total_out_xp
-            hits_taken = int(hits[t].value() or 0)
+            hits_taken = self._count(hits[t])
             hit_cost = hits_taken * self.TRANSFER_PENALTY
             
             # Hit is worth it if xP gain > hit cost + 2 (buffer for safety)
@@ -770,7 +770,7 @@ class MultiPeriodFPLOptimizer:
                 gameweek=t,
                 transfers_in=gw_transfers_in,
                 transfers_out=gw_transfers_out,
-                free_transfers_used=int(ft_used[t].value() or 0),
+                free_transfers_used=self._count(ft_used[t]),
                 hits_taken=hits_taken,
                 hit_cost=hit_cost,
                 explanation=self._generate_transfer_explanation(gw_transfers_in, gw_transfers_out),
@@ -874,7 +874,7 @@ class MultiPeriodFPLOptimizer:
             gameweek_plans=gameweek_plans,
             total_expected_points=total_xp - total_hits,
             transfer_summary=transfer_summary,
-            banked_transfers_after=int(ft_banked[horizon[-1]].value() or 0),
+            banked_transfers_after=self._count(ft_banked[horizon[-1]]),
             chips_remaining=[c for c in ['wildcard', 'freehit', 'triple_captain', 'bench_boost'] if c not in chips_used],
             optimization_time_seconds=end_time - start_time,
             chip_suggestion=chip_suggestion,
