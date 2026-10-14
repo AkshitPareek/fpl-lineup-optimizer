@@ -691,7 +691,7 @@ class MultiPeriodFPLOptimizer:
                 total_expected_points=0,
                 transfer_summary=[],
                 banked_transfers_after=banked_transfers,
-                chips_remaining=[c for c in ['wildcard', 'freehit', 'triple_captain', 'bench_boost'] if c not in chips_used],
+                chips_remaining=[c for c in ChipAdvisor.CHIPS if c not in chips_used],
                 optimization_time_seconds=end_time - start_time
             )
         
@@ -888,7 +888,7 @@ class MultiPeriodFPLOptimizer:
             total_expected_points=total_xp - total_hits,
             transfer_summary=transfer_summary,
             banked_transfers_after=self._count(ft_banked[horizon[-1]]),
-            chips_remaining=[c for c in ['wildcard', 'freehit', 'triple_captain', 'bench_boost'] if c not in chips_used],
+            chips_remaining=[c for c in ChipAdvisor.CHIPS if c not in chips_used],
             optimization_time_seconds=end_time - start_time,
             chip_suggestion=chip_suggestion,
             chip_recommendations=chip_recommendations,

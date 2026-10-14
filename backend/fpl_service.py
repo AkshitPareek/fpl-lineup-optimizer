@@ -8,6 +8,7 @@ FPL_HEADERS = {
     "User-Agent": "Mozilla/5.0 (compatible; FPLLineupOptimizer/1.0)"
 }
 MAX_BANKED_TRANSFERS = 5
+LAST_FIRST_HALF_GAMEWEEK = 19
 # The first request after a cold start waits this long for last season's totals.
 PRIOR_SEASON_WAIT_SECONDS = 30
 
@@ -211,7 +212,7 @@ class FPLService:
         Fetches a manager's chip usage history from FPL API.
         Returns dict with 'used' and 'available' chips.
         """
-        all_chips = ['wildcard', 'freehit', 'bboost', 'triple_captain']
+        all_chips = ['wildcard', 'freehit', 'bboost', '3xc']
         
         try:
             data = self._get_json(f"{self.BASE_URL}/entry/{manager_id}/history/")
@@ -233,16 +234,21 @@ class FPLService:
                 'freehit': 'free_hit'
             }
             
-            used_names = [c['name'] for c in used_chips]
+            history = data.get('current') or []
+            # Every chip comes twice: one set up to the GW19 deadline, a fresh set from GW20.
+            next_gw = history[-1]['event'] + 1 if history else 1
+            in_this_half = (lambda gw: gw <= LAST_FIRST_HALF_GAMEWEEK) if next_gw <= LAST_FIRST_HALF_GAMEWEEK \
+                else (lambda gw: gw > LAST_FIRST_HALF_GAMEWEEK)
+            used_names = [c['name'] for c in used_chips if in_this_half(c['gameweek'] or 0)]
             available_chips = [
                 chip_name_map.get(c, c) 
                 for c in all_chips 
                 if c not in used_names
             ]
             
-            history = data.get('current') or []
             result = {
                 'used': used_chips,
+                'used_this_half': [chip_name_map.get(c, c) for c in used_names],
                 'available': available_chips,
                 'banked_transfers': banked_transfers_for_next_deadline(
                     history,
@@ -264,6 +270,7 @@ class FPLService:
             # Return all chips as available if API fails
             return {
                 'used': [],
+                'used_this_half': [],
                 'available': ['wildcard', 'free_hit', 'bench_boost', 'triple_captain'],
                 'banked_transfers': 1,
             }

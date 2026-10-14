@@ -201,6 +201,17 @@ def _manager_squad(manager_id: int, players_df: pd.DataFrame):
     return squad_ids, selling_prices, squad_value
 
 
+def _chips_used(manager_id: Optional[int], requested: List[str]) -> List[str]:
+    """Chips to treat as played. An empty request is filled from the manager's history for this half of the season."""
+    if requested or not manager_id:
+        return list(requested)
+    try:
+        return fpl_service.get_manager_chips(manager_id).get("used_this_half", [])
+    except Exception as e:
+        print(f"Error fetching manager chips: {e}")
+        return []
+
+
 # Helper for analytics enrichment
 def _enrich_with_analytics(response_dict: Dict, players_df: pd.DataFrame, teams_df: pd.DataFrame):
     """Enrich optimization result with EV and ownership analytics."""
@@ -374,7 +385,7 @@ async def optimize_multi_period(request: MultiPeriodRequest):
             current_squad_ids=current_squad_ids,
             excluded_players=request.excluded_players,
             banked_transfers=banked_transfers,
-            chips_used=request.chips_used,
+            chips_used=_chips_used(request.manager_id, request.chips_used),
             robust=request.robust,
             uncertainty_budget=request.uncertainty_budget,
             strategy=request.strategy,
@@ -480,6 +491,7 @@ async def optimize_compare(request: MultiPeriodRequest):
         chip_to_use = None
         if request.chip_to_use:
             chip_to_use = tuple(request.chip_to_use)  # [name, gw] -> (name, gw)
+        chips_used = _chips_used(request.manager_id, request.chips_used)
         
         # Define optimization functions for concurrent execution
         def run_with_hits():
@@ -489,7 +501,7 @@ async def optimize_compare(request: MultiPeriodRequest):
                 current_squad_ids=current_squad_ids,
                 excluded_players=request.excluded_players,
                 banked_transfers=banked_transfers,
-                chips_used=request.chips_used,
+                chips_used=_chips_used(request.manager_id, request.chips_used),
                 chip_to_use=chip_to_use,
                 robust=request.robust,
                 uncertainty_budget=request.uncertainty_budget,
@@ -505,7 +517,7 @@ async def optimize_compare(request: MultiPeriodRequest):
                 current_squad_ids=current_squad_ids,
                 excluded_players=request.excluded_players,
                 banked_transfers=banked_transfers,
-                chips_used=request.chips_used,
+                chips_used=_chips_used(request.manager_id, request.chips_used),
                 chip_to_use=chip_to_use,
                 robust=request.robust,
                 uncertainty_budget=request.uncertainty_budget,
@@ -1229,7 +1241,7 @@ async def get_chip_recommendations(request: ChipAdviceRequest):
         
         recommendations = advisor.get_all_recommendations(
             current_squad=current_squad,
-            chips_used=request.chips_used
+            chips_used=_chips_used(request.manager_id, request.chips_used)
         )
         
         # Determine best chip to use based on urgency/value

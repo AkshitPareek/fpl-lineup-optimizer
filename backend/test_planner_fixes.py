@@ -124,6 +124,34 @@ class ManagerBankTests(unittest.TestCase):
             self.assertIsNone(service.get_manager_chips(1)["bank"])
 
 
+class ManagerChipTests(unittest.TestCase):
+    def chips(self, last_gw, played):
+        service = FPLService()
+        history = {"current": [{"event": gw, "event_transfers": 0, "bank": 0} for gw in range(1, last_gw + 1)],
+                   "chips": [{"name": name, "event": gw} for name, gw in played]}
+        with mock.patch.object(service, "_get_json", return_value=history), \
+                mock.patch.object(service, "get_manager_squad_state", side_effect=KeyError("picks")):
+            return service.get_manager_chips(1)
+
+    def test_played_chips_are_not_offered_again(self):
+        chips = self.chips(8, [("wildcard", 6), ("3xc", 7)])
+        self.assertEqual(chips["available"], ["free_hit", "bench_boost"])
+        self.assertEqual(chips["used_this_half"], ["wildcard", "triple_captain"])
+
+    def test_second_half_brings_a_fresh_set(self):
+        # GW19 is finished, so the next deadline is GW20.
+        chips = self.chips(19, [("wildcard", 6), ("bboost", 19)])
+        self.assertEqual(chips["available"], ["wildcard", "free_hit", "bench_boost", "triple_captain"])
+        self.assertEqual(chips["used_this_half"], [])
+
+    def test_planner_requests_fill_chips_from_history(self):
+        import main
+        with mock.patch.object(main.fpl_service, "get_manager_chips", return_value={"used_this_half": ["wildcard"]}):
+            self.assertEqual(main._chips_used(7706676, []), ["wildcard"])
+            self.assertEqual(main._chips_used(7706676, ["free_hit"]), ["free_hit"])
+        self.assertEqual(main._chips_used(None, []), [])
+
+
 class ComparisonSummaryTests(unittest.TestCase):
     def test_infeasible_plan_is_not_scored_as_zero(self):
         class Solution:
