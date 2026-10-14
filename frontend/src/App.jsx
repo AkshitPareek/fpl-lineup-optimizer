@@ -61,6 +61,9 @@ function App() {
           if (Number.isInteger(res.data.banked_transfers)) {
             setBankedTransfers(res.data.banked_transfers)
           }
+          if (typeof res.data.bank === 'number') {
+            setBudget(res.data.bank)
+          }
         })
         .catch(err => console.error("Error fetching manager chips", err))
 

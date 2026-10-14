@@ -148,13 +148,15 @@ class FPLService:
                 if c not in used_names
             ]
             
+            history = data.get('current') or []
             return {
                 'used': used_chips,
                 'available': available_chips,
                 'banked_transfers': banked_transfers_for_next_deadline(
-                    data.get('current') or [],
+                    history,
                     data.get('chips') or [],
                 ),
+                'bank': history[-1].get('bank', 0) / 10.0 if history else None,
             }
         except requests.RequestException as e:
             print(f"Error fetching manager chips: {e}")

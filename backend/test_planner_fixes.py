@@ -1,6 +1,7 @@
 import unittest
+from unittest import mock
 
-from fpl_service import banked_transfers_for_next_deadline
+from fpl_service import FPLService, banked_transfers_for_next_deadline
 from main import _comparison_entry
 
 
@@ -27,6 +28,20 @@ class BankedTransferTests(unittest.TestCase):
 
     def test_empty_history_starts_with_one(self):
         self.assertEqual(banked_transfers_for_next_deadline([]), 1)
+
+
+class ManagerBankTests(unittest.TestCase):
+    def test_reports_the_latest_bank_in_millions(self):
+        service = FPLService()
+        history = {"current": [{"event": 5, "event_transfers": 1, "bank": 12},
+                               {"event": 6, "event_transfers": 0, "bank": 3}], "chips": []}
+        with mock.patch.object(service, "_get_json", return_value=history):
+            self.assertAlmostEqual(service.get_manager_chips(1)["bank"], 0.3)
+
+    def test_unknown_bank_is_left_to_the_user(self):
+        service = FPLService()
+        with mock.patch.object(service, "_get_json", return_value={"current": [], "chips": []}):
+            self.assertIsNone(service.get_manager_chips(1)["bank"])
 
 
 class ComparisonSummaryTests(unittest.TestCase):
