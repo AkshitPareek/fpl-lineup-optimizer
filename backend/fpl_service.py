@@ -12,32 +12,98 @@ MAX_BANKED_TRANSFERS = 5
 PRIOR_SEASON_WAIT_SECONDS = 30
 
 
+UNLIMITED_TRANSFER_CHIPS = ("wildcard", "freehit")
+
+
+def _chips_by_gameweek(chips):
+    return {chip.get("event"): (chip.get("name") or "").lower() for chip in chips or []}
+
+
 def banked_transfers_for_next_deadline(events, chips=None):
     """
     Free transfers available at the next deadline.
 
-    Each completed gameweek grants one transfer, capped at 5. Transfers spend
-    that bank. Wildcard and Free Hit do not spend it.
+    Transfers before a manager's first deadline are unlimited, then each
+    gameweek grants one more, capped at 5. A Wildcard or Free Hit week keeps
+    the saved transfers but grants none: 2 saved before the chip are still 2
+    the week after.
     """
-    chips_by_gw = {}
-    for chip in chips or []:
-        chips_by_gw[chip.get("event")] = (chip.get("name") or "").lower()
-
+    chips_by_gw = _chips_by_gameweek(chips)
     available = 1
-    history = list(events or [])
-    if not history:
-        return available
-
-    for index, event in enumerate(history):
+    for event in list(events or [])[1:]:
+        if chips_by_gw.get(event.get("event")) in UNLIMITED_TRANSFER_CHIPS:
+            continue
         made = int(event.get("event_transfers") or 0)
-        chip = chips_by_gw.get(event.get("event"), "")
-        if chip in ("wildcard", "freehit"):
-            made = 0
-        remaining = max(0, available - made)
-        available = min(MAX_BANKED_TRANSFERS, remaining + 1)
-        if index == len(history) - 1:
-            return available
+        available = min(MAX_BANKED_TRANSFERS, max(0, available - made) + 1)
     return available
+
+
+def selling_price(purchase_price, current_price):
+    """FPL keeps half of any rise, rounded down to £0.1m; a fall is passed on in full. Prices in tenths."""
+    if current_price <= purchase_price:
+        return current_price
+    return purchase_price + (current_price - purchase_price) // 2
+
+
+def manager_squad_state(history, transfers, picks_by_gw, elements, initial_price=None):
+    """
+    The squad, bank, selling prices and free transfers a manager takes into the next deadline.
+
+    history: /entry/{id}/history/; transfers: /entry/{id}/transfers/;
+    picks_by_gw: callable gw -> /entry/{id}/event/{gw}/picks/; elements: bootstrap elements.
+    initial_price: callable player id -> price in tenths when the season-start squad was
+    picked after GW1; defaults to the season start price.
+    Transfers already made for the next deadline are applied.
+    """
+    events = list(history.get("current") or [])
+    if not events:
+        return None
+    chips_by_gw = _chips_by_gameweek(history.get("chips"))
+    by_id = {e["id"]: e for e in elements}
+
+    # A Free Hit squad reverts at the next deadline, so plan from the week before it.
+    base = events[-1]
+    if chips_by_gw.get(base["event"]) == "freehit" and len(events) > 1:
+        base = events[-2]
+    squad = [p["element"] for p in picks_by_gw(base["event"]).get("picks", [])]
+    bank = int(base.get("bank") or 0)
+    free_transfers = banked_transfers_for_next_deadline(events, history.get("chips"))
+
+    last_event = events[-1]["event"]
+    pending = sorted((t for t in transfers or [] if (t.get("event") or 0) > last_event),
+                     key=lambda t: t.get("time") or "")
+    pending_unlimited = any(chips_by_gw.get(t.get("event")) in UNLIMITED_TRANSFER_CHIPS for t in pending)
+    for t in pending:
+        if t["element_out"] in squad:
+            squad[squad.index(t["element_out"])] = t["element_in"]
+            bank += int(t["element_out_cost"]) - int(t["element_in_cost"])
+    if not pending_unlimited:
+        free_transfers = max(0, free_transfers - len(pending))
+
+    purchase = {}
+    for t in sorted(transfers or [], key=lambda t: t.get("time") or ""):
+        if chips_by_gw.get(t.get("event")) == "freehit":
+            continue
+        purchase[t["element_in"]] = int(t["element_in_cost"])
+
+    selling = {}
+    for pid in squad:
+        element = by_id.get(pid)
+        if element is None:
+            continue
+        now = int(element["now_cost"])
+        bought = purchase.get(pid)
+        if bought is None:
+            bought = initial_price(pid) if initial_price else now - int(element.get("cost_change_start") or 0)
+        selling[pid] = selling_price(bought, now) / 10.0
+
+    return {
+        "squad": squad,
+        "selling_prices": selling,
+        "bank": bank / 10.0,
+        "free_transfers": free_transfers,
+        "pending_transfers": len(pending),
+    }
 
 
 class FPLService:
@@ -107,6 +173,32 @@ class FPLService:
                 print(f"Error fetching manager team: {e}")
         raise last_error
 
+    def get_manager_squad_state(self, manager_id: int, history=None):
+        """Squad, bank, selling prices and free transfers for the next deadline (see manager_squad_state)."""
+        base = f"{self.BASE_URL}/entry/{manager_id}"
+        history = history or self._get_json(f"{base}/history/")
+        transfers = self._get_json(f"{base}/transfers/")
+        elements = self.get_latest_data()["static"]["elements"]
+        events = history.get("current") or []
+        initial_price = None
+        if events and events[0]["event"] > 1:
+            first_gw = events[0]["event"]
+
+            def initial_price(pid):
+                summary = self._get_json(f"{self.BASE_URL}/element-summary/{pid}/")
+                for match in summary.get("history", []):
+                    if match.get("round") == first_gw:
+                        return int(match["value"])
+                return next(int(e["now_cost"]) for e in elements if e["id"] == pid)
+
+        return manager_squad_state(
+            history,
+            transfers,
+            lambda gw: self._get_json(f"{base}/event/{gw}/picks/"),
+            elements,
+            initial_price,
+        )
+
     def _update_cache(self, key, data):
         self._cache[key] = data
         self._cache_expiry[key] = time.time() + self.CACHE_DURATION
@@ -149,7 +241,7 @@ class FPLService:
             ]
             
             history = data.get('current') or []
-            return {
+            result = {
                 'used': used_chips,
                 'available': available_chips,
                 'banked_transfers': banked_transfers_for_next_deadline(
@@ -158,6 +250,15 @@ class FPLService:
                 ),
                 'bank': history[-1].get('bank', 0) / 10.0 if history else None,
             }
+            if history:
+                try:
+                    state = self.get_manager_squad_state(manager_id, history=data)
+                    result['banked_transfers'] = state['free_transfers']
+                    result['bank'] = state['bank']
+                    result['pending_transfers'] = state['pending_transfers']
+                except (requests.RequestException, KeyError, StopIteration) as e:
+                    print(f"Error reading manager transfers: {e}")
+            return result
         except requests.RequestException as e:
             print(f"Error fetching manager chips: {e}")
             # Return all chips as available if API fails
