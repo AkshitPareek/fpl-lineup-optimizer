@@ -95,14 +95,22 @@ class FixtureCountTests(unittest.TestCase):
         predictor = make_predictor([player()], fixtures=fixtures)
         self.assertEqual(predictor.predict_gameweek(pd.Series(player()), 8)[0], 0.0)
 
-    def test_double_gameweek_scores_more(self):
-        fixtures = [{"event": 7, "team_h": 1, "team_a": 2, "team_h_difficulty": 3, "team_a_difficulty": 3},
-                    {"event": 8, "team_h": 1, "team_a": 2, "team_h_difficulty": 3, "team_a_difficulty": 3},
+    def test_double_gameweek_counts_both_matches_in_full(self):
+        home = {"event": 8, "team_h": 1, "team_a": 2, "team_h_difficulty": 3, "team_a_difficulty": 3}
+        away = {"event": 8, "team_h": 2, "team_a": 1, "team_h_difficulty": 3, "team_a_difficulty": 3}
+        mid = pd.Series(player())
+        single = make_predictor([player()], fixtures=[home]).predict_gameweek(mid, 8)
+        double = make_predictor([player()], fixtures=[home, away]).predict_gameweek(mid, 8)
+        self.assertAlmostEqual(double[0], 2 * single[0])
+        for part in ("appearance", "bonus", "cbit_bonus"):
+            self.assertAlmostEqual(double[1][part], 2 * single[1][part])
+
+    def test_double_gameweek_caps_are_per_match(self):
+        fixtures = [{"event": 8, "team_h": 1, "team_a": 2, "team_h_difficulty": 3, "team_a_difficulty": 3},
                     {"event": 8, "team_h": 2, "team_a": 1, "team_h_difficulty": 3, "team_a_difficulty": 3}]
+        striker = pd.Series(player(element_type=4, expected_goals="12.0"))
         predictor = make_predictor([player()], fixtures=fixtures)
-        single = predictor.predict_gameweek(pd.Series(player()), 7)[0]
-        double = predictor.predict_gameweek(pd.Series(player()), 8)[0]
-        self.assertGreater(double, 1.5 * single)
+        self.assertGreater(predictor.calculate_xg_points(striker, 8), 9.0)
 
 
 class UnderstatSeasonTests(unittest.TestCase):

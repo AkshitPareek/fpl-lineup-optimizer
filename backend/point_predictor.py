@@ -290,8 +290,8 @@ class PointPredictor:
             total_xg += adjusted_xg
         
         goal_points = total_xg * self.POINTS_GOAL.get(element_type, 4)
-        # Cap at reasonable maximum (~1.5 goals worth)
-        return min(goal_points, 9.0)
+        # Cap at reasonable maximum (~1.5 goals worth per match)
+        return min(goal_points, 9.0 * len(fixtures))
     
     def calculate_xa_points(self, player: pd.Series, gameweek: int) -> float:
         """
@@ -323,8 +323,8 @@ class PointPredictor:
             total_xa += xa_per_90 * max(0.85, min(1.15, multiplier))
         
         assist_points = total_xa * self.POINTS_ASSIST
-        # Cap at reasonable maximum (~2 assists worth)
-        return min(assist_points, 6.0)
+        # Cap at reasonable maximum (~2 assists worth per match)
+        return min(assist_points, 6.0 * len(fixtures))
     
     def calculate_clean_sheet_prob(self, player: pd.Series, gameweek: int) -> float:
         """
@@ -581,17 +581,19 @@ class PointPredictor:
         # Calculate regression factor for xG/xA adjustments
         regression_factor = self.calculate_regression_factor(player)
         
+        # Goals, assists and clean sheets are summed per fixture; these are per-match rates.
         breakdown = {
             'xg_points': self.calculate_xg_points(player, gameweek) * regression_factor,
             'xa_points': self.calculate_xa_points(player, gameweek) * regression_factor,
             'cs_points': self.calculate_clean_sheet_prob(player, gameweek),
-            'cbit_bonus': self.calculate_cbit_bonus(player, gameweek),
-            'appearance': self.calculate_appearance_points(player),
-            'bonus': self.calculate_bonus_points(player, gameweek),
+            'cbit_bonus': self.calculate_cbit_bonus(player, gameweek) * fixture_count,
+            'appearance': self.calculate_appearance_points(player) * fixture_count,
+            'bonus': self.calculate_bonus_points(player, gameweek) * fixture_count,
             'regression_factor': regression_factor,
+            'fixtures': fixture_count,
         }
         
-        model_total = sum(v for k, v in breakdown.items() if k != 'regression_factor')
+        model_total = sum(v for k, v in breakdown.items() if k not in ('regression_factor', 'fixtures'))
         
         # Dynamic calibration factor - decreases as season progresses
         # GW1: 0.85, GW19: 0.65, GW38: 0.50
