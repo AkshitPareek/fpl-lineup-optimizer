@@ -232,7 +232,8 @@ function App() {
         cost: 0,
         squad: fullSquad,
         transfers: plan.transfers,
-        gameweek: plan.gameweek
+        gameweek: plan.gameweek,
+        bank: plan.bank
       }
     }
   }
@@ -284,7 +285,8 @@ function App() {
                 {managerChips && (
                   <p className="text-xs text-gray-500 mt-1">
                     Chips left: {(managerChips.available || []).join(", ") || "none"}
-                    {Number.isInteger(managerChips.banked_transfers) ? ` · ${managerChips.banked_transfers} free transfers saved` : ""}
+                    {Number.isInteger(managerChips.banked_transfers) ? ` · ${managerChips.banked_transfers} free transfer${managerChips.banked_transfers === 1 ? "" : "s"} for the next deadline` : ""}
+                    {managerChips.pending_transfers > 0 ? ` (after the ${managerChips.pending_transfers} already made)` : ""}
                   </p>
                 )}
               </div>
@@ -784,6 +786,9 @@ function App() {
                           GW {currentData.gameweek || 'Selection'}
                           <span className="text-fpl-green ml-2">{currentData.points.toFixed(1)} xP</span>
                         </h3>
+                        {typeof currentData.bank === 'number' && (
+                          <p className="text-xs text-gray-400">£{currentData.bank.toFixed(1)}m in the bank after this week's transfers</p>
+                        )}
                         {currentData.transfers && !currentData.transfers.explanation && (currentData.transfers.in?.length || currentData.transfers.out?.length) ? (
                           <div className="text-sm text-gray-300 max-w-2xl bg-gray-900/50 p-3 rounded border-l-2 border-fpl-cyan mt-2">
                             <p>Out: {(currentData.transfers.out || []).map((p) => p.name || p).join(", ") || "none"}</p>
