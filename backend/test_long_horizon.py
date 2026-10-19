@@ -113,6 +113,9 @@ class LongHorizonTests(unittest.TestCase):
         for gw_plan in solution.gameweek_plans:
             self.assertEqual((len(gw_plan.starting_xi), len(gw_plan.bench)), (11, 4))
             self.assertIn(gw_plan.captain_id, [p['id'] for p in gw_plan.starting_xi])
+            others = [p for p in gw_plan.starting_xi if p['id'] != gw_plan.captain_id]
+            vice = next(p for p in others if p['id'] == gw_plan.vice_captain_id)
+            self.assertEqual(vice['expected_points'], max(p['expected_points'] for p in others))
 
     def test_lineups_survive_solver_tolerance(self):
         class NearIntegerSolver(pulp.PULP_CBC_CMD):

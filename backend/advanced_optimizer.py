@@ -808,7 +808,11 @@ class MultiPeriodFPLOptimizer:
                 starting_xi=gw_starters,
                 bench=gw_bench,
                 captain_id=gw_captain_id,
-                vice_captain_id=gw_starters[1]['id'] if len(gw_starters) > 1 else None,
+                vice_captain_id=max(
+                    (p for p in gw_starters if p['id'] != gw_captain_id),
+                    key=lambda p: p['expected_points'],
+                    default={'id': None},
+                )['id'],
                 expected_points=gw_xp,
                 chip_used=gw_chip_used,
                 transfers=transfer_plan,
