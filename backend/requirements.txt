@@ -9,5 +9,5 @@ requests
 python-multipart
 numpy
 tqdm
-understatapi
+understatapi>=0.7.1
 rapidfuzz
