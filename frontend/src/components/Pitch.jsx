@@ -39,7 +39,7 @@ const Pitch = ({ lineup }) => {
 
         return (
             <div
-                className={`flex flex-col items-center justify-start ${isBench ? 'w-20' : 'w-24'} transition-transform hover:scale-110 cursor-pointer group relative`}
+                className={`flex flex-col items-center justify-start w-14 @min-[420px]:w-16 @min-[520px]:w-20 @min-[680px]:w-24 transition-transform hover:scale-110 cursor-pointer group relative`}
                 style={{
                     transform: `translateY(${translateY}px)`
                 }}
@@ -47,10 +47,15 @@ const Pitch = ({ lineup }) => {
 
                 {/* Shirt Image */}
                 <div className="relative mb-1">
+                    {(player.is_captain || player.is_vice_captain) && (
+                        <span className={`absolute -top-1 -right-2 z-30 text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center ${player.is_captain ? 'bg-yellow-400 text-black' : 'bg-gray-200 text-black'}`}>
+                            {player.is_captain ? 'C' : 'V'}
+                        </span>
+                    )}
                     <img
                         src={getShirtUrl(player)}
                         alt={player.team_name}
-                        className={`drop-shadow-lg ${isBench ? "w-10" : "w-12"} object-contain`}
+                        className="drop-shadow-lg w-8 @min-[520px]:w-10 @min-[680px]:w-12 object-contain"
                         onError={(e) => {
                             e.target.style.display = 'none';
                             e.target.nextSibling.style.display = 'block'
@@ -79,9 +84,9 @@ const Pitch = ({ lineup }) => {
     }
 
     return (
-        <div className="w-full select-none">
+        <div className="@container w-full select-none">
             {/* Pitch Area */}
-            <div className="relative w-full h-[700px] border-4 border-white/40 rounded-xl overflow-hidden shadow-2xl mx-auto bg-green-600">
+            <div className="relative w-full h-[460px] @min-[520px]:h-[600px] @min-[680px]:h-[700px] border-4 border-white/40 rounded-xl overflow-hidden shadow-2xl mx-auto bg-green-600">
 
                 {/* Realistic Pitch Background */}
                 <div className="absolute inset-0">
@@ -112,17 +117,17 @@ const Pitch = ({ lineup }) => {
                     </div>
 
                     {/* DEF */}
-                    <div className="flex justify-center gap-4 sm:gap-12 items-center h-1/5 px-4">
+                    <div className="flex justify-center gap-1 @min-[420px]:gap-2 @min-[520px]:gap-3 @min-[680px]:gap-8 items-center h-1/5 px-2">
                         {def.map((p, i) => <PlayerCard key={p.id} player={p} index={i} total={def.length} />)}
                     </div>
 
                     {/* MID */}
-                    <div className="flex justify-center gap-4 sm:gap-12 items-center h-1/5 px-4">
+                    <div className="flex justify-center gap-1 @min-[420px]:gap-2 @min-[520px]:gap-3 @min-[680px]:gap-8 items-center h-1/5 px-2">
                         {mid.map((p, i) => <PlayerCard key={p.id} player={p} index={i} total={mid.length} />)}
                     </div>
 
                     {/* FWD */}
-                    <div className="flex justify-center gap-8 sm:gap-20 items-center h-1/5 px-4 pb-4">
+                    <div className="flex justify-center gap-2 @min-[520px]:gap-6 @min-[680px]:gap-12 items-center h-1/5 px-2 pb-4">
                         {fwd.map((p, i) => <PlayerCard key={p.id} player={p} index={i} total={fwd.length} />)}
                     </div>
 
@@ -132,7 +137,7 @@ const Pitch = ({ lineup }) => {
             {/* Bench Area */}
             <div className="mt-6 bg-gradient-to-r from-gray-800 to-gray-900 p-4 rounded-xl border border-gray-700 shadow-lg">
                 <h4 className="text-gray-400 text-xs font-bold mb-3 uppercase tracking-[0.2em] ml-2">Substitutes</h4>
-                <div className="flex justify-center gap-6 sm:gap-10 overflow-x-auto py-2">
+                <div className="flex justify-center gap-3 @min-[520px]:gap-8 overflow-x-auto py-2">
                     {bench.map(p => <PlayerCard key={p.id} player={p} isBench={true} />)}
                 </div>
             </div>

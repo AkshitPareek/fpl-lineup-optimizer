@@ -12,3 +12,12 @@ body {
   background-color: var(--color-gray-900);
   color: white;
 }
+
+@keyframes planner-slide {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(320%); }
+}
+
+.planner-indeterminate {
+  animation: planner-slide 1.4s ease-in-out infinite;
+}
