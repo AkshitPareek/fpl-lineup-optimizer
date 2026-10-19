@@ -112,6 +112,9 @@ class MultiPeriodFPLOptimizer:
     TRANSFER_PENALTY = 4
     LAST_GAMEWEEK = 38
     MAX_HORIZON = 15
+    POOL_PER_POSITION = 30
+    SOLVER_TIME_LIMIT = 15
+    SOLVER_GAP = 0.01
     
     def __init__(self, 
                  players_df: pd.DataFrame,
@@ -162,10 +165,10 @@ class MultiPeriodFPLOptimizer:
             fixtures=fixtures
         )
             
-    @staticmethod
-    def _multi_period_solver():
+    @classmethod
+    def _multi_period_solver(cls):
         """HiGHS proves 12-15 week plans in seconds where CBC runs out of time."""
-        options = dict(timeLimit=15, gapRel=0.01, threads=1)
+        options = dict(timeLimit=cls.SOLVER_TIME_LIMIT, gapRel=cls.SOLVER_GAP, threads=1)
         highs = pulp.HiGHS(msg=False, **options)
         if highs.available():
             return highs
@@ -445,7 +448,6 @@ class MultiPeriodFPLOptimizer:
         
         # ===== OPTIMIZATION: Pre-filter to top players per position =====
         # This reduces problem size from ~700 players to ~120, dramatically speeding up solve
-        TOP_PER_POSITION = 30  # Top 30 per position = 120 players max
         
         # Always include current squad players
         current_squad_set = set(current_squad_ids) if current_squad_ids else set()
@@ -459,7 +461,7 @@ class MultiPeriodFPLOptimizer:
             pos_players = pos_players.sort_values('total_horizon_xp', ascending=False)
             
             # Take top N, but always include current squad players of this position
-            top_pos = pos_players.head(TOP_PER_POSITION)
+            top_pos = pos_players.head(self.POOL_PER_POSITION)
             current_pos = pos_players[pos_players['id'].isin(current_squad_set)]
             
             # Combine and deduplicate
