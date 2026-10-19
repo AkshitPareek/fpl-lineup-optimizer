@@ -1,67 +1,62 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import axios from 'axios'
 import Pitch from './components/Pitch'
 import AnalyticsDashboard from './components/analytics/AnalyticsDashboard'
+import PlannerView from './components/planner/PlannerView'
+import { chipName, chooseStrategy, failureCopy, infeasibleCopy, isUsableMultiPlan } from './plannerFormat'
 
-// Production API URL handling
-const API_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
-axios.defaults.baseURL = API_URL;
+const API_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+axios.defaults.baseURL = API_URL
 
-const CHIP_NAMES = {
-  triple_captain: 'Triple Captain',
-  bench_boost: 'Bench Boost',
-  free_hit: 'Free Hit',
-  freehit: 'Free Hit',
-  wildcard: 'Wildcard',
-}
-const chipName = (chip) => CHIP_NAMES[chip] || (chip || '').replaceAll('_', ' ')
+const TOOLS = [
+  { id: 'multi', label: 'Planner' },
+  { id: 'single', label: 'Single week' },
+  { id: 'dream', label: 'Dream team' },
+  { id: 'backtest', label: 'Backtest' },
+  { id: 'analytics', label: 'Analytics' },
+]
 
 function App() {
   const [lineup, setLineup] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [planProblem, setPlanProblem] = useState(null)
+  const [elapsed, setElapsed] = useState(0)
 
-  // Controls
-  const [mode, setMode] = useState("multi") // 'single', 'multi', 'backtest', 'dream'
+  const [mode, setMode] = useState('multi')
   const [budget, setBudget] = useState(100.0)
   const [gameweeks, setGameweeks] = useState(8)
-  const [strategy, setStrategy] = useState("standard")
-  const [managerId, setManagerId] = useState("")
+  const [strategy, setStrategy] = useState('standard')
+  const [managerId, setManagerId] = useState('')
   const [freeTransfers, setFreeTransfers] = useState(1)
   const [bankedTransfers, setBankedTransfers] = useState(1)
 
-  // Backtest Controls
   const [startGw, setStartGw] = useState(1)
   const [endGw, setEndGw] = useState(5)
   const [backtestResults, setBacktestResults] = useState(null)
   const [backtestProgress, setBacktestProgress] = useState(null)
-  const [selectedBacktestGw, setSelectedBacktestGw] = useState(null) // GW number
+  const [selectedBacktestGw, setSelectedBacktestGw] = useState(null)
   const [dreamTeam, setDreamTeam] = useState(null)
 
-  // Robust Optimization
   const [useRobust, setUseRobust] = useState(false)
-
-  // Chip Activation (for multi-period)
-  const [selectedChip, setSelectedChip] = useState(null) // { chip: 'triple_captain', gw: 20 }
+  const [selectedChip, setSelectedChip] = useState(null)
   const [chipRecommendations, setChipRecommendations] = useState(null)
-  const [managerChips, setManagerChips] = useState(null) // { used: [], available: [] }
+  const [managerChips, setManagerChips] = useState(null)
 
-  // Strategy Comparison
   const [compareData, setCompareData] = useState(null)
-  const [selectedHitStrategy, setSelectedHitStrategy] = useState("with_hits") // 'with_hits' or 'no_hits'
+  const [selectedHitStrategy, setSelectedHitStrategy] = useState('with_hits')
 
-  // Results View
-  const [viewMode, setViewMode] = useState("pitch") // pitch of list
+  const [viewMode, setViewMode] = useState('pitch')
   const [selectedGwIndex, setSelectedGwIndex] = useState(0)
+  const resultsRef = useRef(null)
+  const wasPlanning = useRef(false)
 
   useEffect(() => {
-    // Chip suggestions stay optional. Applying one changes the solve, so the user opts in.
     axios.post('/api/chip-recommendations', { manager_id: null, current_squad: [], chips_used: [], horizon: 5 })
       .then(res => setChipRecommendations(res.data))
-      .catch(err => console.error("Error fetching chip recommendations", err))
+      .catch(err => console.error('Error fetching chip recommendations', err))
   }, [])
 
-  // Fetch manager chips when manager ID changes
   useEffect(() => {
     if (managerId) {
       axios.get(`/api/manager-chips/${managerId}`)
@@ -74,39 +69,71 @@ function App() {
             setBudget(res.data.bank)
           }
         })
-        .catch(err => console.error("Error fetching manager chips", err))
+        .catch(err => console.error('Error fetching manager chips', err))
 
-      // Also fetch chip recommendations with manager context
       axios.post('/api/chip-recommendations', { manager_id: parseInt(managerId), current_squad: [], chips_used: [], horizon: parseInt(gameweeks) || 5 })
         .then(res => setChipRecommendations(res.data))
-        .catch(err => console.error("Error", err))
+        .catch(err => console.error('Error', err))
     }
   }, [managerId, gameweeks])
+
+  useEffect(() => {
+    if (!loading || mode !== 'multi') return undefined
+    const started = Date.now()
+    const timer = setInterval(() => setElapsed(Math.floor((Date.now() - started) / 1000)), 1000)
+    return () => clearInterval(timer)
+  }, [loading, mode])
+
+  useEffect(() => {
+    if (mode !== 'multi') return
+    const started = loading && !wasPlanning.current
+    const finished = !loading && wasPlanning.current
+    wasPlanning.current = loading
+    if ((started || finished) && window.matchMedia('(max-width: 1023px)').matches) {
+      resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+  }, [loading, mode])
+
+  const applyStrategy = (data, key) => {
+    const plan = key === 'no_hits' ? data?.no_hits : data?.with_hits
+    if (!isUsableMultiPlan(plan)) return
+    setSelectedHitStrategy(key)
+    setLineup(plan)
+    setSelectedGwIndex(0)
+    setPlanProblem(null)
+  }
 
   const optimize = async () => {
     setLoading(true)
     setError(null)
-    setLineup(null)
+    setElapsed(0)
+    if (mode !== 'multi') {
+      setLineup(null)
+      setCompareData(null)
+    }
+    setPlanProblem(null)
     setBacktestResults(null)
     setBacktestProgress(null)
-    setSelectedGwIndex(0)
     setSelectedBacktestGw(null)
     setDreamTeam(null)
-    setCompareData(null)
 
     try {
-      if (mode === "single") {
+      if (mode === 'single') {
         const response = await axios.post('/api/optimize', {
           budget: parseFloat(budget),
-          gameweeks: parseInt(gameweeks),
+          gameweeks: 1,
           strategy: strategy,
           manager_id: managerId ? parseInt(managerId) : null,
           free_transfers: parseInt(freeTransfers)
         })
         setLineup(response.data)
         setLoading(false)
-      } else if (mode === "multi") {
-        // Use compare endpoint to get both with-hits and no-hits strategies
+      } else if (mode === 'multi') {
+        if (managerId && !/^\d+$/.test(String(managerId).trim())) {
+          setPlanProblem(failureCopy('Manager ID needs to be the number from your FPL team page.'))
+          setLoading(false)
+          return
+        }
         const response = await axios.post('/api/optimize/compare', {
           budget: parseFloat(budget),
           gameweeks: parseInt(gameweeks),
@@ -117,22 +144,19 @@ function App() {
           strategy: strategy,
           chip_to_use: selectedChip ? [selectedChip.chip, selectedChip.gw] : null
         })
-        setCompareData(response.data)
-        const withHits = response.data.comparison.with_hits
-        const noHits = response.data.comparison.no_hits
-        const recommended = noHits?.feasible !== false && noHits?.recommended
-          ? 'no_hits'
-          : 'with_hits'
-        const chosen = response.data[recommended]
-        setSelectedHitStrategy(recommended)
-        setLineup(chosen && chosen.status !== 'Infeasible' ? chosen : response.data.with_hits)
-        if (withHits && !withHits.feasible && noHits && !noHits.feasible) {
-          setError(response.data.comparison.note || "Neither plan could be solved.")
+        const choice = chooseStrategy(response.data)
+        if (choice.plan) {
+          setCompareData(response.data)
+          setSelectedHitStrategy(choice.key)
+          setLineup(choice.plan)
+          setSelectedGwIndex(0)
+          setPlanProblem(null)
+        } else {
+          setPlanProblem(infeasibleCopy(response.data.comparison?.note))
         }
         setLoading(false)
-      } else if (mode === "backtest") {
-        // Streaming implementation
-        setBacktestProgress({ progress: 0, message: "Initializing..." })
+      } else if (mode === 'backtest') {
+        setBacktestProgress({ progress: 0, message: 'Initializing...' })
 
         try {
           const response = await fetch(`${API_URL}/api/backtest/stream`, {
@@ -146,73 +170,75 @@ function App() {
             })
           })
 
-          if (!response.ok) throw new Error(response.statusText);
+          if (!response.ok) throw new Error(response.statusText)
 
-          const reader = response.body.getReader();
-          const decoder = new TextDecoder();
-          let buffer = '';
+          const reader = response.body.getReader()
+          const decoder = new TextDecoder()
+          let buffer = ''
 
           while (true) {
-            const { value, done } = await reader.read();
-            if (done) break;
+            const { value, done } = await reader.read()
+            if (done) break
 
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n\n');
-            buffer = lines.pop() || '';
+            buffer += decoder.decode(value, { stream: true })
+            const lines = buffer.split('\n\n')
+            buffer = lines.pop() || ''
 
             for (const line of lines) {
-              const trimLine = line.trim();
+              const trimLine = line.trim()
               if (trimLine.startsWith('data: ')) {
-                const jsonStr = trimLine.substring(6);
+                const jsonStr = trimLine.substring(6)
                 try {
-                  const event = JSON.parse(jsonStr);
+                  const event = JSON.parse(jsonStr)
                   if (event.result) {
-                    setBacktestResults(event.result);
-                    setBacktestProgress(null);
-                    setLoading(false);
-                    // Select first GW automatically
+                    setBacktestResults(event.result)
+                    setBacktestProgress(null)
+                    setLoading(false)
                     if (event.result.weekly_results.length > 0) {
                       const withTransfers = event.result.weekly_results.find(
                         (week) => week.transfers?.in?.length || week.transfers?.out?.length
                       )
-                      setSelectedBacktestGw((withTransfers || event.result.weekly_results[0]).gameweek);
+                      setSelectedBacktestGw((withTransfers || event.result.weekly_results[0]).gameweek)
                     }
                   } else {
                     setBacktestProgress({
                       progress: event.progress,
                       message: event.message
-                    });
+                    })
                   }
-                } catch (e) {
-                  console.error("JSON parse error", e);
+                } catch (parseError) {
+                  console.error('JSON parse error', parseError)
                 }
               }
             }
           }
         } catch (err) {
-          setError("Backtest failed: " + err.message);
-          setLoading(false);
-          setBacktestProgress(null);
+          setError('Backtest failed: ' + err.message)
+          setLoading(false)
+          setBacktestProgress(null)
         }
-      } else if (mode === "dream") {
+      } else if (mode === 'dream') {
         const response = await axios.get('/api/dream-team')
         setDreamTeam(response.data)
         setLoading(false)
       }
     } catch (err) {
-      setError("Failed. " + (axios.isAxiosError(err) ? (err.response?.data?.detail || err.message) : err.message))
+      const detail = axios.isAxiosError(err) ? (err.response?.data?.detail || err.message) : err.message
+      if (mode === 'multi') {
+        setPlanProblem(failureCopy(detail))
+      } else {
+        setError('Failed. ' + detail)
+      }
       console.error(err)
       setLoading(false)
     }
   }
 
-  // Helper to render current plan/lineup based on mode
   const getCurrentDisplay = () => {
     if (mode === 'backtest') {
-      if (!backtestResults || !selectedBacktestGw) return null;
-      const result = backtestResults.weekly_results.find(r => r.gameweek === selectedBacktestGw);
-      if (!result) return null;
-
+      if (!backtestResults || !selectedBacktestGw) return null
+      const result = backtestResults.weekly_results.find(r => r.gameweek === selectedBacktestGw)
+      if (!result) return null
       return {
         points: result.predicted_points,
         actual: result.actual_points,
@@ -222,58 +248,54 @@ function App() {
       }
     }
 
-    if (!lineup) return null;
+    if (!lineup || lineup.gameweek_plans) return null
 
-    if (mode === "single") {
-      return {
-        points: lineup.total_expected_points,
-        cost: lineup.budget_used,
-        squad: lineup.lineup || lineup.squad || [],
-        transfers: lineup.transfers
-      }
-    } else {
-      const plan = lineup.gameweek_plans[selectedGwIndex]
-      if (!plan) return null;
-
-      const fullSquad = [...plan.starting_xi, ...plan.bench]
-      return {
-        points: plan.expected_points,
-        cost: 0,
-        squad: fullSquad,
-        transfers: plan.transfers,
-        gameweek: plan.gameweek,
-        bank: plan.bank
-      }
+    return {
+      points: lineup.total_expected_points,
+      cost: lineup.budget_used,
+      squad: lineup.lineup || lineup.squad || [],
+      transfers: lineup.transfers,
+      bank: lineup.bank
     }
   }
 
   const currentData = getCurrentDisplay()
+  const multiPlan = isUsableMultiPlan(lineup) ? lineup : null
+  const horizon = Number(gameweeks) || 8
 
   return (
-    <div className="min-h-screen bg-fpl-purple text-white p-8 font-sans">
-      <header className="mb-10 text-center">
-        <h1 className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-fpl-green to-fpl-cyan">
-          FPL Lineup Optimizer 2025/26
+    <div className="min-h-screen bg-fpl-purple text-white px-4 py-6 sm:p-8 font-sans">
+      <header className="mb-6 text-center">
+        <h1 className="text-3xl sm:text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-fpl-green to-fpl-cyan">
+          FPL Lineup Optimizer
         </h1>
-        <p className="text-gray-400 mt-2">AI-Powered Multi-Period Planner & Backtesting Engine</p>
+        <p className="text-gray-400 mt-2 text-sm">Plan transfers, chips, and the starting XI across the next gameweeks.</p>
+        <nav className="mt-4 flex flex-wrap justify-center gap-2" aria-label="Tools">
+          {TOOLS.map((tool) => (
+            <button
+              key={tool.id}
+              type="button"
+              onClick={() => setMode(tool.id)}
+              className={`px-3 py-1.5 rounded-full text-sm font-semibold transition ${mode === tool.id
+                ? 'bg-fpl-pink text-white'
+                : 'bg-gray-800 text-gray-300 hover:text-white'}`}
+            >
+              {tool.label}
+            </button>
+          ))}
+        </nav>
       </header>
 
-      <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-4 gap-8">
-        {/* Controls Panel */}
-        <div className="lg:col-span-1 bg-gray-800 rounded-xl p-6 shadow-lg h-fit space-y-6">
-          <h2 className="text-xl font-semibold text-fpl-cyan border-b border-gray-700 pb-2">Configuration</h2>
-          <div className="flex bg-gray-700 rounded-lg p-1">
-            <button onClick={() => setMode("multi")} className={`flex-1 py-2 rounded text-sm font-bold transition ${mode === 'multi' ? 'bg-fpl-pink text-white' : 'text-gray-400'}`}>Multi</button>
-            <button onClick={() => setMode("single")} className={`flex-1 py-2 rounded text-sm font-bold transition ${mode === 'single' ? 'bg-fpl-green text-gray-900' : 'text-gray-400'}`}>Single</button>
-            <button onClick={() => setMode("dream")} className={`flex-1 py-2 rounded text-sm font-bold transition ${mode === 'dream' ? 'bg-fpl-cyan text-gray-900' : 'text-gray-400'}`}>Dream</button>
-            <button onClick={() => setMode("backtest")} className={`flex-1 py-2 rounded text-sm font-bold transition ${mode === 'backtest' ? 'bg-yellow-500 text-gray-900' : 'text-gray-400'}`}>Test</button>
-            <button onClick={() => setMode("analytics")} className={`flex-1 py-2 rounded text-sm font-bold transition ${mode === 'analytics' ? 'bg-fpl-pink text-white' : 'text-gray-400'}`}>Stats</button>
-          </div>
+      <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-4 gap-6">
+        <div className="lg:col-span-1 bg-gray-800 rounded-xl p-5 shadow-lg h-fit space-y-5">
+          <h2 className="text-lg font-semibold text-fpl-cyan border-b border-gray-700 pb-2">
+            {mode === 'multi' ? 'Plan settings' : TOOLS.find((tool) => tool.id === mode)?.label}
+          </h2>
 
-          {mode === "backtest" ? (
+          {mode === 'backtest' ? (
             <div className="space-y-4">
               <div>
-                <label className="block text-gray-400 mb-2 text-sm">Gameweek Range</label>
+                <label className="block text-gray-400 mb-2 text-sm">Gameweek range</label>
                 <div className="flex items-center gap-2">
                   <input type="number" value={startGw} onChange={e => setStartGw(e.target.value)} className="w-full bg-gray-700 p-3 rounded-lg text-center outline-none" placeholder="Start" />
                   <span className="text-gray-500">to</span>
@@ -281,25 +303,26 @@ function App() {
                 </div>
               </div>
               <div>
-                <label className="block text-gray-400 mb-2 text-sm">Optimizer Horizon</label>
+                <label className="block text-gray-400 mb-2 text-sm">Optimizer horizon</label>
                 <input type="range" min="3" max="15" value={gameweeks} onChange={(e) => setGameweeks(e.target.value)} className="w-full accent-fpl-pink" />
                 <div className="text-right text-xs text-gray-400">{gameweeks} GWs lookahead</div>
               </div>
             </div>
-          ) : (
+          ) : mode !== 'analytics' && mode !== 'dream' ? (
             <>
               <div>
-                <label className="block text-gray-400 mb-2 text-sm">Manager ID</label>
-                <input type="text" value={managerId} onChange={(e) => setManagerId(e.target.value)} placeholder="123456" className="w-full bg-gray-700 rounded-lg p-3 text-sm outline-none" />
+                <label className="block text-gray-400 mb-2 text-sm" htmlFor="manager-id">Manager ID</label>
+                <input id="manager-id" type="text" value={managerId} onChange={(e) => setManagerId(e.target.value)} placeholder="Optional, from your team URL" className="w-full bg-gray-700 rounded-lg p-3 text-sm outline-none" />
                 {managerChips && (
                   <p className="text-xs text-gray-500 mt-1">
-                    Chips left: {(managerChips.available || []).join(", ") || "none"}
-                    {Number.isInteger(managerChips.banked_transfers) ? ` · ${managerChips.banked_transfers} free transfer${managerChips.banked_transfers === 1 ? "" : "s"} for the next deadline` : ""}
-                    {managerChips.pending_transfers > 0 ? ` (after the ${managerChips.pending_transfers} already made)` : ""}
+                    Chips left: {(managerChips.available || []).join(', ') || 'none'}
+                    {Number.isInteger(managerChips.banked_transfers) ? ` · ${managerChips.banked_transfers} free transfer${managerChips.banked_transfers === 1 ? '' : 's'} for the next deadline` : ''}
+                    {managerChips.pending_transfers > 0 ? ` (after the ${managerChips.pending_transfers} already made)` : ''}
                   </p>
                 )}
+                <p className="text-xs text-gray-500 mt-1">Leave this blank to build a new squad from the budget.</p>
               </div>
-              {mode === "multi" && chipRecommendations?.best_chip && (selectedChip || !lineup?.chip_plan) && (
+              {mode === 'multi' && chipRecommendations?.best_chip && (selectedChip || !multiPlan?.chip_plan) && (
                 <button
                   type="button"
                   onClick={() => {
@@ -311,161 +334,51 @@ function App() {
                       setSelectedChip({ chip: chip.chip, gw })
                     }
                   }}
-                  className={`w-full text-left text-xs rounded-lg p-3 border ${selectedChip ? "border-fpl-cyan bg-fpl-cyan/10 text-white" : "border-gray-600 text-gray-300"}`}
+                  className={`w-full text-left text-xs rounded-lg p-3 border ${selectedChip ? 'border-fpl-cyan bg-fpl-cyan/10 text-white' : 'border-gray-600 text-gray-300'}`}
                 >
                   {selectedChip
-                    ? `Using ${selectedChip.chip.replaceAll("_", " ")} in GW${selectedChip.gw}. Click to remove.`
-                    : `Suggested chip: ${(chipRecommendations.best_chip.chip || "").replaceAll("_", " ")} in GW${chipRecommendations.best_chip.gw ?? chipRecommendations.best_chip.recommended_gameweek}. Click to apply.`}
+                    ? `Using ${chipName(selectedChip.chip)} in GW${selectedChip.gw}. Click to let the plan choose.`
+                    : `Suggested chip: ${chipName(chipRecommendations.best_chip.chip)} in GW${chipRecommendations.best_chip.gw ?? chipRecommendations.best_chip.recommended_gameweek}. Click to force it.`}
                 </button>
               )}
-              <div>
-                <label className="block text-gray-400 mb-2 text-sm">Planning Horizon (GWs)</label>
-                <div className="flex items-center gap-4">
-                  <input type="range" min={mode === 'single' ? "1" : "3"} max={mode === 'single' ? "1" : "15"} value={gameweeks} onChange={(e) => setGameweeks(e.target.value)} className="w-full accent-fpl-cyan" />
-                  <span className="font-bold text-fpl-cyan w-8">{gameweeks}</span>
-                </div>
-              </div>
-              {mode === "multi" && (
+              {mode === 'multi' && (
                 <div>
-                  <label className="block text-gray-400 mb-2 text-sm">Banked Transfers</label>
-                  <input type="number" min="0" max="5" value={bankedTransfers} onChange={(e) => setBankedTransfers(e.target.value)} className="w-full bg-gray-700 rounded-lg p-3 text-sm outline-none" />
+                  <label className="block text-gray-400 mb-2 text-sm" htmlFor="horizon">Planning horizon</label>
+                  <div className="flex items-center gap-4">
+                    <input id="horizon" type="range" min="3" max="15" value={gameweeks} onChange={(e) => setGameweeks(Number(e.target.value))} className="w-full accent-fpl-cyan" />
+                    <span className="font-bold text-fpl-cyan w-8">{gameweeks}</span>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">8 weeks is usually a few seconds. 15 weeks can take about a minute.</p>
                 </div>
               )}
-              {mode === "multi" && (
+              {mode === 'multi' && (
                 <div>
-                  <label className="block text-gray-400 mb-2 text-sm">Strategy</label>
-                  <select value={strategy} onChange={(e) => setStrategy(e.target.value)} className="w-full bg-gray-700 rounded-lg p-3 text-sm outline-none">
-                    <option value="standard">🎯 Standard - Max Points</option>
-                    <option value="differential">🚀 Differential - Low Owned</option>
-                    <option value="template">🛡️ Template - Safe Picks</option>
+                  <label className="block text-gray-400 mb-2 text-sm" htmlFor="banked">Free transfers banked</label>
+                  <input id="banked" type="number" min="0" max="5" value={bankedTransfers} onChange={(e) => setBankedTransfers(e.target.value)} className="w-full bg-gray-700 rounded-lg p-3 text-sm outline-none" />
+                </div>
+              )}
+              {mode === 'multi' && (
+                <div>
+                  <label className="block text-gray-400 mb-2 text-sm" htmlFor="strategy">Strategy</label>
+                  <select id="strategy" value={strategy} onChange={(e) => setStrategy(e.target.value)} className="w-full bg-gray-700 rounded-lg p-3 text-sm outline-none">
+                    <option value="standard">Standard</option>
+                    <option value="differential">Differential</option>
+                    <option value="template">Template</option>
                   </select>
                   <p className="text-xs text-gray-500 mt-1">
-                    {strategy === "differential" ? "Boost low-ownership players (<10%)" :
-                      strategy === "template" ? "Favor popular, proven picks" :
-                        "Maximize expected points"}
+                    {strategy === 'differential' ? 'Boost low-ownership players' :
+                      strategy === 'template' ? 'Favor popular picks' :
+                        'Maximize expected points'}
                   </p>
                 </div>
               )}
-              {mode === "multi" && (lineup?.chip_plan?.length > 0 || lineup?.chips_held?.length > 0) && (
-                <div className="mb-3 p-3 bg-fpl-cyan/10 border border-fpl-cyan/20 rounded-lg">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-lg">💡</span>
-                    <span className="text-xs font-bold text-fpl-cyan uppercase tracking-wider">Chip Plan</span>
-                  </div>
-                  {lineup.chip_plan.map((p) => (
-                    <div key={`${p.chip}-${p.gameweek}`} className="mb-2">
-                      <p className="text-sm font-bold text-white">
-                        Play {chipName(p.chip)} in GW{p.gameweek}
-                        {typeof p.expected_gain === 'number' && <span className="text-fpl-green font-normal"> +{p.expected_gain.toFixed(1)} pts</span>}
-                      </p>
-                      {p.reason && <p className="text-[10px] text-gray-400">{p.reason}</p>}
-                    </div>
-                  ))}
-                  {lineup.chips_held?.length > 0 && (
-                    <div className={lineup.chip_plan.length ? "mt-2 pt-2 border-t border-gray-700" : ""}>
-                      <p className="text-[10px] text-gray-500 mb-1">Kept for later, worth more after this plan:</p>
-                      <div className="flex flex-wrap gap-1">
-                        {lineup.chips_held.map((h) => (
-                          <span key={h.chip} className="text-[10px] bg-gray-800 text-gray-300 px-2 py-1 rounded">
-                            {chipName(h.chip)}: GW{h.best_gameweek} (~{h.expected_gain.toFixed(1)} pts)
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-              {mode === "multi" && !(lineup?.chip_plan?.length > 0 || lineup?.chips_held?.length > 0) && (lineup?.chip_suggestion || lineup?.chip_recommendations?.length > 0) && (
-                <div className="mb-3 p-3 bg-fpl-cyan/10 border border-fpl-cyan/20 rounded-lg">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-lg">💡</span>
-                    <span className="text-xs font-bold text-fpl-cyan uppercase tracking-wider">Chip Recommendations</span>
-                  </div>
-                  {/* Best Chip */}
-                  {lineup.chip_suggestion && (
-                    <div className="mb-2">
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-bold text-white">
-                          Use {lineup.chip_suggestion.chip?.replace('_', ' ').toUpperCase()} in GW{lineup.chip_suggestion.recommended_gameweek}
-                        </p>
-                        {lineup.chip_suggestion.confidence && (
-                          <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase ${lineup.chip_suggestion.confidence === 'high' ? 'bg-green-900/50 text-green-400' :
-                            lineup.chip_suggestion.confidence === 'medium' ? 'bg-yellow-900/50 text-yellow-400' :
-                              'bg-gray-700 text-gray-400'
-                            }`}>
-                            {lineup.chip_suggestion.confidence}
-                          </span>
-                        )}
-                        {lineup.chip_suggestion.is_dgw && (
-                          <span className="text-[9px] px-1.5 py-0.5 rounded font-bold uppercase bg-purple-900/50 text-purple-400">DGW</span>
-                        )}
-                      </div>
-                      <p className="text-[10px] text-gray-400 mt-1">
-                        +{lineup.chip_suggestion.estimated_gain} pts • {lineup.chip_suggestion.reason}
-                      </p>
-                    </div>
-                  )}
-                  {/* Other chip options */}
-                  {lineup.chip_recommendations?.length > 1 && (
-                    <div className="mt-2 pt-2 border-t border-gray-700">
-                      <p className="text-[10px] text-gray-500 mb-1">Other options:</p>
-                      <div className="flex flex-wrap gap-1">
-                        {lineup.chip_recommendations.slice(1, 4).map((rec, idx) => (
-                          <span key={idx} className="text-[9px] bg-gray-800 text-gray-300 px-2 py-1 rounded">
-                            {rec.chip?.replace('_', ' ')} GW{rec.recommended_gameweek} (+{rec.estimated_gain})
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-              {/* Captain Recommendation for current GW */}
-              {mode === "multi" && lineup?.gameweek_plans?.[selectedGwIndex]?.captain_recommendation && (
-                <div className="mb-3 p-3 bg-yellow-900/10 border border-yellow-500/20 rounded-lg">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="text-lg">👑</span>
-                    <span className="text-xs font-bold text-yellow-400 uppercase tracking-wider">Captain Pick</span>
-                    {lineup.gameweek_plans[selectedGwIndex].captain_recommendation.confidence && (
-                      <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold uppercase ${lineup.gameweek_plans[selectedGwIndex].captain_recommendation.confidence === 'high' ? 'bg-green-900/50 text-green-400' :
-                        lineup.gameweek_plans[selectedGwIndex].captain_recommendation.confidence === 'medium' ? 'bg-yellow-900/50 text-yellow-400' :
-                          'bg-gray-700 text-gray-400'
-                        }`}>
-                        {lineup.gameweek_plans[selectedGwIndex].captain_recommendation.confidence}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-sm font-bold text-white">
-                    {lineup.gameweek_plans[selectedGwIndex].captain_recommendation.player_name}
-                    <span className="text-fpl-green ml-2">
-                      {lineup.gameweek_plans[selectedGwIndex].captain_recommendation.expected_points} xP
-                    </span>
-                    {lineup.gameweek_plans[selectedGwIndex].captain_recommendation.has_dgw && (
-                      <span className="ml-2 text-[9px] px-1.5 py-0.5 rounded bg-purple-900/50 text-purple-400">DGW</span>
-                    )}
-                  </p>
-                  <p className="text-[10px] text-gray-400 mt-1">
-                    {lineup.gameweek_plans[selectedGwIndex].captain_recommendation.fixtures}
-                  </p>
-                  {lineup.gameweek_plans[selectedGwIndex].captain_recommendation.alternatives?.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-1">
-                      <span className="text-[9px] text-gray-500">Alt:</span>
-                      {lineup.gameweek_plans[selectedGwIndex].captain_recommendation.alternatives.slice(0, 3).map((alt, idx) => (
-                        <span key={idx} className="text-[9px] bg-gray-800 text-gray-300 px-2 py-0.5 rounded">
-                          {alt.player_name} ({alt.expected_points})
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-              {mode === "single" && strategy === "transfers" && (
+              {mode === 'single' && strategy === 'transfers' && (
                 <div>
-                  <label className="block text-gray-400 mb-2 text-sm">Free Transfers</label>
+                  <label className="block text-gray-400 mb-2 text-sm">Free transfers</label>
                   <input type="number" min="0" max="5" value={freeTransfers} onChange={(e) => setFreeTransfers(e.target.value)} className="w-full bg-gray-700 rounded-lg p-3 text-sm outline-none" />
                 </div>
               )}
-              {mode === "single" && (
+              {mode === 'single' && (
                 <div>
                   <label className="block text-gray-400 mb-2 text-sm">Strategy</label>
                   <select value={strategy} onChange={(e) => setStrategy(e.target.value)} className="w-full bg-gray-700 rounded-lg p-3 text-sm outline-none">
@@ -476,56 +389,77 @@ function App() {
                 </div>
               )}
             </>
-          )}
+          ) : null}
 
-          {mode !== "dream" && (
+          {mode !== 'dream' && mode !== 'analytics' && (
             <div>
-              <label className="block text-gray-400 mb-2 text-sm">
-                {managerId ? "Bank Balance (£m)" : "Budget (£m)"}
+              <label className="block text-gray-400 mb-2 text-sm" htmlFor="budget">
+                {managerId ? 'Bank balance (£m)' : 'Budget (£m)'}
               </label>
-              <input type="number" value={budget} onChange={(e) => setBudget(e.target.value)} className="w-full bg-gray-700 rounded-lg p-3 text-sm outline-none" step="0.1" />
-              {managerId && (
-                <p className="text-xs text-gray-500 mt-1">Your remaining ITB (in the bank)</p>
+              <input id="budget" type="number" value={budget} onChange={(e) => setBudget(e.target.value)} className="w-full bg-gray-700 rounded-lg p-3 text-sm outline-none" step="0.1" />
+              {managerId && mode === 'multi' && (
+                <p className="text-xs text-gray-500 mt-1">Money in the bank. The squad value is added from the manager ID.</p>
               )}
             </div>
           )}
 
-          {mode === "dream" && (
+          {mode === 'dream' && (
             <div className="bg-gradient-to-r from-fpl-cyan/10 to-fpl-green/10 p-4 rounded-lg border border-fpl-cyan/30">
-              <p className="text-sm text-gray-300 text-center">🌟 No budget constraints</p>
-              <p className="text-xs text-gray-500 text-center mt-1">See the absolute best team possible</p>
+              <p className="text-sm text-gray-300 text-center">No budget constraints</p>
+              <p className="text-xs text-gray-500 text-center mt-1">The best XI the projections can build</p>
             </div>
           )}
 
-          {mode === "multi" && (
+          {mode === 'multi' && (
             <div className="bg-gray-900/50 p-3 rounded-lg border border-gray-700">
-              <div className="flex items-center gap-2 mb-2">
-                <input type="checkbox" checked={useRobust} onChange={(e) => setUseRobust(e.target.checked)} className="w-4 h-4 accent-fpl-pink" />
-                <label className="text-sm font-semibold text-gray-300">Robust Optimization</label>
+              <div className="flex items-center gap-2">
+                <input id="robust" type="checkbox" checked={useRobust} onChange={(e) => setUseRobust(e.target.checked)} className="w-4 h-4 accent-fpl-pink" />
+                <label htmlFor="robust" className="text-sm font-semibold text-gray-300">Robust optimization</label>
               </div>
-              <p className="text-xs text-gray-500">Hedges against prediction uncertainty</p>
+              <p className="text-xs text-gray-500 mt-1">Hedges against prediction uncertainty</p>
             </div>
           )}
 
           {mode !== 'analytics' && (
-            <button onClick={optimize} disabled={loading && mode !== 'backtest'} className="w-full bg-gradient-to-r from-fpl-green to-fpl-cyan text-fpl-purple font-bold py-3 rounded-lg hover:opacity-90 transition disabled:opacity-50 mt-4 cursor-pointer">
-              {loading && mode !== 'backtest' ? "Crunching Numbers..." :
-                mode === 'backtest' && loading ? "Simulation Running..." :
-                  mode === 'backtest' ? "Run Simulation" :
-                    mode === 'dream' ? "Show Dream Team" :
-                      "Generate Plan"}
+            <button onClick={optimize} disabled={loading && mode !== 'backtest'} className="w-full bg-gradient-to-r from-fpl-green to-fpl-cyan text-fpl-purple font-bold py-3 rounded-lg hover:opacity-90 transition disabled:opacity-50 cursor-pointer">
+              {loading && mode === 'multi' ? 'Planning…' :
+                loading && mode === 'backtest' ? 'Simulation running…' :
+                  loading ? 'Working…' :
+                    mode === 'backtest' ? 'Run simulation' :
+                      mode === 'dream' ? 'Show dream team' :
+                        mode === 'single' ? 'Optimize week' :
+                          'Generate plan'}
             </button>
           )}
 
-          {error && <p className="text-red-400 text-xs text-center mt-2">{error}</p>}
+          {mode === 'multi' && planProblem && !loading && (
+            <p className="text-xs text-red-300">{planProblem.title}. The detail is in the plan.</p>
+          )}
+          {error && mode !== 'multi' && <p className="text-red-400 text-xs">{error}</p>}
         </div>
 
-        {/* Results Panel */}
         {mode === 'analytics' ? (
           <AnalyticsDashboard />
+        ) : mode === 'multi' ? (
+          <div className="lg:col-span-3" ref={resultsRef}>
+            <PlannerView
+              plan={multiPlan}
+              compareData={compareData}
+              selectedKey={selectedHitStrategy}
+              onSelectStrategy={(key) => applyStrategy(compareData, key)}
+              selectedIndex={selectedGwIndex}
+              onSelectWeek={setSelectedGwIndex}
+              viewMode={viewMode}
+              onViewMode={setViewMode}
+              loading={loading}
+              elapsed={elapsed}
+              gameweeks={horizon}
+              problem={planProblem}
+            />
+          </div>
         ) : (
-          <div className="lg:col-span-3 bg-gray-800 rounded-xl p-6 shadow-lg min-h-[600px] flex flex-col">
-            {mode === "backtest" ? (
+          <div className="lg:col-span-3 bg-gray-800 rounded-xl p-4 sm:p-6 shadow-lg min-h-[600px] flex flex-col">
+            {mode === 'backtest' ? (
               backtestProgress ? (
                 <div className="flex-1 flex flex-col items-center justify-center space-y-6">
                   <div className="w-full max-w-md">
@@ -533,16 +467,15 @@ function App() {
                     <div className="w-full bg-gray-700 rounded-full h-4 overflow-hidden">
                       <div className="bg-gradient-to-r from-fpl-green to-fpl-cyan h-4 rounded-full transition-all duration-300" style={{ width: `${backtestProgress.progress}%` }}></div>
                     </div>
-                    <p className="text-center text-xs text-gray-500 mt-4 animate-pulse">Solving complex optimization (MILP) with rolling horizon...</p>
+                    <p className="text-center text-xs text-gray-500 mt-4">Solving each week in turn. This stays on screen until the simulation finishes.</p>
                   </div>
                 </div>
               ) : backtestResults ? (
-                <div className="space-y-6 animate-fade-in flex flex-col h-full">
-                  <h3 className="text-2xl font-bold text-white border-b border-gray-700 pb-2">Simulation Report (GW {startGw} - {endGw})</h3>
-
+                <div className="space-y-6 flex flex-col h-full">
+                  <h3 className="text-2xl font-bold text-white border-b border-gray-700 pb-2">Simulation report (GW {startGw}–{endGw})</h3>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div className="bg-gray-700/30 p-4 rounded-lg text-center border border-gray-600">
-                      <p className="text-xs text-gray-400 uppercase tracking-wider">Total Actual</p>
+                      <p className="text-xs text-gray-400 uppercase tracking-wider">Total actual</p>
                       <p className="text-3xl font-bold text-fpl-green">{backtestResults.metrics.total_actual_points}</p>
                     </div>
                     <div className="bg-gray-700/30 p-4 rounded-lg text-center border border-gray-600">
@@ -554,22 +487,18 @@ function App() {
                       <p className={`text-3xl font-bold ${backtestResults.metrics.prediction_error > 0 ? 'text-red-400' : 'text-green-400'}`}>{backtestResults.metrics.prediction_error > 0 ? '+' : ''}{backtestResults.metrics.prediction_error.toFixed(0)}</p>
                     </div>
                     <div className="bg-gray-700/30 p-4 rounded-lg text-center border border-gray-600">
-                      <p className="text-xs text-gray-400 uppercase tracking-wider">Avg Pts/GW</p>
+                      <p className="text-xs text-gray-400 uppercase tracking-wider">Avg pts/GW</p>
                       <p className="text-3xl font-bold text-white">{backtestResults.metrics.avg_points_per_gw.toFixed(1)}</p>
                     </div>
                   </div>
-
-                  <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6 overflow-hidden">
-                    {/* GW Breakdown Table */}
-                    <div className="lg:col-span-1 overflow-y-auto border border-gray-700 rounded-lg">
+                  <div className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div className="lg:col-span-1 overflow-y-auto border border-gray-700 rounded-lg max-h-[640px]">
                       <table className="w-full text-sm text-left text-gray-300">
                         <thead className="text-xs uppercase bg-gray-900 text-gray-400 sticky top-0">
                           <tr>
                             <th className="px-4 py-3">GW</th>
                             <th className="px-4 py-3 text-right">Pts</th>
                             <th className="px-4 py-3 text-right">xP</th>
-                            <th className="px-4 py-3 text-right hidden lg:table-cell">Risk</th>
-                            <th className="px-4 py-3 text-right hidden lg:table-cell">Templ%</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-700">
@@ -582,49 +511,40 @@ function App() {
                               <td className="px-4 py-3 font-bold text-white">GW {res.gameweek}</td>
                               <td className="px-4 py-3 text-right text-white font-bold">{res.actual_points}</td>
                               <td className="px-4 py-3 text-right text-gray-400">{res.predicted_points.toFixed(1)}</td>
-                              <td className="px-4 py-3 text-right text-gray-500 hidden lg:table-cell">{res.squad_risk?.toFixed(1) || '-'}</td>
-                              <td className="px-4 py-3 text-right text-gray-500 hidden lg:table-cell">{res.template_coverage ? `${res.template_coverage.toFixed(0)}%` : '-'}</td>
                             </tr>
                           ))}
                         </tbody>
                       </table>
-                      <p className="text-center text-xs text-gray-500 p-2">Click a row to view lineup</p>
                     </div>
-
-                    {/* Lineup Visualization */}
-                    <div className="lg:col-span-2 overflow-y-auto bg-gray-900/50 rounded-lg p-2 flex flex-col">
+                    <div className="lg:col-span-2 bg-gray-900/50 rounded-lg p-2 flex flex-col">
                       {currentData ? (
                         <>
                           <div className="flex justify-between items-center mb-2 px-2">
-                            <h4 className="font-bold text-white">GW {currentData.gameweek} Lineup</h4>
+                            <h4 className="font-bold text-white">GW {currentData.gameweek} lineup</h4>
                             <div className="space-x-2">
-                              <button onClick={() => setViewMode("pitch")} className={`px-2 py-1 rounded text-xs ${viewMode === 'pitch' ? 'bg-fpl-green text-black' : 'bg-gray-700'}`}>Pitch</button>
-                              <button onClick={() => setViewMode("list")} className={`px-2 py-1 rounded text-xs ${viewMode === 'list' ? 'bg-fpl-green text-black' : 'bg-gray-700'}`}>List</button>
+                              <button type="button" onClick={() => setViewMode('pitch')} className={`px-2 py-1 rounded text-xs ${viewMode === 'pitch' ? 'bg-fpl-green text-black' : 'bg-gray-700'}`}>Pitch</button>
+                              <button type="button" onClick={() => setViewMode('list')} className={`px-2 py-1 rounded text-xs ${viewMode === 'list' ? 'bg-fpl-green text-black' : 'bg-gray-700'}`}>List</button>
                             </div>
                           </div>
                           {currentData.transfers && (currentData.transfers.in?.length || currentData.transfers.out?.length) ? (
                             <div className="mx-2 mb-2 text-sm text-gray-300 bg-gray-900/50 p-3 rounded border-l-2 border-fpl-cyan">
-                              <p>Out: {(currentData.transfers.out || []).map((p) => p.name || p).join(", ") || "none"}</p>
-                              <p>In: {(currentData.transfers.in || []).map((p) => p.name || p).join(", ") || "none"}</p>
+                              <p>Out: {(currentData.transfers.out || []).map((p) => p.name || p).join(', ') || 'none'}</p>
+                              <p>In: {(currentData.transfers.in || []).map((p) => p.name || p).join(', ') || 'none'}</p>
                               {currentData.transfers.hits > 0 && <p>Hit cost: -{currentData.transfers.hits * 4}</p>}
                             </div>
                           ) : (
                             <p className="px-2 pb-2 text-xs text-gray-500">No transfers this gameweek.</p>
                           )}
-                          <div className="flex-1 overflow-y-auto">
-                            {viewMode === 'pitch' ? (
-                              <Pitch lineup={currentData.squad} />
-                            ) : (
-                              <div className="grid grid-cols-2 gap-2">
-                                {currentData.squad.map(p => (
-                                  <div key={p.id} className="bg-gray-700 p-2 rounded flex justify-between text-xs">
-                                    <span>{p.web_name} {p.is_captain ? '(C)' : ''}</span>
-                                    <span>{p.expected_points?.toFixed(1)} xP</span>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
+                          {viewMode === 'pitch' ? <Pitch lineup={currentData.squad} /> : (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              {currentData.squad.map(p => (
+                                <div key={p.id} className="bg-gray-700 p-2 rounded flex justify-between text-xs">
+                                  <span>{p.web_name} {p.is_captain ? '(C)' : ''}</span>
+                                  <span>{p.expected_points?.toFixed(1)} xP</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </>
                       ) : (
                         <div className="flex items-center justify-center h-full text-gray-500">Select a gameweek</div>
@@ -633,355 +553,115 @@ function App() {
                   </div>
                 </div>
               ) : (
-                <div className="flex-1 flex flex-col items-center justify-center text-gray-500 opacity-50">
-                  <div className="text-6xl mb-4">🧪</div>
-                  <p>Simulate performance on historical data</p>
+                <div className="flex-1 flex flex-col items-center justify-center text-center text-gray-400 px-4">
+                  <h3 className="text-xl font-bold text-white">Backtest a horizon</h3>
+                  <p className="text-sm mt-2 max-w-md">Replay past gameweeks with the same planner. Set a range, then run the simulation.</p>
                 </div>
-              )) : mode === "dream" ? (
-                dreamTeam ? (
-                  <div className="space-y-6 animate-fade-in">
-                    <div className="flex justify-between items-center border-b border-gray-700 pb-4">
-                      <div>
-                        <h3 className="text-2xl font-bold text-white">🌟 Dream Team GW {dreamTeam.gameweek}</h3>
-                        <p className="text-gray-400 text-sm mt-1">Best possible XI with no constraints</p>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-3xl font-bold text-fpl-cyan">{dreamTeam.total_expected_points} xP</div>
-                        <div className="text-sm text-gray-400">Total Cost: £{dreamTeam.total_cost}m</div>
-                      </div>
+              )
+            ) : mode === 'dream' ? (
+              dreamTeam ? (
+                <div className="space-y-6">
+                  <div className="flex flex-wrap justify-between items-center gap-3 border-b border-gray-700 pb-4">
+                    <div>
+                      <h3 className="text-2xl font-bold text-white">Dream team GW {dreamTeam.gameweek}</h3>
+                      <p className="text-gray-400 text-sm mt-1">Best possible XI with no constraints</p>
                     </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {dreamTeam.dream_team.map(player => (
-                        <div
-                          key={player.id}
-                          className={`p-4 rounded-lg flex justify-between items-center ${player.id === dreamTeam.captain.id
-                            ? 'bg-gradient-to-r from-yellow-500/20 to-yellow-600/10 border border-yellow-500'
-                            : 'bg-gray-700'
-                            }`}
-                        >
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-sm">{player.web_name}</span>
-                              {player.id === dreamTeam.captain.id && (
-                                <span className="bg-yellow-500 text-black text-[9px] font-bold px-1.5 py-0.5 rounded">C</span>
-                              )}
-                            </div>
-                            <div className="text-xs text-gray-400 mt-1">{player.team_name} • {player.position}</div>
-                            <div className="text-xs text-gray-500 mt-1">£{player.now_cost}m</div>
-                          </div>
-                          <div className="text-right">
-                            <div className="text-fpl-green font-bold text-lg">{player.expected_points}</div>
-                            <div className="text-xs text-gray-500">xP</div>
-                          </div>
-                        </div>
-                      ))}
+                    <div className="text-right">
+                      <div className="text-3xl font-bold text-fpl-cyan">{dreamTeam.total_expected_points} xP</div>
+                      <div className="text-sm text-gray-400">Total cost: £{dreamTeam.total_cost}m</div>
                     </div>
                   </div>
-                ) : (
-                  <div className="flex-1 flex flex-col items-center justify-center text-gray-500 opacity-50">
-                    <div className="text-6xl mb-4">🌟</div>
-                    <p>Dream Team - Best XI with no budget limits</p>
-                    <p className="text-sm mt-2">Click "Show Dream Team" to see the ultimate lineup!</p>
-                  </div>
-                )
-              ) : loading ? (
-                /* Loading state for non-backtest modes */
-                <div className="flex-1 flex flex-col items-center justify-center space-y-6">
-                  <div className="w-full max-w-md">
-                    <div className="flex justify-between text-sm text-gray-400 mb-2">
-                      <span>
-                        {mode === 'dream' ? 'Finding best players...' :
-                          mode === 'multi' ? 'Solving multi-period optimization...' :
-                            'Optimizing lineup...'}
-                      </span>
-                    </div>
-                    <div className="w-full bg-gray-700 rounded-full h-4 overflow-hidden">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {dreamTeam.dream_team.map(player => (
                       <div
-                        className="bg-gradient-to-r from-fpl-green to-fpl-cyan h-4 rounded-full animate-pulse"
-                        style={{ width: '75%' }}
-                      ></div>
-                    </div>
-                    <div className="flex items-center justify-center gap-2 mt-4">
-                      <div className="animate-spin rounded-full h-5 w-5 border-2 border-fpl-cyan border-t-transparent"></div>
-                      <p className="text-xs text-gray-500">
-                        {mode === 'multi' ?
-                          `Planning ${gameweeks} gameweeks with MILP solver...` :
-                          'Crunching numbers...'}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ) : !lineup ? (
-                <div className="flex-1 flex flex-col items-center justify-center text-gray-500 opacity-50">
-                  <div className="text-6xl mb-4">⚽️</div>
-                  <p>Ready to optimize for 2025/26</p>
-                </div>
-              ) : (
-              <>
-                {/* Timeline for Multi-Mode */}
-                {mode === "multi" && lineup.gameweek_plans && (
-                  <div className="flex gap-2 overflow-x-auto pb-4 mb-4 border-b border-gray-700">
-                    {lineup.gameweek_plans.map((plan, idx) => (
-                      <button
-                        key={plan.gameweek}
-                        onClick={() => setSelectedGwIndex(idx)}
-                        className={`flex-shrink-0 px-4 py-2 rounded-lg text-sm transition ${selectedGwIndex === idx
-                          ? 'bg-fpl-pink text-white font-bold'
-                          : 'bg-gray-700 text-gray-400 hover:bg-gray-600'
-                          }`}
+                        key={player.id}
+                        className={`p-4 rounded-lg flex justify-between items-center ${player.id === dreamTeam.captain.id
+                          ? 'bg-gradient-to-r from-yellow-500/20 to-yellow-600/10 border border-yellow-500'
+                          : 'bg-gray-700'}`}
                       >
-                        <span className="block text-xs opacity-70">GW {plan.gameweek}</span>
-                        <span className="block">{plan.expected_points.toFixed(1)} pts</span>
-                        {plan.chip_used && (
-                          <span className="block mt-1 text-[10px] font-bold uppercase text-fpl-cyan">{chipName(plan.chip_used)}</span>
-                        )}
-                      </button>
-                    ))}
-                    <div className="ml-auto flex flex-col items-end justify-center text-right px-4">
-                      <span className="text-xs text-gray-400">Total Horizon</span>
-                      <span className="text-xl font-bold text-fpl-green">{lineup.total_expected_points.toFixed(0)} pts</span>
-                      {lineup.proven_optimal === false && (
-                        <span className="text-xs text-yellow-400" title="The solver hit its time limit. A shorter horizon solves fully.">
-                          {typeof lineup.optimality_gap_points === 'number'
-                            ? `Best plan found in time limit, within ${lineup.optimality_gap_points.toFixed(1)} pts of the best possible`
-                            : 'Best plan found in time limit'}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Strategy Comparison Toggle */}
-                {mode === "multi" && compareData && (
-                  <div className="bg-gradient-to-r from-gray-900 to-gray-800 p-4 rounded-xl mb-4 border border-gray-700">
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="text-sm font-bold text-gray-300">📊 Strategy Comparison</span>
-                      <span className="text-xs text-gray-500">{compareData.strategy} optimization</span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      {/* With Hits Option */}
-                      <button
-                        onClick={() => {
-                          setSelectedHitStrategy('with_hits')
-                          setLineup(compareData.with_hits)
-                        }}
-                        className={`p-3 rounded-lg transition ${selectedHitStrategy === 'with_hits'
-                          ? 'bg-yellow-900/50 border-2 border-yellow-500'
-                          : 'bg-gray-800 border border-gray-700 hover:border-gray-600'}`}
-                      >
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-xs font-bold text-yellow-400">⚡ With Hits</span>
-                          {compareData.comparison.with_hits.recommended && (
-                            <span className="text-[10px] bg-green-900/50 text-green-400 px-1.5 py-0.5 rounded">Recommended</span>
-                          )}
-                        </div>
-                        <div className="text-lg font-bold text-white">{compareData.comparison.with_hits.feasible === false ? "Unavailable" : `${compareData.comparison.with_hits.net_xp} pts`}</div>
-                        <div className="text-xs text-gray-400">
-                          {compareData.comparison.with_hits.feasible === false
-                            ? "Could not solve"
-                            : `${compareData.comparison.with_hits.total_xp} xP - ${compareData.comparison.with_hits.hit_cost} hit pts`}
-                        </div>
-                      </button>
-
-                      {/* No Hits Option */}
-                      <button
-                        onClick={() => {
-                          if (compareData.comparison.no_hits.feasible === false) return
-                          setSelectedHitStrategy('no_hits')
-                          setLineup(compareData.no_hits)
-                        }}
-                        disabled={compareData.comparison.no_hits.feasible === false}
-                        className={`p-3 rounded-lg transition ${selectedHitStrategy === 'no_hits'
-                          ? 'bg-green-900/50 border-2 border-green-500'
-                          : 'bg-gray-800 border border-gray-700 hover:border-gray-600'}`}
-                      >
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-xs font-bold text-green-400">🛡️ No Hits</span>
-                          {compareData.comparison.no_hits.recommended && (
-                            <span className="text-[10px] bg-green-900/50 text-green-400 px-1.5 py-0.5 rounded">Recommended</span>
-                          )}
-                        </div>
-                        <div className="text-lg font-bold text-white">{compareData.comparison.no_hits.feasible === false ? "Unavailable" : `${compareData.comparison.no_hits.net_xp} pts`}</div>
-                        <div className="text-xs text-gray-400">
-                          {compareData.comparison.no_hits.feasible === false ? "Needs more transfers than you have" : "Free transfers only"}
-                        </div>
-                      </button>
-                    </div>
-                    <div className="mt-2 text-center">
-                      <span className={`text-xs ${compareData.comparison.difference > 0 ? 'text-yellow-400' : 'text-green-400'}`}>
-                        {compareData.comparison.difference == null
-                          ? (compareData.comparison.note || "One plan could not be solved")
-                          : compareData.comparison.difference > 0
-                          ? `Hits gain +${compareData.comparison.difference} pts`
-                          : `No-hit saves ${Math.abs(compareData.comparison.difference)} pts`}
-                      </span>
-                    </div>
-                  </div>
-                )}
-
-                {/* Current Gw View Header */}
-                {currentData && (
-                  <>
-                    <div className="flex justify-between items-start mb-6">
-                      <div>
-                        <h3 className="text-2xl font-bold text-white mb-1">
-                          GW {currentData.gameweek || 'Selection'}
-                          <span className="text-fpl-green ml-2">{currentData.points.toFixed(1)} xP</span>
-                        </h3>
-                        {typeof currentData.bank === 'number' && (
-                          <p className="text-xs text-gray-400">£{currentData.bank.toFixed(1)}m in the bank after this week's transfers</p>
-                        )}
-                        {currentData.transfers && !currentData.transfers.explanation && (currentData.transfers.in?.length || currentData.transfers.out?.length) ? (
-                          <div className="text-sm text-gray-300 max-w-2xl bg-gray-900/50 p-3 rounded border-l-2 border-fpl-cyan mt-2">
-                            <p>Out: {(currentData.transfers.out || []).map((p) => p.name || p).join(", ") || "none"}</p>
-                            <p>In: {(currentData.transfers.in || []).map((p) => p.name || p).join(", ") || "none"}</p>
-                            {currentData.transfers.cost > 0 && <p>Hit cost: -{currentData.transfers.cost}</p>}
-                          </div>
-                        ) : null}
-                        {currentData.transfers?.explanation ? (
-                          <div className="text-sm text-gray-300 max-w-2xl bg-gray-900/50 p-3 rounded border-l-2 border-fpl-cyan mt-2">
-                            {/* xP Gain and Hit Analysis */}
-                            <div className="flex items-center gap-4 mb-2 pb-2 border-b border-gray-700">
-                              {currentData.transfers.xp_gain !== undefined && (
-                                <span className={`px-2 py-1 rounded text-xs font-bold ${currentData.transfers.xp_gain >= 0 ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'}`}>
-                                  {currentData.transfers.xp_gain >= 0 ? '📈' : '📉'} xP Gain: {currentData.transfers.xp_gain > 0 ? '+' : ''}{currentData.transfers.xp_gain?.toFixed(1)}
-                                </span>
-                              )}
-                              {currentData.transfers.hits > 0 && (
-                                <span className={`px-2 py-1 rounded text-xs font-bold ${currentData.transfers.hit_worth_it ? 'bg-yellow-900/50 text-yellow-400' : 'bg-red-900/50 text-red-400'}`}>
-                                  {currentData.transfers.hit_worth_it ? '✅' : '⚠️'} -{currentData.transfers.hits * 4} hit {currentData.transfers.hit_worth_it ? '(Worth it!)' : '(Not recommended)'}
-                                </span>
-                              )}
-                            </div>
-
-
-                            {/* Structured Explanation Display */}
-                            <div className="space-y-3 font-sans text-sm">
-                              {currentData.transfers.explanation.split('\n').map((line, i) => {
-                                // Skip headers
-                                if (line.startsWith('##')) return null;
-                                if (line.startsWith('###')) return <div key={i} className="font-bold text-gray-400 mt-2 border-b border-gray-700 pb-1">{line.replace('### ', '')}</div>;
-
-                                // Sell lines
-                                if (line.includes('**SELL:**')) {
-                                  const content = line.replace('**SELL:**', '').trim();
-                                  return (
-                                    <div key={i} className="flex items-start gap-2 text-red-300 bg-red-900/10 p-1.5 rounded">
-                                      <span className="font-bold text-xs bg-red-900/50 text-red-400 px-1.5 rounded">SELL</span>
-                                      <span>{content}</span>
-                                    </div>
-                                  );
-                                }
-
-                                // Buy lines 
-                                if (line.includes('**BUY:**')) {
-                                  const content = line.replace('**BUY:**', '').trim();
-                                  return (
-                                    <div key={i} className="flex items-start gap-2 text-green-300 bg-green-900/10 p-1.5 rounded">
-                                      <span className="font-bold text-xs bg-green-900/50 text-green-400 px-1.5 rounded">BUY</span>
-                                      <span>{content}</span>
-                                    </div>
-                                  );
-                                }
-
-                                // Detail lines (fixtures, risks, expected)
-                                if (line.trim().startsWith('└')) {
-                                  return <div key={i} className="ml-10 text-xs text-gray-400">{line.trim()}</div>;
-                                }
-
-                                // Generic bold lines (like multipliers)
-                                if (line.includes('**')) {
-                                  return <div key={i} className="font-medium text-gray-300">{line.replace(/\*\*/g, '')}</div>;
-                                }
-
-                                // Empty strings or other text
-                                if (!line.trim()) return null;
-
-                                return <div key={i} className="text-gray-400">{line}</div>;
-                              })}
-                            </div>
-
-                            {/* Transfer Alternatives */}
-                            {currentData.transfers.alternatives && currentData.transfers.alternatives.length > 0 && (
-                              <div className="mt-4 pt-3 border-t border-gray-700">
-                                <h4 className="text-xs font-bold text-fpl-cyan mb-2 uppercase tracking-wider">🔄 Alternative Options</h4>
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                                  {currentData.transfers.alternatives.map((alt) => (
-                                    <div key={alt.position_id} className="bg-gray-800/50 rounded p-2">
-                                      <div className="text-[10px] font-bold text-gray-400 mb-1">{alt.position}</div>
-                                      <div className="space-y-1">
-                                        {alt.options.slice(0, 3).map((option, i) => (
-                                          <div key={option.id} className="flex items-center justify-between text-xs">
-                                            <span className={i === 0 ? 'text-fpl-green font-medium' : 'text-gray-300'}>
-                                              {i + 1}. {option.name}
-                                            </span>
-                                            <span className="text-gray-500 text-[10px]">
-                                              {option.expected_points.toFixed(1)} | £{option.price.toFixed(1)}m
-                                            </span>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-sm">{player.web_name}</span>
+                            {player.id === dreamTeam.captain.id && (
+                              <span className="bg-yellow-500 text-black text-[9px] font-bold px-1.5 py-0.5 rounded">C</span>
                             )}
                           </div>
-                        ) : (
-                          <p className="text-sm text-gray-500">No transfers planned.</p>
-                        )}
-                      </div>
-
-                      <div className="flex gap-2">
-                        <button onClick={() => setViewMode("pitch")} className={`px-3 py-1 rounded text-xs uppercase font-bold ${viewMode === 'pitch' ? 'bg-fpl-green text-gray-900' : 'bg-gray-700 text-gray-400'}`}>Pitch</button>
-                        <button onClick={() => setViewMode("list")} className={`px-3 py-1 rounded text-xs uppercase font-bold ${viewMode === 'list' ? 'bg-fpl-green text-gray-900' : 'bg-gray-700 text-gray-400'}`}>List</button>
-                      </div>
-                    </div>
-
-                    <div className="flex-1 overflow-y-auto">
-                      {viewMode === "pitch" ? <Pitch lineup={currentData.squad} /> : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                          {currentData.squad.map(player => (
-                            <div key={player.id} className={`p-3 rounded flex justify-between items-center ${player.is_starter ? 'bg-gray-700' : 'bg-gray-700/50 border border-dashed border-gray-600'}`}>
-                              <div>
-                                <div className="flex items-center gap-2">
-                                  <span className="font-bold text-sm">{player.web_name}</span>
-                                  {player.is_captain && <span className="bg-yellow-500 text-black text-[9px] font-bold px-1 rounded">C</span>}
-                                  {player.is_vice_captain && <span className="bg-gray-500 text-white text-[9px] font-bold px-1 rounded">V</span>}
-                                  {!player.is_starter && <span className="bg-gray-600 text-white text-[9px] font-bold px-1 rounded">BENCH</span>}
-                                </div>
-                                <div className="text-xs text-gray-400 mt-1">{player.team_name} • {player.position}</div>
-                                {player.analytics && (
-                                  <div className="flex gap-1 mt-1">
-                                    {player.analytics.is_differential && <span className="text-[10px] bg-indigo-500/20 text-indigo-300 px-1 rounded">Diff</span>}
-                                    {player.analytics.is_template && <span className="text-[10px] bg-pink-500/20 text-pink-300 px-1 rounded">Templ</span>}
-                                    <span className="text-[10px] bg-gray-600 px-1 rounded" title="Ownership">{player.analytics.ownership_pct}% Own</span>
-                                  </div>
-                                )}
-                              </div>
-                              <div className="text-right">
-                                <div className="text-fpl-green font-bold">{player.expected_points?.toFixed(1)}</div>
-                                <div className="text-xs text-gray-500">xP</div>
-                                {player.analytics && (
-                                  <div className="text-[10px] text-gray-400 mt-1" title="Ceiling">
-                                    <span>{player.analytics.ceiling?.toFixed(1)} Clng</span>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          ))}
+                          <div className="text-xs text-gray-400 mt-1">{player.team_name} · {player.position}</div>
+                          <div className="text-xs text-gray-500 mt-1">£{player.now_cost}m</div>
                         </div>
-                      )}
-                    </div>
-                  </>
+                        <div className="text-right">
+                          <div className="text-fpl-green font-bold text-lg">{player.expected_points}</div>
+                          <div className="text-xs text-gray-500">xP</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex-1 flex flex-col items-center justify-center text-center text-gray-400 px-4">
+                  <h3 className="text-xl font-bold text-white">Dream team</h3>
+                  <p className="text-sm mt-2">The best XI with no budget. Use the button to load it.</p>
+                </div>
+              )
+            ) : loading ? (
+              <div className="flex-1 flex flex-col items-center justify-center text-gray-300">
+                <div className="h-6 w-6 rounded-full border-2 border-fpl-cyan border-t-transparent animate-spin" />
+                <p className="text-sm mt-3">Optimizing this week.</p>
+              </div>
+            ) : !currentData ? (
+              <div className="flex-1 flex flex-col items-center justify-center text-center text-gray-400 px-4">
+                <h3 className="text-xl font-bold text-white">One gameweek</h3>
+                <p className="text-sm mt-2 max-w-md">Build a single squad from the budget, your current squad, or a transfer suggestion. The multi-week plan stays on the Planner tab.</p>
+              </div>
+            ) : (
+              <>
+                <div className="flex justify-between items-start mb-6 gap-3">
+                  <div>
+                    <h3 className="text-2xl font-bold text-white mb-1">
+                      This week
+                      <span className="text-fpl-green ml-2">{Number(currentData.points || 0).toFixed(1)} xP</span>
+                    </h3>
+                    {typeof currentData.bank === 'number' && (
+                      <p className="text-xs text-gray-400">£{currentData.bank.toFixed(1)}m in the bank</p>
+                    )}
+                    {currentData.transfers && (currentData.transfers.in?.length || currentData.transfers.out?.length) ? (
+                      <div className="text-sm text-gray-300 bg-gray-900/50 p-3 rounded border-l-2 border-fpl-cyan mt-2">
+                        <p>Out: {(currentData.transfers.out || []).map((p) => p.name || p.web_name || p).join(', ') || 'none'}</p>
+                        <p>In: {(currentData.transfers.in || []).map((p) => p.name || p.web_name || p).join(', ') || 'none'}</p>
+                        {currentData.transfers.cost > 0 && <p>Hit cost: -{currentData.transfers.cost}</p>}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-gray-500 mt-2">No transfers on this squad.</p>
+                    )}
+                  </div>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => setViewMode('pitch')} className={`px-3 py-1 rounded text-xs uppercase font-bold ${viewMode === 'pitch' ? 'bg-fpl-green text-gray-900' : 'bg-gray-700 text-gray-400'}`}>Pitch</button>
+                    <button type="button" onClick={() => setViewMode('list')} className={`px-3 py-1 rounded text-xs uppercase font-bold ${viewMode === 'list' ? 'bg-fpl-green text-gray-900' : 'bg-gray-700 text-gray-400'}`}>List</button>
+                  </div>
+                </div>
+                {viewMode === 'pitch' ? <Pitch lineup={currentData.squad} /> : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {currentData.squad.map(player => (
+                      <div key={player.id} className={`p-3 rounded flex justify-between items-center ${player.is_starter ? 'bg-gray-700' : 'bg-gray-700/50 border border-dashed border-gray-600'}`}>
+                        <div>
+                          <div className="font-bold text-sm">
+                            {player.web_name}
+                            {player.is_captain && <span className="ml-2 bg-yellow-500 text-black text-[9px] font-bold px-1 rounded">C</span>}
+                            {!player.is_starter && <span className="ml-2 text-[9px] text-gray-300">Bench</span>}
+                          </div>
+                          <div className="text-xs text-gray-400 mt-1">{player.team_name} · {player.position}</div>
+                        </div>
+                        <div className="text-fpl-green font-bold">{player.expected_points?.toFixed(1)}</div>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </>
             )}
           </div>
         )}
       </div>
-    </div >
+    </div>
   )
 }
 
