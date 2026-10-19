@@ -72,6 +72,40 @@ class AutosubPlanTests(unittest.TestCase):
         # benching a 10 is worth the same, since the benched player comes on.
         self.assertAlmostEqual(week.expected_points, 129.0, places=4)
 
+    def test_two_certain_blanks_value_two_substitutes(self):
+        # Two starters who will not play should bring on two substitutes. Each hit costs 4,
+        # so the second substitute is bought only when the objective pays for a second blank.
+        players, teams, predictions = synthetic_league(5)
+        for column in predictions.columns:
+            if str(column).startswith('xp_'):
+                predictions[column] = 0.0
+        squad = cheapest_top_squad(players)
+        by_pos = {}
+        for pid in squad:
+            pos = int(players.loc[players.id == pid, 'element_type'].iloc[0])
+            by_pos.setdefault(pos, []).append(pid)
+        playing = by_pos[1][:1] + by_pos[2][:4] + by_pos[3][:3] + by_pos[4][:2]
+        flagged = by_pos[3][:2]
+        fodder = by_pos[3][3:]
+        predictions.loc[predictions.id.isin(playing), [c for c in predictions.columns if str(c).startswith('xp_')]] = 10.0
+        players.loc[players.id.isin(flagged), 'chance_of_playing_next_round'] = 0
+        outside = players[(players.element_type == 3) & (~players.id.isin(squad)) & (players.now_cost == 45)]
+        targets = [int(i) for i in outside.id.iloc[:2]]
+        predictions.loc[predictions.id.isin(targets), 'xp_gw5'] = 9.0
+        optimizer = MultiPeriodFPLOptimizer(players, teams, [], 5, predictions_df=predictions)
+        with contextlib.redirect_stdout(io.StringIO()):
+            solution = optimizer.optimize_multi_period(
+                budget=4.5 * len(squad), gameweeks=3, current_squad_ids=squad,
+                banked_transfers=0, max_hits=2, optimize_chips=False)
+        self.assertEqual(solution.status, 'Optimal')
+        week = next(gp for gp in solution.gameweek_plans if gp.gameweek == 5)
+        self.assertCountEqual([p['id'] for p in week.transfers.transfers_in], targets)
+        self.assertCountEqual([p['id'] for p in week.transfers.transfers_out], fodder)
+        self.assertEqual(week.transfers.hits_taken, 2)
+        # Ten players score 10 and the captain adds 10. The two buys score 9 each from the
+        # bench, with a zero-point player filling the last place in the eleven: 128.
+        self.assertAlmostEqual(week.expected_points, 128.0, places=4)
+
 
 class ChipTimingTests(unittest.TestCase):
     def test_triple_captain_goes_on_the_spike_week(self):
