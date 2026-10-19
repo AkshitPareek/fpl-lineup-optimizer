@@ -19,6 +19,8 @@ from enum import Enum
 from point_predictor import PointPredictor, compute_uncertainty_bounds
 from transfer_explainer import TransferExplainer
 from chip_advisor import ChipAdvisor
+from price_forecast import forecast_price_path, guaranteed_sale, infer_purchase_price, sale_proceeds
+from squad_value import autosub_points, blank_probability
 
 
 class _HiGHS(pulp.HiGHS):
@@ -146,8 +148,6 @@ class MultiPeriodFPLOptimizer:
     CHIP_NAMES = ('wildcard', 'free_hit', 'bench_boost', 'triple_captain')
     CHIP_ALIASES = {'freehit': 'free_hit', 'bboost': 'bench_boost', '3xc': 'triple_captain'}
     LAST_FIRST_HALF_GAMEWEEK = 19
-    # Bench players count a tenth: roughly what they add through automatic substitutions.
-    BENCH_WEIGHT = 0.1
     # A Wildcard squad is valued over this many weeks when deciding whether to keep the chip.
     WILDCARD_VALUE_WEEKS = 4
     # The Free Hit is considered in at most this many weeks, those where it gains most.
@@ -269,6 +269,91 @@ class MultiPeriodFPLOptimizer:
         prob += ft_banked_var >= raw_next - big_m * cap_binary
         prob += ft_banked_var >= cap - big_m * (1 - cap_binary)
 
+    def _fixture_keys(self) -> set:
+        cached = getattr(self, "_fixture_keyset", None)
+        if cached is None:
+            fixtures = getattr(self.predictor, "fixture_map", None) or {}
+            cached = set()
+            for team, gameweek in fixtures:
+                try:
+                    cached.add((int(team), int(gameweek)))
+                except (TypeError, ValueError):
+                    continue
+            self._fixture_keyset = cached
+        return cached
+
+    def _player_blank(self, player, gameweek) -> float:
+        """Chance of zero minutes, including a blank gameweek for the player's team."""
+        team = player.get("team") if hasattr(player, "get") else None
+        try:
+            team = int(team) if team is not None and team == team else None
+        except (TypeError, ValueError):
+            team = None
+        fixtures = self._fixture_keys()
+        if team is not None and any(gw == gameweek for (_, gw) in fixtures) and (team, gameweek) not in fixtures:
+            return 1.0
+        return blank_probability(player, gameweek, self.current_gw)
+
+    def _autosub_terms(self, prob, t, player_ids, on_pitch, starter, get_attr,
+                       bench_pool, outfield_weight, gk_weight, boost):
+        """
+        Expected points from automatic substitutions in gameweek t.
+
+        `outfield_weight` is how often the first outfield substitute plays, and `gk_weight`
+        how often the substitute goalkeeper does, both from the current squad's expected
+        blanks. The search chooses who sits in those spots. A weight that depended on the
+        chosen starters made the bound count blanks the plan never has. Later substitutes
+        are counted when the plan is valued. A Bench Boost week scores the whole bench, so
+        these terms are zero then.
+        """
+        terms = []
+        # boost is the Bench Boost variable, or None in a week the chip cannot be played.
+        # Compare by identity: a PuLP variable's == 0 builds a constraint, it is not false.
+        chip = 0 if boost is None else boost
+
+        def benched(j):
+            return on_pitch(j, t) - starter[(j, t)]
+
+        def without_chip(chosen, shares, name):
+            """chosen, and zero while Bench Boost is on. Shares are capped once per group."""
+            if boost is None:
+                return chosen
+            share = pulp.LpVariable(name, lowBound=0, upBound=1)
+            # addConstraint, not +=: a nested function that assigns prob is treated as local.
+            prob.addConstraint(share <= chosen)
+            prob.addConstraint(share <= 1 - chip)
+            shares.append(share)
+            return share
+
+        if gk_weight > 0:
+            shares = []
+            for j in player_ids:
+                if get_attr(j, 'element_type') != 1:
+                    continue
+                xp = get_attr(j, f'xp_gw{t}')
+                if xp <= 0:
+                    continue
+                terms.append(gk_weight * xp * without_chip(benched(j), shares, f"gkoff_{j}_{t}"))
+            # One goalkeeper sits. Fractional keepers cannot add their points up.
+            if shares:
+                prob += pulp.lpSum(shares) <= 1 - chip
+
+        candidates = sorted(j for j in bench_pool if get_attr(j, 'element_type') != 1 and outfield_weight > 0)
+        if not candidates:
+            return terms
+        first = pulp.LpVariable.dicts(f"first_{t}", candidates, cat='Binary')
+        prob += pulp.lpSum(first[j] for j in candidates) <= 1
+        shares = []
+        for j in candidates:
+            prob += first[j] <= benched(j)
+            xp = get_attr(j, f'xp_gw{t}')
+            if xp <= 0:
+                continue
+            terms.append(outfield_weight * xp * without_chip(first[j], shares, f"suboff_{j}_{t}"))
+        if shares:
+            prob += pulp.lpSum(shares) <= 1 - chip
+        return terms
+
     @classmethod
     def _canonical_chip(cls, name: str) -> str:
         return cls.CHIP_ALIASES.get(name, name)
@@ -297,8 +382,8 @@ class MultiPeriodFPLOptimizer:
                     price: Dict[int, float]) -> Tuple[float, Dict[str, Any]]:
         """
         The most a single 15-man squad, bought within budget and held unchanged, scores over
-        these weeks: starters, captain and a tenth of the bench. Used to value Free Hit and
-        Wildcard squads, and to seed the plan's chip search. Returns the score and the picks.
+        these weeks: starters and captain. Automatic substitutions are added from the picks
+        afterwards. Used to value Free Hit and Wildcard squads. Returns the score and the picks.
         """
         ids = candidates['id'].tolist()
         attrs = candidates.set_index('id').to_dict('index')
@@ -307,7 +392,7 @@ class MultiPeriodFPLOptimizer:
         start = pulp.LpVariable.dicts("x", [(j, w) for j in ids for w in weeks], cat='Binary')
         cap = pulp.LpVariable.dicts("c", [(j, w) for j in ids for w in weeks], cat='Binary')
         prob += pulp.lpSum(
-            attrs[j][f'xp_gw{w}'] * (start[(j, w)] + cap[(j, w)] + self.BENCH_WEIGHT * (squad[j] - start[(j, w)]))
+            attrs[j][f'xp_gw{w}'] * (start[(j, w)] + cap[(j, w)])
             for j in ids for w in weeks
         )
         prob += pulp.lpSum(price[j] * squad[j] for j in ids) <= budget_tenths
@@ -334,10 +419,26 @@ class MultiPeriodFPLOptimizer:
             'starters': {w: [j for j in ids if self._chosen(start[(j, w)])] for w in weeks},
             'captain': {w: next((j for j in ids if self._chosen(cap[(j, w)])), None) for w in weeks},
         }
-        return (pulp.value(prob.objective) or 0.0) if prob.status == 1 else 0.0, picks
+        if prob.status != 1:
+            return 0.0, picks
+        return pulp.value(prob.objective) + self._picked_autosubs(picks, attrs, weeks), picks
 
-    def _xi_value(self, squad: pd.DataFrame, week: int) -> Tuple[float, float]:
-        """Best starting XI plus captain for a fixed squad in one week, and the rest of the squad's points."""
+    def _picked_autosubs(self, picks, attrs, weeks) -> float:
+        added = 0.0
+        for week in weeks:
+            starters = picks['starters'][week]
+            bench = [j for j in picks['squad'] if j not in starters]
+            bench.sort(key=lambda j: -attrs[j][f'xp_gw{week}'])
+            added += autosub_points(
+                starters, bench,
+                lambda j, w=week: attrs[j][f'xp_gw{w}'],
+                lambda j, w=week: self._player_blank(attrs[j], w),
+                lambda j: attrs[j]['element_type'],
+            )
+        return added
+
+    def _xi_value(self, squad: pd.DataFrame, week: int) -> Tuple[float, float, float]:
+        """Best XI plus captain, the bench's points, and what automatic substitutions add."""
         xp = squad[['element_type', f'xp_gw{week}']].rename(columns={f'xp_gw{week}': 'xp'})
         xp = xp.sort_values('xp', ascending=False)
         chosen = []
@@ -353,7 +454,15 @@ class MultiPeriodFPLOptimizer:
                 chosen.append(idx)
                 counts[row.element_type] = counts.get(row.element_type, 0) + 1
         xi = xp.loc[chosen, 'xp']
-        return float(xi.sum() + xi.max()), float(xp['xp'].sum() - xi.sum())
+        bench_ids = [i for i in xp.index if i not in chosen]
+        bench_ids.sort(key=lambda i: -float(xp.loc[i, 'xp']))
+        added = autosub_points(
+            chosen, bench_ids,
+            lambda j: float(xp.loc[j, 'xp']),
+            lambda j: self._player_blank(squad.loc[j], week),
+            lambda j: int(squad.loc[j, 'element_type']),
+        )
+        return float(xi.sum() + xi.max()), float(xp['xp'].sum() - xi.sum()), added
 
     def _new_squad_gain(self, pool, reference, window, budget_tenths, price, with_picks=False):
         """How much more the best squad for these weeks scores than the reference squad held unchanged."""
@@ -362,7 +471,7 @@ class MultiPeriodFPLOptimizer:
             by_window[by_window.element_type == pos].nlargest(15, '_xp') for pos in (1, 2, 3, 4)
         ] + [by_window[by_window['id'].isin(reference.index)]]).drop_duplicates('id')
         best, picks = self._best_squad(candidates, window, budget_tenths, price)
-        held = sum(xi + self.BENCH_WEIGHT * bench for xi, bench in (self._xi_value(reference, g) for g in window)) \
+        held = sum(xi + autosub for xi, _, autosub in (self._xi_value(reference, g) for g in window)) \
             if len(reference) == 15 else 0.0
         gain = max(0.0, best - held)
         return (gain, picks) if with_picks else gain
@@ -394,11 +503,12 @@ class MultiPeriodFPLOptimizer:
                     continue
                 if (chip, w) in gains:
                     continue
-                ref_bench = self._xi_value(reference, w)[1] if len(reference) == 15 else 0.0
+                xi_value = self._xi_value(reference, w) if len(reference) == 15 else (0.0, 0.0, 0.0)
                 if chip == 'triple_captain':
                     gains[(chip, w)] = float(pool[col].max())
                 elif chip == 'bench_boost':
-                    gains[(chip, w)] = (1 - self.BENCH_WEIGHT) * ref_bench
+                    # The chip scores the whole bench; substitutes would have scored some of it anyway.
+                    gains[(chip, w)] = xi_value[1] - xi_value[2]
                 else:
                     window = [w] if chip == 'free_hit' else [
                         g for g in range(w, w + self.WILDCARD_VALUE_WEEKS) if f'xp_gw{g}' in pool.columns]
@@ -423,7 +533,8 @@ class MultiPeriodFPLOptimizer:
 
     def _get_predictions(self, gameweeks: int) -> pd.DataFrame:
         """Get or compute predictions for the planning horizon."""
-        if self.predictions is None:
+        last = self.current_gw + gameweeks - 1
+        if self.predictions is None or f'xp_gw{last}' not in self.predictions.columns:
             self.predictions = self.predictor.predict_all_players(gameweeks=gameweeks)
         return self.predictions
     
@@ -587,7 +698,9 @@ class MultiPeriodFPLOptimizer:
                                strategy: str = "standard",
                                max_hits: int = 5,
                                selling_prices: Optional[Dict[int, float]] = None,
-                               optimize_chips: bool = False) -> MultiPeriodSolution:
+                               optimize_chips: bool = False,
+                               total_managers: int = 0,
+                               transfer_elapsed: float = 1.0) -> MultiPeriodSolution:
         """
         Multi-period optimization over rolling horizon.
         
@@ -704,8 +817,9 @@ class MultiPeriodFPLOptimizer:
         def get_attr(pid, attr):
             return attrs_by_id.get(pid, {}).get(attr, 0)
         
-        # Prices in tenths. Squad players sell at their selling price; anyone bought
-        # in the plan sells for what he cost, since price changes are not forecast.
+        # Prices in tenths, forecast from the transfer market. Squad players keep half
+        # of a rise from the price they were bought at. A player bought during the plan
+        # sells for the lowest proceeds an earlier buy on that path would raise.
         current_set = set(current_squad_ids or [])
         selling_prices = selling_prices or {}
         buy_price = {j: int(get_attr(j, 'now_cost')) for j in player_ids}
@@ -718,6 +832,66 @@ class MultiPeriodFPLOptimizer:
         else:
             start_bank = int(round(10 * budget))
         fresh_start = not current_set
+        price_at = {
+            j: forecast_price_path(attrs_by_id[j], len(horizon), total_managers, transfer_elapsed)
+            for j in player_ids
+        }
+        purchase_paid = {}
+        sale_price = {}
+        for j in player_ids:
+            season_start = int(get_attr(j, 'now_cost') or 0) - int(get_attr(j, 'cost_change_start') or 0)
+            purchase_paid[j] = infer_purchase_price(sell_price[j], buy_price[j], season_start)
+            if j in current_set:
+                sale_price[j] = [sale_proceeds(purchase_paid[j], price) for price in price_at[j]]
+            else:
+                sale_price[j] = [guaranteed_sale(price_at[j], idx) for idx in range(len(horizon))]
+
+        def blank_of(j, t):
+            return self._player_blank(attrs_by_id[j], t)
+
+        outfield_ids = [j for j in player_ids if get_attr(j, 'element_type') != 1]
+        bench_pool = {}
+        for t in horizon:
+            by_points = sorted(outfield_ids, key=lambda j, gw=t: -get_attr(j, f'xp_gw{gw}'))[:12]
+            by_price = sorted(outfield_ids, key=lambda j: get_attr(j, 'now_cost'))[:6]
+            owned = [j for j in current_set if j in player_ids and get_attr(j, 'element_type') != 1]
+            bench_pool[t] = set(by_points) | set(by_price) | set(owned)
+
+        def best_xi(squad_ids, t):
+            by_pos = {pos: [] for pos in (1, 2, 3, 4)}
+            for j in squad_ids:
+                by_pos[get_attr(j, 'element_type')].append(j)
+            for pos in by_pos:
+                by_pos[pos].sort(key=lambda j, gw=t: -get_attr(j, f'xp_gw{gw}'))
+            chosen = []
+            for pos in (1, 2, 3, 4):
+                chosen += by_pos[pos][:self.STARTER_MIN[pos]]
+            rest = []
+            for pos in (2, 3, 4):
+                rest += by_pos[pos][self.STARTER_MIN[pos]:]
+            rest.sort(key=lambda j, gw=t: -get_attr(j, f'xp_gw{gw}'))
+            counts = {}
+            for j in chosen:
+                pos = get_attr(j, 'element_type')
+                counts[pos] = counts.get(pos, 0) + 1
+            for j in rest:
+                if len(chosen) >= 11:
+                    break
+                pos = get_attr(j, 'element_type')
+                if counts.get(pos, 0) < self.STARTER_MAX[pos]:
+                    chosen.append(j)
+                    counts[pos] = counts.get(pos, 0) + 1
+            return chosen
+
+        squad_ids = [j for j in player_ids if j in current_set]
+        outfield_weight, gk_weight = {}, {}
+        if len(squad_ids) == 15:
+            for t in horizon:
+                xi = best_xi(squad_ids, t)
+                outfield_weight[t] = min(1.0, sum(
+                    blank_of(j, t) for j in xi if get_attr(j, 'element_type') != 1))
+                keeper = next((j for j in xi if get_attr(j, 'element_type') == 1), None)
+                gk_weight[t] = blank_of(keeper, t) if keeper is not None else 0.0
 
         # ===== Chips =====
         # use[(chip, t)] = 1 if the chip is played in GW t. A chip in chip_to_use is played in
@@ -829,6 +1003,13 @@ class MultiPeriodFPLOptimizer:
                     return squad[(j, t)] + fh_in[(j, t)] - fh_out[(j, t)]
                 return squad[(j, t)]
 
+            def price_now(j, idx):
+                return price_at[j][idx]
+
+            def sell_now(j, idx):
+                """What selling j in this week raises, in tenths."""
+                return sale_price[j][idx]
+
             # Objective: expected points over the horizon minus hit costs, less the value of any
             # chip played now that would be worth more later in its half. Transfers earn nothing
             # by themselves; unused ones carry over in the bank.
@@ -840,18 +1021,17 @@ class MultiPeriodFPLOptimizer:
                     if robust:
                         # Use lower bound for worst-case
                         xp = xp * (1 - uncertainty_budget)
-                    # Starters, and the captain once more.
+                    # Starters, and the captain once more. The bench scores through automatic
+                    # substitutions, added below, and in full in a Bench Boost week.
                     objective_terms.append(xp * (starter[(j, t)] + captain[(j, t)]))
-                    objective_terms.append(self.BENCH_WEIGHT * xp * (on_pitch(j, t) - starter[(j, t)]))
                     if t in tc_weeks:
                         objective_terms.append(xp * tc[(j, t)])
                     if t in bb_weeks:
-                        objective_terms.append((1 - self.BENCH_WEIGHT) * xp * bb[(j, t)])
+                        objective_terms.append(xp * bb[(j, t)])
                 objective_terms.append(-self.TRANSFER_PENALTY * hits[t])
             for (chip, half), value in chip_cost.items():
                 objective_terms.extend(-value * use[(chip, t)] for t in horizon
                                        if (chip, t) in use and self._half(t) == half)
-            prob += pulp.lpSum(objective_terms)
 
             def squad_rules(member, t):
                 prob.addConstraint(pulp.lpSum(member(j, t) for j in player_ids) == 15)
@@ -902,8 +1082,10 @@ class MultiPeriodFPLOptimizer:
                     squad_rules(on_pitch, t)
                     # The Free Hit squad costs the squad's selling value plus the bank, with kept
                     # players at their selling price: the swaps must fit in the bank.
-                    prob += pulp.lpSum(buy_price[j] * fh_in[(j, t)] - sell_price[j] * fh_out[(j, t)]
-                                       for j in player_ids) <= itb[t]
+                    prob += pulp.lpSum(
+                        price_now(j, idx) * fh_in[(j, t)] - sell_now(j, idx) * fh_out[(j, t)]
+                        for j in player_ids
+                    ) <= itb[t]
 
                 unlimited = chip_on('wildcard', t) + chip_on('free_hit', t)
                 available_ft = banked_transfers if idx == 0 else ft_banked[horizon[idx - 1]]
@@ -912,7 +1094,7 @@ class MultiPeriodFPLOptimizer:
                     for j in player_ids:
                         prob += z_in[(j, t)] == 0
                         prob += z_out[(j, t)] == 0
-                    prob += itb[t] == start_bank - pulp.lpSum(buy_price[j] * squad[(j, t)] for j in player_ids)
+                    prob += itb[t] == start_bank - pulp.lpSum(price_now(j, idx) * squad[(j, t)] for j in player_ids)
                     prob += ft_banked[t] == 1
                 else:
                     for j in player_ids:
@@ -920,7 +1102,8 @@ class MultiPeriodFPLOptimizer:
                         prob += squad[(j, t)] == owned + z_in[(j, t)] - z_out[(j, t)]
                         prob += z_in[(j, t)] + z_out[(j, t)] <= 1
                     prob += itb[t] == (start_bank if idx == 0 else itb[horizon[idx - 1]]) + pulp.lpSum(
-                        sell_price[j] * z_out[(j, t)] - buy_price[j] * z_in[(j, t)] for j in player_ids
+                        sell_now(j, idx) * z_out[(j, t)] - price_now(j, idx) * z_in[(j, t)]
+                        for j in player_ids
                     )
                     # Saved transfers are kept through a Wildcard or Free Hit, but the week grants none.
                     self._set_bank_after(prob, ft_banked[t], available_ft, ft_used[t], bank_cap[t],
@@ -935,6 +1118,13 @@ class MultiPeriodFPLOptimizer:
                 prob += ft_used[t] <= self.MAX_BANKED_TRANSFERS * (1 - unlimited)
                 prob += hits[t] >= transfers_made - available_ft - 15 * chip_on('wildcard', t)
                 prob += ft_used[t] >= transfers_made - hits[t] - 15 * chip_on('wildcard', t)
+
+                objective_terms.extend(self._autosub_terms(
+                    prob, t, player_ids, on_pitch, starter, get_attr,
+                    bench_pool[t], outfield_weight.get(t, 0.0), gk_weight.get(t, 0.0),
+                    use.get(('bench_boost', t)),
+                ))
+            prob += pulp.lpSum(objective_terms)
             return dict(prob=prob, squad=squad, starter=starter, captain=captain, z_in=z_in, z_out=z_out, ft_used=ft_used, hits=hits, ft_banked=ft_banked, bank_cap=bank_cap, itb=itb, use=use, tc=tc, bb=bb, fh_in=fh_in, fh_out=fh_out)
 
         def seed_chips(m):
@@ -986,7 +1176,12 @@ class MultiPeriodFPLOptimizer:
                     detail[(chip, t)] = cap
                 elif chip == 'bench_boost':
                     bench = [j for j in player_ids if self._chosen(squad[(j, t)]) and not self._chosen(starter[(j, t)])]
-                    gains[(chip, t)] = (1 - self.BENCH_WEIGHT) * sum(get_attr(j, f'xp_gw{t}') for j in bench)
+                    starters_now = [j for j in player_ids if self._chosen(starter[(j, t)])]
+                    bench.sort(key=lambda j, gw=t: -get_attr(j, f'xp_gw{gw}'))
+                    covered = autosub_points(
+                        starters_now, bench, lambda j, gw=t: get_attr(j, f'xp_gw{gw}'),
+                        lambda j, gw=t: blank_of(j, gw), lambda j: get_attr(j, 'element_type'))
+                    gains[(chip, t)] = sum(get_attr(j, f'xp_gw{t}') for j in bench) - covered
                     detail[(chip, t)] = bench
                 elif chip == 'free_hit':
                     if moves[t]:
@@ -1044,9 +1239,57 @@ class MultiPeriodFPLOptimizer:
                         starter[(j, t)].setInitialValue(1 if j in picks['starters'][t] else 0)
                         captain[(j, t)].setInitialValue(1 if j == picks['captain'][t] else 0)
 
+        def seed_held(m):
+            """
+            Hold the current squad, so the solver starts from a legal plan.
+
+            A long horizon can run out of time before it finds any squad. This start is the
+            squad kept as it is, with a valid lineup and no transfers.
+            """
+            squad_now = [j for j in player_ids if j in current_set]
+            if fresh_start or len(squad_now) != 15:
+                return False
+            xi_of = {t: set(best_xi(squad_now, t)) for t in horizon}
+            bank = banked_transfers
+            for idx, t in enumerate(horizon):
+                xi = xi_of[t]
+                captain_id = max(xi, key=lambda j, gw=t: get_attr(j, f'xp_gw{gw}'))
+                chip_week = int(forced in (('wildcard', t), ('free_hit', t)))
+                for j in player_ids:
+                    m['squad'][(j, t)].setInitialValue(1 if j in current_set else 0)
+                    m['starter'][(j, t)].setInitialValue(1 if j in xi else 0)
+                    m['captain'][(j, t)].setInitialValue(1 if j == captain_id else 0)
+                    m['z_in'][(j, t)].setInitialValue(0)
+                    m['z_out'][(j, t)].setInitialValue(0)
+                    if (j, t) in m['tc']:
+                        m['tc'][(j, t)].setInitialValue(
+                            1 if forced == ('triple_captain', t) and j == captain_id else 0)
+                    if (j, t) in m['bb']:
+                        m['bb'][(j, t)].setInitialValue(
+                            1 if forced == ('bench_boost', t) and j not in xi and j in current_set else 0)
+                    if (j, t) in m['fh_in']:
+                        m['fh_in'][(j, t)].setInitialValue(0)
+                        m['fh_out'][(j, t)].setInitialValue(0)
+                for (chip, week), var in m['use'].items():
+                    if week == t:
+                        var.setInitialValue(1 if forced == (chip, t) else 0)
+                m['ft_used'][t].setInitialValue(0)
+                m['hits'][t].setInitialValue(0)
+                raw = bank + 1 - chip_week
+                bank = min(raw, self.MAX_BANKED_TRANSFERS)
+                m['ft_banked'][t].setInitialValue(bank)
+                m['bank_cap'][t].setInitialValue(1 if raw >= self.MAX_BANKED_TRANSFERS else 0)
+                m['itb'][t].setInitialValue(start_bank)
+            return True
+
         solve_start = time.time()
         solver = self._multi_period_solver()
         model = build(with_chips=False, free_hit_weeks=set())
+        if seed_held(model):
+            if isinstance(solver, _HiGHS):
+                solver.warm_start = True
+            elif hasattr(solver, 'optionsDict'):
+                solver.optionsDict['warmStart'] = True
         model['prob'].solve(solver)
         def plant(target, values):
             for var in target['prob'].variables():
@@ -1110,7 +1353,8 @@ class MultiPeriodFPLOptimizer:
                 transfer_summary=[],
                 banked_transfers_after=banked_transfers,
                 chips_remaining=[c for c in ChipAdvisor.CHIPS if c not in chips_used],
-                optimization_time_seconds=end_time - start_time
+                optimization_time_seconds=end_time - start_time,
+                proven_optimal=False,
             )
         
         # Extract solution
@@ -1169,7 +1413,7 @@ class MultiPeriodFPLOptimizer:
                     gw_transfers_in.append({
                         'id': int(j),
                         'name': str(get_attr(j, 'web_name')),
-                        'cost': float(get_attr(j, 'now_cost') / 10.0),
+                        'cost': float(price_at[j][idx] / 10.0),
                         'expected_points': float(get_attr(j, f'xp_gw{t}')),
                         'element_type': int(get_attr(j, 'element_type'))
                     })
@@ -1177,7 +1421,7 @@ class MultiPeriodFPLOptimizer:
                     gw_transfers_out.append({
                         'id': int(j),
                         'name': str(get_attr(j, 'web_name')),
-                        'cost': sell_price[j] / 10.0,
+                        'cost': float(sale_price[j][idx] / 10.0),
                         'expected_points': float(get_attr(j, f'xp_gw{t}')),
                         'element_type': int(get_attr(j, 'element_type'))
                     })
@@ -1190,6 +1434,14 @@ class MultiPeriodFPLOptimizer:
             gw_xp = float(sum(p['expected_points'] * (captain_multiplier if p['is_captain'] else 1) for p in gw_starters))
             if chip_played == 'bench_boost':
                 gw_xp += float(sum(p['expected_points'] for p in gw_bench))
+            else:
+                ordered_bench = sorted(gw_bench, key=lambda p: -p['expected_points'])
+                gw_xp += autosub_points(
+                    [p['id'] for p in gw_starters], [p['id'] for p in ordered_bench],
+                    lambda i: attrs_by_id[i].get(f'xp_gw{t}', 0),
+                    lambda i: blank_of(i, t),
+                    lambda i: attrs_by_id[i].get('element_type', 0),
+                )
             
             # Calculate xP gain from transfers
             total_in_xp = sum(t.get('expected_points', 0) for t in gw_transfers_in)
@@ -1359,15 +1611,26 @@ class MultiPeriodFPLOptimizer:
             name = next((p['web_name'] for p in starters if p['id'] == captain_id), 'captain')
             reason = f"{name} projected {captain_xp:.1f} pts"
         elif chip == 'bench_boost':
-            gain = sum(p['expected_points'] for p in bench)
-            reason = f"Bench projected {gain:.1f} pts"
+            ordered = sorted(bench, key=lambda p: -p['expected_points'])
+            covered = autosub_points(
+                [p['id'] for p in starters], [p['id'] for p in ordered],
+                lambda i: attrs_by_id[i][f'xp_gw{t}'],
+                lambda i: self._player_blank(attrs_by_id[i], t),
+                lambda i: attrs_by_id[i]['element_type'])
+            gain = sum(p['expected_points'] for p in bench) - covered
+            reason = f"Bench projected {sum(p['expected_points'] for p in bench):.1f} pts"
         elif chip == 'free_hit':
             base = available[available['id'].isin(
                 [j for j in attrs_by_id if self._chosen(squad[(j, t)])])].set_index('id')
-            base_xi, base_bench = self._xi_value(base, t)
+            base_xi, _, base_auto = self._xi_value(base, t)
             played = sum(p['expected_points'] for p in starters) + captain_xp
-            played_bench = sum(p['expected_points'] for p in bench)
-            gain = played + self.BENCH_WEIGHT * played_bench - base_xi - self.BENCH_WEIGHT * base_bench
+            played_bench = sorted(bench, key=lambda p: -p['expected_points'])
+            played_auto = autosub_points(
+                [p['id'] for p in starters], [p['id'] for p in played_bench],
+                lambda i: attrs_by_id[i][f'xp_gw{t}'],
+                lambda i: self._player_blank(attrs_by_id[i], t),
+                lambda i: attrs_by_id[i]['element_type'])
+            gain = played + played_auto - base_xi - base_auto
             reason = f"One-week squad projected {gain:.1f} pts more than the squad"
         else:
             reason = "Rebuilds the squad without hits"

@@ -18,6 +18,7 @@ import json
 import threading
 
 from fpl_service import FPLService
+from price_forecast import transfer_elapsed
 from optimizer import FPLOptimizer
 from advanced_optimizer import MultiPeriodFPLOptimizer
 from robust_optimizer import RobustOptimizer
@@ -215,6 +216,14 @@ def _manager_squad(manager_id: int, players_df: pd.DataFrame):
     return squad_ids, selling_prices, squad_value
 
 
+def _price_args(static_data) -> Dict:
+    """Size of the game and how far this gameweek's transfer window has run, for price forecasts."""
+    return {
+        "total_managers": int(static_data.get("total_players") or 0),
+        "transfer_elapsed": transfer_elapsed(static_data.get("events") or []),
+    }
+
+
 def _chips_used(manager_id: Optional[int], requested: List[str]) -> List[str]:
     """Chips to treat as played. An empty request is filled from the manager's history for this half of the season."""
     if requested or not manager_id:
@@ -405,7 +414,8 @@ async def optimize_multi_period(request: MultiPeriodRequest):
             strategy=request.strategy,
             selling_prices=selling_prices,
             chip_to_use=tuple(request.chip_to_use) if request.chip_to_use else None,
-            optimize_chips=request.optimize_chips
+            optimize_chips=request.optimize_chips,
+            **_price_args(static_data)
         )
         
         # Generate transfer explanations
@@ -524,7 +534,8 @@ async def optimize_compare(request: MultiPeriodRequest):
                 strategy=request.strategy,
                 max_hits=10,  # Allow hits
                 selling_prices=selling_prices,
-                optimize_chips=request.optimize_chips
+                optimize_chips=request.optimize_chips,
+                **_price_args(static_data)
             )
         
         def run_no_hits():
@@ -541,7 +552,8 @@ async def optimize_compare(request: MultiPeriodRequest):
                 strategy=request.strategy,
                 max_hits=0,  # No hits allowed
                 selling_prices=selling_prices,
-                optimize_chips=request.optimize_chips
+                optimize_chips=request.optimize_chips,
+                **_price_args(static_data)
             )
         
         # Run optimizations - smart strategy to minimize runtime
@@ -1052,7 +1064,8 @@ async def analyze_transfers(request: TransferAnalysisRequest):
                 current_squad_ids=current_squad_ids,
                 banked_transfers=request.free_transfers,
                 chips_used=[],
-                selling_prices=selling_prices
+                selling_prices=selling_prices,
+                **_price_args(static_data)
             )
             
             if solution.status == "Optimal" and solution.gameweek_plans:
