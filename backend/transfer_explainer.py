@@ -7,7 +7,15 @@ using player metrics (xG, xA, form), fixture analysis, and comparative reasoning
 
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
+import re
 import pandas as pd
+
+
+def _at_planned_price(summary: str, cost) -> str:
+    """Use the price the plan actually pays or receives, when the explanation quoted the current price."""
+    if cost is None:
+        return summary
+    return re.sub(r"£\d+(?:\.\d+)?m", f"£{float(cost):.1f}m", summary, count=1)
 
 
 @dataclass
@@ -438,6 +446,7 @@ Average FDR: {avg_fdr:.2f}
             # Find matching position transfer out
             replacing_id = None
             out_xp = 0
+            t_out = None
             if pos in out_by_position and out_by_position[pos]:
                 t_out = out_by_position[pos].pop(0)
                 replacing_id = t_out['id']
@@ -459,7 +468,7 @@ Average FDR: {avg_fdr:.2f}
                     current_gw=current_gw,
                     horizon=horizon
                 )
-                lines.append(f"**SELL:** {out_explanation['summary']}")
+                lines.append(f"**SELL:** {_at_planned_price(out_explanation['summary'], t_out.get('cost'))}")
                 lines.append(f"  └ Fixtures: {out_explanation['fixtures']}")
                 lines.append(f"  └ Expected: {out_xp:.1f} xP")
             
@@ -470,7 +479,7 @@ Average FDR: {avg_fdr:.2f}
                 horizon=horizon,
                 replacing_id=replacing_id
             )
-            lines.append(f"\n**BUY:** {in_explanation.summary}")
+            lines.append(f"\n**BUY:** {_at_planned_price(in_explanation.summary, t_in.get('cost'))}")
             lines.append(f"  └ Fixtures: {in_explanation.fixture_analysis}")
             lines.append(f"  └ Expected: {in_xp:.1f} xP")
             lines.append(f"  └ Risks: {in_explanation.risk_assessment}")

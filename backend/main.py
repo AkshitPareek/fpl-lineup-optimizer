@@ -18,6 +18,7 @@ import json
 import threading
 
 from fpl_service import FPLService
+from price_forecast import transfer_elapsed
 from optimizer import FPLOptimizer
 from advanced_optimizer import MultiPeriodFPLOptimizer
 from robust_optimizer import RobustOptimizer
@@ -179,6 +180,7 @@ class MultiPeriodRequest(BaseModel):
     banked_transfers: int = Field(default=1, ge=0, le=5, description="Currently banked FTs (0-5)")
     chips_used: List[str] = Field(default=[], description="Already used chips")
     chip_to_use: Optional[List] = Field(default=None, description="Chip to activate: [chip_name, gameweek]")
+    optimize_chips: bool = Field(default=True, description="Let the plan choose which remaining chips to play and when")
     robust: bool = Field(default=False, description="Use robust optimization")
     uncertainty_budget: float = Field(default=0.3, ge=0, le=1, description="Robustness parameter Γ")
     strategy: str = Field(default="standard", description="Strategy: standard, differential, template")
@@ -212,6 +214,14 @@ def _manager_squad(manager_id: int, players_df: pd.DataFrame):
     now_cost = dict(zip(players_df["id"], players_df["now_cost"] / 10.0))
     squad_value = sum(selling_prices.get(pid, now_cost.get(pid, 0.0)) for pid in squad_ids)
     return squad_ids, selling_prices, squad_value
+
+
+def _price_args(static_data) -> Dict:
+    """Size of the game and how far this gameweek's transfer window has run, for price forecasts."""
+    return {
+        "total_managers": int(static_data.get("total_players") or 0),
+        "transfer_elapsed": transfer_elapsed(static_data.get("events") or []),
+    }
 
 
 def _chips_used(manager_id: Optional[int], requested: List[str]) -> List[str]:
@@ -402,7 +412,10 @@ async def optimize_multi_period(request: MultiPeriodRequest):
             robust=request.robust,
             uncertainty_budget=request.uncertainty_budget,
             strategy=request.strategy,
-            selling_prices=selling_prices
+            selling_prices=selling_prices,
+            chip_to_use=tuple(request.chip_to_use) if request.chip_to_use else None,
+            optimize_chips=request.optimize_chips,
+            **_price_args(static_data)
         )
         
         # Generate transfer explanations
@@ -520,7 +533,9 @@ async def optimize_compare(request: MultiPeriodRequest):
                 uncertainty_budget=request.uncertainty_budget,
                 strategy=request.strategy,
                 max_hits=10,  # Allow hits
-                selling_prices=selling_prices
+                selling_prices=selling_prices,
+                optimize_chips=request.optimize_chips,
+                **_price_args(static_data)
             )
         
         def run_no_hits():
@@ -536,7 +551,9 @@ async def optimize_compare(request: MultiPeriodRequest):
                 uncertainty_budget=request.uncertainty_budget,
                 strategy=request.strategy,
                 max_hits=0,  # No hits allowed
-                selling_prices=selling_prices
+                selling_prices=selling_prices,
+                optimize_chips=request.optimize_chips,
+                **_price_args(static_data)
             )
         
         # Run optimizations - smart strategy to minimize runtime
@@ -544,10 +561,11 @@ async def optimize_compare(request: MultiPeriodRequest):
         loop = asyncio.get_event_loop()
         
         try:
-            # Run the with-hits optimization first (45s timeout)
+            # A 15-week plan with chips takes about 45s; with the no-hits run after it, both
+            # timeouts together stay inside gunicorn's 120s.
             solution_with_hits = await asyncio.wait_for(
                 loop.run_in_executor(None, run_with_hits),
-                timeout=45.0
+                timeout=70.0
             )
         except asyncio.TimeoutError:
             print("With-hits optimization timed out")
@@ -1046,7 +1064,8 @@ async def analyze_transfers(request: TransferAnalysisRequest):
                 current_squad_ids=current_squad_ids,
                 banked_transfers=request.free_transfers,
                 chips_used=[],
-                selling_prices=selling_prices
+                selling_prices=selling_prices,
+                **_price_args(static_data)
             )
             
             if solution.status == "Optimal" and solution.gameweek_plans:

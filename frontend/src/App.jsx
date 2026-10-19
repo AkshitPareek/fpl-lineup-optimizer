@@ -7,6 +7,15 @@ import AnalyticsDashboard from './components/analytics/AnalyticsDashboard'
 const API_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 axios.defaults.baseURL = API_URL;
 
+const CHIP_NAMES = {
+  triple_captain: 'Triple Captain',
+  bench_boost: 'Bench Boost',
+  free_hit: 'Free Hit',
+  freehit: 'Free Hit',
+  wildcard: 'Wildcard',
+}
+const chipName = (chip) => CHIP_NAMES[chip] || (chip || '').replaceAll('_', ' ')
+
 function App() {
   const [lineup, setLineup] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -290,7 +299,7 @@ function App() {
                   </p>
                 )}
               </div>
-              {mode === "multi" && chipRecommendations?.best_chip && (
+              {mode === "multi" && chipRecommendations?.best_chip && (selectedChip || !lineup?.chip_plan) && (
                 <button
                   type="button"
                   onClick={() => {
@@ -337,7 +346,36 @@ function App() {
                   </p>
                 </div>
               )}
-              {mode === "multi" && (lineup?.chip_suggestion || lineup?.chip_recommendations?.length > 0) && (
+              {mode === "multi" && (lineup?.chip_plan?.length > 0 || lineup?.chips_held?.length > 0) && (
+                <div className="mb-3 p-3 bg-fpl-cyan/10 border border-fpl-cyan/20 rounded-lg">
+                  <div className="flex items-center gap-2 mb-2">
+                    <span className="text-lg">💡</span>
+                    <span className="text-xs font-bold text-fpl-cyan uppercase tracking-wider">Chip Plan</span>
+                  </div>
+                  {lineup.chip_plan.map((p) => (
+                    <div key={`${p.chip}-${p.gameweek}`} className="mb-2">
+                      <p className="text-sm font-bold text-white">
+                        Play {chipName(p.chip)} in GW{p.gameweek}
+                        {typeof p.expected_gain === 'number' && <span className="text-fpl-green font-normal"> +{p.expected_gain.toFixed(1)} pts</span>}
+                      </p>
+                      {p.reason && <p className="text-[10px] text-gray-400">{p.reason}</p>}
+                    </div>
+                  ))}
+                  {lineup.chips_held?.length > 0 && (
+                    <div className={lineup.chip_plan.length ? "mt-2 pt-2 border-t border-gray-700" : ""}>
+                      <p className="text-[10px] text-gray-500 mb-1">Kept for later, worth more after this plan:</p>
+                      <div className="flex flex-wrap gap-1">
+                        {lineup.chips_held.map((h) => (
+                          <span key={h.chip} className="text-[10px] bg-gray-800 text-gray-300 px-2 py-1 rounded">
+                            {chipName(h.chip)}: GW{h.best_gameweek} (~{h.expected_gain.toFixed(1)} pts)
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+              {mode === "multi" && !(lineup?.chip_plan?.length > 0 || lineup?.chips_held?.length > 0) && (lineup?.chip_suggestion || lineup?.chip_recommendations?.length > 0) && (
                 <div className="mb-3 p-3 bg-fpl-cyan/10 border border-fpl-cyan/20 rounded-lg">
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-lg">💡</span>
@@ -695,6 +733,9 @@ function App() {
                       >
                         <span className="block text-xs opacity-70">GW {plan.gameweek}</span>
                         <span className="block">{plan.expected_points.toFixed(1)} pts</span>
+                        {plan.chip_used && (
+                          <span className="block mt-1 text-[10px] font-bold uppercase text-fpl-cyan">{chipName(plan.chip_used)}</span>
+                        )}
                       </button>
                     ))}
                     <div className="ml-auto flex flex-col items-end justify-center text-right px-4">
@@ -702,7 +743,9 @@ function App() {
                       <span className="text-xl font-bold text-fpl-green">{lineup.total_expected_points.toFixed(0)} pts</span>
                       {lineup.proven_optimal === false && (
                         <span className="text-xs text-yellow-400" title="The solver hit its time limit. A shorter horizon solves fully.">
-                          Best plan found in time limit
+                          {typeof lineup.optimality_gap_points === 'number'
+                            ? `Best plan found in time limit, within ${lineup.optimality_gap_points.toFixed(1)} pts of the best possible`
+                            : 'Best plan found in time limit'}
                         </span>
                       )}
                     </div>

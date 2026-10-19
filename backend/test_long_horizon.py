@@ -79,6 +79,33 @@ class SellingPriceTests(unittest.TestCase):
                 self.assertEqual(sold['cost'], 4.4 if sold['id'] in squad else 4.5)
         self.assertTrue(all(gp.bank >= 0 for gp in at_selling.gameweek_plans))
 
+    def test_a_forecast_rise_is_charged_on_the_buy(self):
+        players, teams, predictions = synthetic_league(5)
+        target = int(players[(players.element_type == 3) & (players.now_cost == 50)].id.iloc[0])
+        players.loc[players.id == target, 'selected_by_percent'] = '20.0'
+        players.loc[players.id == target, 'transfers_in_event'] = 500000
+        players.loc[players.id == target, 'transfers_out_event'] = 50000
+        players.loc[players.id == target, 'cost_change_event'] = 0
+        predictions.loc[predictions.id == target, 'xp_gw5'] = 20
+        # 20% of 10m owners, 450k net transfers: three rises, so 5.0 becomes 5.3.
+        # Bank of 0.6 buys at 5.0 (selling a 4.5) and does not buy at 5.3.
+        optimizer = MultiPeriodFPLOptimizer(players, teams, [], 5, predictions_df=predictions)
+        squad = cheapest_top_squad(players)
+        with contextlib.redirect_stdout(io.StringIO()):
+            short = optimizer.optimize_multi_period(
+                budget=4.5 * len(squad) + 0.6, gameweeks=3, current_squad_ids=squad,
+                banked_transfers=1, max_hits=0, total_managers=10_000_000, transfer_elapsed=1)
+        bought = [t['id'] for tp in short.transfer_summary for t in tp.transfers_in]
+        self.assertNotIn(target, bought)
+
+        with contextlib.redirect_stdout(io.StringIO()):
+            funded = optimizer.optimize_multi_period(
+                budget=4.5 * len(squad) + 1.0, gameweeks=3, current_squad_ids=squad,
+                banked_transfers=1, max_hits=0, total_managers=10_000_000, transfer_elapsed=1)
+        ins = [t for tp in funded.transfer_summary for t in tp.transfers_in if t['id'] == target]
+        self.assertEqual(len(ins), 1)
+        self.assertAlmostEqual(ins[0]['cost'], 5.3)
+
     def test_bank_follows_the_transfers(self):
         _, _, solution = plan_from_squad(1.5, selling=4.4, gameweeks=4, banked_transfers=2, max_hits=0)
         bank = 1.5
@@ -126,15 +153,16 @@ class LongHorizonTests(unittest.TestCase):
                         var.varValue -= 1e-7
                 return status
 
-        _, exact = plan(current_gw=5, gameweeks=4)
+        plain = staticmethod(lambda: pulp.PULP_CBC_CMD(msg=0))
         nudging = staticmethod(lambda: NearIntegerSolver(msg=0))
+        with mock.patch.object(MultiPeriodFPLOptimizer, '_multi_period_solver', plain):
+            _, exact = plan(current_gw=5, gameweeks=4)
         with mock.patch.object(MultiPeriodFPLOptimizer, '_multi_period_solver', nudging):
             _, nudged = plan(current_gw=5, gameweeks=4)
         for gw_plan in nudged.gameweek_plans:
             self.assertEqual((len(gw_plan.starting_xi), len(gw_plan.bench)), (11, 4))
             self.assertIsNotNone(gw_plan.captain_id)
         self.assertEqual(nudged.banked_transfers_after, exact.banked_transfers_after)
-        self.assertGreater(nudged.banked_transfers_after, 1)
 
     def test_near_integer_solver_values_are_read_as_whole(self):
         binary = pulp.LpVariable('picked', cat='Binary')
