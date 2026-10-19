@@ -215,9 +215,9 @@ class MultiPeriodFPLOptimizer:
         return pulp.PULP_CBC_CMD(msg=0, **options)
 
     @classmethod
-    def _solve_from_current_values(cls, prob, solver) -> None:
-        """Re-solve starting from the last solution, with the longer chip time limit."""
-        solver.timeLimit = cls.CHIP_SOLVER_TIME_LIMIT
+    def _solve_from_current_values(cls, prob, solver, time_limit=None) -> None:
+        """Re-solve starting from the variables' current values."""
+        solver.timeLimit = cls.CHIP_SOLVER_TIME_LIMIT if time_limit is None else time_limit
         if isinstance(solver, _HiGHS):
             solver.warm_start = True
             solver.gapRel = cls.CHIP_SOLVER_GAP
@@ -1048,9 +1048,17 @@ class MultiPeriodFPLOptimizer:
         solver = self._multi_period_solver()
         model = build(with_chips=False, free_hit_weeks=set())
         model['prob'].solve(solver)
+        def plant(target, values):
+            for var in target['prob'].variables():
+                var.setInitialValue(values.get(var.name) or 0)
+
+        def solved_value(candidate):
+            return pulp.value(candidate['prob'].objective) if candidate['prob'].status == 1 else None
+
         if optional and model['prob'].status == 1:
-            # Plan without the optional chips first, then build the chip model and start it from
-            # that plan with the chips seeded, so a slow chip search can only improve on it.
+            # Plan without the optional chips first. Chips other than the Free Hit are settled
+            # next, and the Free Hit search starts from that plan. It is kept only when it scores
+            # higher: a Free Hit search that runs out of time cannot replace a better plan.
             chip_free = {var.name: self._snapped(var) for var in model['prob'].variables()}
             no_moves = {t for t in horizon
                         if not any(self._chosen(model['z_in'][(j, t)]) for j in player_ids)}
@@ -1063,16 +1071,26 @@ class MultiPeriodFPLOptimizer:
                 # where a Free Hit can be seeded without moving any.
                 free_hit_weeks.update(weeks[:self.FREE_HIT_CANDIDATE_WEEKS])
                 free_hit_weeks.update([t for t in weeks if t in no_moves][:self.FREE_HIT_CANDIDATE_WEEKS])
+            base_values = chip_free
+            if free_hit_weeks:
+                no_fh = build(with_chips=True, free_hit_weeks=set())
+                plant(no_fh, chip_free)
+                seed_chips(no_fh)
+                self._solve_from_current_values(no_fh['prob'], solver, self.SOLVER_TIME_LIMIT)
+                if solved_value(no_fh) is not None:
+                    model = no_fh
+                    base_values = {var.name: self._snapped(var) for var in no_fh['prob'].variables()}
             chip_model = build(with_chips=True, free_hit_weeks=free_hit_weeks)
-            for var in chip_model['prob'].variables():
-                var.setInitialValue(chip_free.get(var.name) or 0)
+            plant(chip_model, base_values)
             seed_chips(chip_model)
             self._solve_from_current_values(chip_model['prob'], solver)
-            if chip_model['prob'].status == 1:
+            chip_value = solved_value(chip_model)
+            base_value = pulp.value(model['prob'].objective) or 0
+            if chip_value is not None and chip_value >= base_value - 0.05:
                 model = chip_model
             else:
-                print(f"Chip search found no plan ({pulp.LpStatus[chip_model['prob'].status]}); "
-                      f"keeping the chip-free plan")
+                print(f"Free Hit search ({pulp.LpStatus[chip_model['prob'].status]}, {chip_value}) "
+                      f"did not beat the plan without it ({base_value:.1f}); keeping that plan")
         (prob, squad, starter, captain, z_in, z_out, ft_used, hits, ft_banked, itb,
          use, tc, bb, fh_in, fh_out) = (model[k] for k in ('prob', 'squad', 'starter', 'captain', 'z_in', 'z_out', 'ft_used', 'hits', 'ft_banked', 'itb', 'use', 'tc', 'bb', 'fh_in', 'fh_out'))
         solve_time = time.time() - solve_start
