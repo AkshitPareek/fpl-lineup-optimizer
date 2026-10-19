@@ -265,7 +265,7 @@ function HitComparison({ compareData, selectedKey, onSelect }) {
 
 function WeekRail({ plan, selectedIndex, onSelect }) {
   return (
-    <div className="sticky top-0 z-20 -mx-1 px-1 py-2 bg-gray-800/95 backdrop-blur-sm border-b border-gray-700">
+    <div className="-mx-1 px-1 py-2 border-b border-gray-700">
       <div className="flex gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Gameweeks">
         {plan.gameweek_plans.map((week, index) => {
           const moves = Math.max(week.transfers?.in?.length || 0, week.transfers?.out?.length || 0)
@@ -535,17 +535,22 @@ function PlannerView({
           <div className="w-full"><PlannerProgress gameweeks={gameweeks} elapsed={elapsed} hasPrevious={false} /></div>
         </div>
       )}
-      {loading && plan && <PlannerProgress gameweeks={gameweeks} elapsed={elapsed} hasPrevious />}
-      {problem && !loading && <ProblemPanel problem={problem} />}
-      {problem && !loading && plan && (
-        <p className="text-xs text-gray-400 -mt-2">The squad below is the previous plan, not this failed solve.</p>
-      )}
+      {problem && !loading && !plan && <ProblemPanel problem={problem} />}
       {!plan && !loading && !problem && <EmptyPlan />}
       {plan && (
         <>
           <PlanSummary plan={plan} onSelectWeek={onSelectWeek} />
           <HitComparison compareData={compareData} selectedKey={selectedKey} onSelect={onSelectStrategy} />
-          <WeekRail plan={plan} selectedIndex={plan.gameweek_plans[selectedIndex] ? selectedIndex : 0} onSelect={onSelectWeek} />
+          <div className="sticky top-0 z-30 space-y-2 bg-gray-800/95 py-1 backdrop-blur-sm">
+            {loading && <PlannerProgress gameweeks={gameweeks} elapsed={elapsed} hasPrevious />}
+            {problem && !loading && (
+              <>
+                <ProblemPanel problem={problem} />
+                <p className="text-xs text-gray-400">The squad below is the previous plan, not this failed solve.</p>
+              </>
+            )}
+            <WeekRail plan={plan} selectedIndex={plan.gameweek_plans[selectedIndex] ? selectedIndex : 0} onSelect={onSelectWeek} />
+          </div>
           {week && <WeekDetail plan={plan} week={week} viewMode={viewMode} onViewMode={onViewMode} />}
         </>
       )}
