@@ -152,6 +152,20 @@ class ManagerChipTests(unittest.TestCase):
         self.assertEqual(main._chips_used(None, []), [])
 
 
+class PlanningGameweekTests(unittest.TestCase):
+    def test_plans_from_the_next_deadline_while_matches_are_still_on(self):
+        from main import get_active_gameweek, get_planning_gameweek
+        live = [{"id": 7, "is_current": True, "is_next": False, "finished": False},
+                {"id": 8, "is_current": False, "is_next": True, "finished": False}]
+        self.assertEqual(get_planning_gameweek(live), 8)
+        self.assertEqual(get_active_gameweek(live), 7)
+
+    def test_last_gameweek_and_preseason(self):
+        from main import get_planning_gameweek
+        self.assertEqual(get_planning_gameweek([{"id": 38, "is_current": True, "is_next": False, "finished": False}]), 38)
+        self.assertEqual(get_planning_gameweek([{"id": 1, "is_current": False, "is_next": True, "finished": False}]), 1)
+
+
 class ComparisonSummaryTests(unittest.TestCase):
     def test_infeasible_plan_is_not_scored_as_zero(self):
         class Solution:

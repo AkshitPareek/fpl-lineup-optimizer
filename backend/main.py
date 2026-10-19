@@ -56,6 +56,19 @@ def get_active_gameweek(events: list) -> int:
     
     return 1  # Fallback
 
+
+def get_planning_gameweek(events: list) -> int:
+    """
+    The first gameweek a plan can still change: the next deadline.
+
+    FPL keeps a gameweek "current" until its matches are finished, but its
+    deadline has passed, so new transfers already count for the next one.
+    """
+    next_gw = next((e for e in events if e.get("is_next")), None)
+    if next_gw:
+        return next_gw["id"]
+    return get_active_gameweek(events)
+
 app = FastAPI(
     title="FPL Optimizer API",
     description="Advanced FPL lineup optimization with multi-period planning and robust optimization",
@@ -350,7 +363,7 @@ async def optimize_multi_period(request: MultiPeriodRequest):
         
         # Get current gameweek
         events = static_data.get("events", [])
-        current_gw = get_active_gameweek(events)
+        current_gw = get_planning_gameweek(events)
         
         # Get current squad if manager_id provided
         current_squad_ids = []
@@ -468,7 +481,7 @@ async def optimize_compare(request: MultiPeriodRequest):
         
         # Get current gameweek
         events = static_data.get("events", [])
-        current_gw = get_active_gameweek(events)
+        current_gw = get_planning_gameweek(events)
         
         # Get current squad if manager_id provided
         current_squad_ids = []
@@ -744,7 +757,7 @@ async def get_predictions(gameweeks: int = 5):
         
         # Get current gameweek
         events = static_data.get("events", [])
-        current_gw = get_active_gameweek(events)
+        current_gw = get_planning_gameweek(events)
         
         predictor = PointPredictor(
             players_df=players_df,
@@ -1012,7 +1025,7 @@ async def analyze_transfers(request: TransferAnalysisRequest):
         
         # Get current gameweek
         events = static_data.get("events", [])
-        current_gw = get_active_gameweek(events)
+        current_gw = get_planning_gameweek(events)
         
         # Initialize optimizer
         optimizer = MultiPeriodFPLOptimizer(
@@ -1113,7 +1126,7 @@ async def get_team_fixtures(team_id: int, num_gameweeks: int = 6):
         
         # Get current gameweek
         events = static_data.get("events", [])
-        current_gw = get_active_gameweek(events)
+        current_gw = get_planning_gameweek(events)
         
         analyzer = FixtureAnalyzer(
             fixtures=fixtures_data,
@@ -1157,7 +1170,7 @@ async def get_all_fixtures(num_gameweeks: int = 5):
         
         # Get current gameweek
         events = static_data.get("events", [])
-        current_gw = get_active_gameweek(events)
+        current_gw = get_planning_gameweek(events)
         
         analyzer = FixtureAnalyzer(
             fixtures=fixtures_data,
@@ -1221,7 +1234,7 @@ async def get_chip_recommendations(request: ChipAdviceRequest):
         
         # Get current gameweek
         events = static_data.get("events", [])
-        current_gw = get_active_gameweek(events)
+        current_gw = get_planning_gameweek(events)
         
         # Get current squad
         current_squad = request.current_squad
