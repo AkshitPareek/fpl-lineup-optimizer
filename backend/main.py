@@ -179,6 +179,7 @@ class MultiPeriodRequest(BaseModel):
     banked_transfers: int = Field(default=1, ge=0, le=5, description="Currently banked FTs (0-5)")
     chips_used: List[str] = Field(default=[], description="Already used chips")
     chip_to_use: Optional[List] = Field(default=None, description="Chip to activate: [chip_name, gameweek]")
+    optimize_chips: bool = Field(default=True, description="Let the plan choose which remaining chips to play and when")
     robust: bool = Field(default=False, description="Use robust optimization")
     uncertainty_budget: float = Field(default=0.3, ge=0, le=1, description="Robustness parameter Γ")
     strategy: str = Field(default="standard", description="Strategy: standard, differential, template")
@@ -402,7 +403,9 @@ async def optimize_multi_period(request: MultiPeriodRequest):
             robust=request.robust,
             uncertainty_budget=request.uncertainty_budget,
             strategy=request.strategy,
-            selling_prices=selling_prices
+            selling_prices=selling_prices,
+            chip_to_use=tuple(request.chip_to_use) if request.chip_to_use else None,
+            optimize_chips=request.optimize_chips
         )
         
         # Generate transfer explanations
@@ -520,7 +523,8 @@ async def optimize_compare(request: MultiPeriodRequest):
                 uncertainty_budget=request.uncertainty_budget,
                 strategy=request.strategy,
                 max_hits=10,  # Allow hits
-                selling_prices=selling_prices
+                selling_prices=selling_prices,
+                optimize_chips=request.optimize_chips
             )
         
         def run_no_hits():
@@ -536,7 +540,8 @@ async def optimize_compare(request: MultiPeriodRequest):
                 uncertainty_budget=request.uncertainty_budget,
                 strategy=request.strategy,
                 max_hits=0,  # No hits allowed
-                selling_prices=selling_prices
+                selling_prices=selling_prices,
+                optimize_chips=request.optimize_chips
             )
         
         # Run optimizations - smart strategy to minimize runtime
@@ -544,10 +549,11 @@ async def optimize_compare(request: MultiPeriodRequest):
         loop = asyncio.get_event_loop()
         
         try:
-            # Run the with-hits optimization first (45s timeout)
+            # A 15-week plan with chips takes about 45s; with the no-hits run after it, both
+            # timeouts together stay inside gunicorn's 120s.
             solution_with_hits = await asyncio.wait_for(
                 loop.run_in_executor(None, run_with_hits),
-                timeout=45.0
+                timeout=70.0
             )
         except asyncio.TimeoutError:
             print("With-hits optimization timed out")
