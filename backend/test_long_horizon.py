@@ -184,6 +184,12 @@ class LongHorizonTests(unittest.TestCase):
         _, solution = plan(current_gw=37, gameweeks=8)
         self.assertEqual([p.gameweek for p in solution.gameweek_plans], [37, 38])
 
+    def test_solver_stops_within_a_twentieth_of_a_point(self):
+        solver = MultiPeriodFPLOptimizer._multi_period_solver()
+        self.assertAlmostEqual(solver.gapAbs, MultiPeriodFPLOptimizer.SOLVER_ABS_GAP)
+        self.assertLessEqual(solver.gapRel, 1e-4)
+        self.assertAlmostEqual(MultiPeriodFPLOptimizer.SOLVER_ABS_GAP, 0.05)
+
     def test_response_says_whether_the_plan_is_proven(self):
         optimizer, solution = plan(current_gw=5, gameweeks=3)
         self.assertTrue(solution.proven_optimal)

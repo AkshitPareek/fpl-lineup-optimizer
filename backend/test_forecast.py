@@ -3,7 +3,7 @@ import unittest
 from price_forecast import (
     forecast_price_path, guaranteed_sale, infer_purchase_price, sale_proceeds, transfer_elapsed,
 )
-from squad_value import autosub_points, blank_probability, slot_weight
+from squad_value import autosub_points, best_lineup, blank_probability, slot_weight
 
 
 class PriceForecastTests(unittest.TestCase):
@@ -63,6 +63,24 @@ class AutosubTests(unittest.TestCase):
         self.assertAlmostEqual(added, 5.0)
         added = autosub_points([1, 2], [11, 12], xp.get, blank.get, position)
         self.assertAlmostEqual(added, 6.0 + 5.0)
+
+    def test_the_shown_lineup_keeps_the_blankers_so_the_substitutes_play(self):
+        # The two defenders on 2 points will not play. Leaving them in the eleven brings on
+        # the two 9-point midfielders. Starting those midfielders instead drops the blanks,
+        # and the bench then scores nothing.
+        players = list(range(1, 16))
+        xp = {1: 4, 2: 0, 3: 6, 4: 6, 5: 6, 6: 2, 7: 2, 8: 9, 9: 9, 10: 1, 11: 1, 12: 1, 13: 6, 14: 1, 15: 1}
+        blank = {i: 0.0 for i in players}
+        blank[6] = 1.0
+        blank[7] = 1.0
+        position = {1: 1, 2: 1, 3: 2, 4: 2, 5: 2, 6: 2, 7: 2, 8: 3, 9: 3, 10: 3, 11: 3, 12: 3, 13: 4, 14: 4, 15: 4}
+        starters, captain = best_lineup(
+            players, xp.get, blank.get, position.get, {1: 1, 2: 3, 3: 2, 4: 1}, {1: 1, 2: 5, 3: 5, 4: 3})
+        # The blankers stay in, so the bench still comes on. The 9-point players start as well:
+        # a starter's points are counted in full, and the blanks bring on whoever is left.
+        self.assertTrue({6, 7, 8, 9}.issubset(starters))
+        self.assertIn(captain, starters)
+        self.assertEqual(xp[captain], 9)
 
     def test_later_substitutes_only_take_the_overflow(self):
         self.assertEqual(slot_weight(0.25, 1), 0.25)

@@ -20,7 +20,7 @@ from point_predictor import PointPredictor, compute_uncertainty_bounds
 from transfer_explainer import TransferExplainer
 from chip_advisor import ChipAdvisor
 from price_forecast import forecast_price_path, guaranteed_sale, infer_purchase_price, sale_proceeds
-from squad_value import autosub_points, blank_probability
+from squad_value import autosub_points, best_lineup, blank_probability, slot_weight
 
 
 class _HiGHS(pulp.HiGHS):
@@ -138,12 +138,21 @@ class MultiPeriodFPLOptimizer:
     POOL_PER_POSITION_PER_WEEK = 8
     # Per position, so cheap bench fillers that free money for upgrades are always on offer.
     POOL_CHEAPEST_PER_POSITION = 3
+    # Substitutes the search can price: the highest projected, the cheapest, and anyone owned.
+    BENCH_BY_POINTS = 20
+    BENCH_CHEAPEST = 12
     SOLVER_TIME_LIMIT = 15
     # The second solve, which also times the chips, starts from the chip-free plan.
     CHIP_SOLVER_TIME_LIMIT = 25
-    # Chip timing often turns on fractions of a point, so the chip solve searches closer.
-    CHIP_SOLVER_GAP = 0.002
-    SOLVER_GAP = 0.01
+    # Stop once the plan is within a twentieth of a point of the bound. A 1% gap on a
+    # 500-point plan was leaving about five points the search had not checked.
+    SOLVER_ABS_GAP = 0.05
+    CHIP_SOLVER_ABS_GAP = 0.05
+    SOLVER_GAP = 1e-6
+    CHIP_SOLVER_GAP = 1e-6
+    # Re-solve once when the lineup's blanks differ from the squad the weights came from.
+    WEIGHT_REFRESH_TOLERANCE = 0.05
+    WEIGHT_REFRESH_TIME_LIMIT = 5
 
     CHIP_NAMES = ('wildcard', 'free_hit', 'bench_boost', 'triple_captain')
     CHIP_ALIASES = {'freehit': 'free_hit', 'bboost': 'bench_boost', '3xc': 'triple_captain'}
@@ -209,7 +218,7 @@ class MultiPeriodFPLOptimizer:
     def _multi_period_solver(cls):
         """HiGHS proves 12-15 week plans in seconds where CBC runs out of time."""
         options = dict(timeLimit=cls.SOLVER_TIME_LIMIT, gapRel=cls.SOLVER_GAP, threads=1)
-        highs = _HiGHS(msg=False, **options)
+        highs = _HiGHS(msg=False, gapAbs=cls.SOLVER_ABS_GAP, **options)
         if highs.available():
             return highs
         return pulp.PULP_CBC_CMD(msg=0, **options)
@@ -221,6 +230,7 @@ class MultiPeriodFPLOptimizer:
         if isinstance(solver, _HiGHS):
             solver.warm_start = True
             solver.gapRel = cls.CHIP_SOLVER_GAP
+            solver.gapAbs = cls.CHIP_SOLVER_ABS_GAP
         else:
             solver.optionsDict['warmStart'] = True
             solver.optionsDict['gapRel'] = cls.CHIP_SOLVER_GAP
@@ -295,16 +305,17 @@ class MultiPeriodFPLOptimizer:
         return blank_probability(player, gameweek, self.current_gw)
 
     def _autosub_terms(self, prob, t, player_ids, on_pitch, starter, get_attr,
-                       bench_pool, outfield_weight, gk_weight, boost):
+                       bench_pool, outfield_mean, gk_weight, boost):
         """
         Expected points from automatic substitutions in gameweek t.
 
-        `outfield_weight` is how often the first outfield substitute plays, and `gk_weight`
-        how often the substitute goalkeeper does, both from the current squad's expected
-        blanks. The search chooses who sits in those spots. A weight that depended on the
-        chosen starters made the bound count blanks the plan never has. Later substitutes
-        are counted when the plan is valued. A Bench Boost week scores the whole bench, so
-        these terms are zero then.
+        `outfield_mean` is how many outfield starters are expected to blank, and `gk_weight`
+        how often the substitute goalkeeper plays. The first blank uses the first substitute,
+        the next blank the second, up to three, which is the same weighting the plan is scored
+        with. The bench pool is who can earn those points: high projections, cheap players, and
+        the current squad. The weights come from a lineup, not from the starters the search is
+        choosing: a weight that depended on the chosen starters made the bound count blanks the
+        plan never has. A Bench Boost week scores the whole bench, so these terms are zero then.
         """
         terms = []
         # boost is the Bench Boost variable, or None in a week the chip cannot be played.
@@ -338,20 +349,26 @@ class MultiPeriodFPLOptimizer:
             if shares:
                 prob += pulp.lpSum(shares) <= 1 - chip
 
-        candidates = sorted(j for j in bench_pool if get_attr(j, 'element_type') != 1 and outfield_weight > 0)
-        if not candidates:
+        slot_weights = [(slot, weight) for slot, weight in enumerate(
+            slot_weight(outfield_mean, slot) for slot in (1, 2, 3)) if weight > 1e-9]
+        candidates = sorted(
+            j for j in bench_pool
+            if get_attr(j, 'element_type') != 1 and get_attr(j, f'xp_gw{t}') > 0)
+        if not slot_weights or not candidates:
             return terms
-        first = pulp.LpVariable.dicts(f"first_{t}", candidates, cat='Binary')
-        prob += pulp.lpSum(first[j] for j in candidates) <= 1
-        shares = []
+        slots = []
+        for slot, weight in slot_weights:
+            chosen = pulp.LpVariable.dicts(f"sub{slot}_{t}", candidates, cat='Binary')
+            prob += pulp.lpSum(chosen[j] for j in candidates) <= 1
+            shares = []
+            for j in candidates:
+                xp = get_attr(j, f'xp_gw{t}')
+                terms.append(weight * xp * without_chip(chosen[j], shares, f"sub{slot}off_{j}_{t}"))
+            if shares:
+                prob += pulp.lpSum(shares) <= 1 - chip
+            slots.append(chosen)
         for j in candidates:
-            prob += first[j] <= benched(j)
-            xp = get_attr(j, f'xp_gw{t}')
-            if xp <= 0:
-                continue
-            terms.append(outfield_weight * xp * without_chip(first[j], shares, f"suboff_{j}_{t}"))
-        if shares:
-            prob += pulp.lpSum(shares) <= 1 - chip
+            prob += pulp.lpSum(slots[s][j] for s in range(len(slots))) <= benched(j)
         return terms
 
     @classmethod
@@ -852,8 +869,8 @@ class MultiPeriodFPLOptimizer:
         outfield_ids = [j for j in player_ids if get_attr(j, 'element_type') != 1]
         bench_pool = {}
         for t in horizon:
-            by_points = sorted(outfield_ids, key=lambda j, gw=t: -get_attr(j, f'xp_gw{gw}'))[:12]
-            by_price = sorted(outfield_ids, key=lambda j: get_attr(j, 'now_cost'))[:6]
+            by_points = sorted(outfield_ids, key=lambda j, gw=t: -get_attr(j, f'xp_gw{gw}'))[:self.BENCH_BY_POINTS]
+            by_price = sorted(outfield_ids, key=lambda j: get_attr(j, 'now_cost'))[:self.BENCH_CHEAPEST]
             owned = [j for j in current_set if j in player_ids and get_attr(j, 'element_type') != 1]
             bench_pool[t] = set(by_points) | set(by_price) | set(owned)
 
@@ -884,12 +901,12 @@ class MultiPeriodFPLOptimizer:
             return chosen
 
         squad_ids = [j for j in player_ids if j in current_set]
-        outfield_weight, gk_weight = {}, {}
+        outfield_mean, gk_weight = {}, {}
         if len(squad_ids) == 15:
             for t in horizon:
                 xi = best_xi(squad_ids, t)
-                outfield_weight[t] = min(1.0, sum(
-                    blank_of(j, t) for j in xi if get_attr(j, 'element_type') != 1))
+                outfield_mean[t] = sum(
+                    blank_of(j, t) for j in xi if get_attr(j, 'element_type') != 1)
                 keeper = next((j for j in xi if get_attr(j, 'element_type') == 1), None)
                 gk_weight[t] = blank_of(keeper, t) if keeper is not None else 0.0
 
@@ -1121,7 +1138,7 @@ class MultiPeriodFPLOptimizer:
 
                 objective_terms.extend(self._autosub_terms(
                     prob, t, player_ids, on_pitch, starter, get_attr,
-                    bench_pool[t], outfield_weight.get(t, 0.0), gk_weight.get(t, 0.0),
+                    bench_pool[t], outfield_mean.get(t, 0.0), gk_weight.get(t, 0.0),
                     use.get(('bench_boost', t)),
                 ))
             prob += pulp.lpSum(objective_terms)
@@ -1298,6 +1315,8 @@ class MultiPeriodFPLOptimizer:
         def solved_value(candidate):
             return pulp.value(candidate['prob'].objective) if candidate['prob'].status == 1 else None
 
+        active_chips = False
+        active_free_hit_weeks = set()
         if optional and model['prob'].status == 1:
             # Plan without the optional chips first. Chips other than the Free Hit are settled
             # next, and the Free Hit search starts from that plan. It is kept only when it scores
@@ -1322,6 +1341,7 @@ class MultiPeriodFPLOptimizer:
                 self._solve_from_current_values(no_fh['prob'], solver, self.SOLVER_TIME_LIMIT)
                 if solved_value(no_fh) is not None:
                     model = no_fh
+                    active_chips = True
                     base_values = {var.name: self._snapped(var) for var in no_fh['prob'].variables()}
             chip_model = build(with_chips=True, free_hit_weeks=free_hit_weeks)
             plant(chip_model, base_values)
@@ -1331,9 +1351,101 @@ class MultiPeriodFPLOptimizer:
             base_value = pulp.value(model['prob'].objective) or 0
             if chip_value is not None and chip_value >= base_value - 0.05:
                 model = chip_model
+                active_chips = True
+                active_free_hit_weeks = set(free_hit_weeks)
             else:
                 print(f"Free Hit search ({pulp.LpStatus[chip_model['prob'].status]}, {chip_value}) "
                       f"did not beat the plan without it ({base_value:.1f}); keeping that plan")
+
+        def playing(m, j, t):
+            in_squad = self._chosen(m['squad'][(j, t)])
+            chip = next((c for c in self.CHIP_NAMES
+                         if (c, t) in m['use'] and self._chosen(m['use'][(c, t)])), None)
+            if chip == 'free_hit':
+                return (in_squad and not self._chosen(m['fh_out'][(j, t)])) or self._chosen(m['fh_in'][(j, t)])
+            return in_squad
+
+        def chip_played_in(m, t):
+            return next((c for c in self.CHIP_NAMES
+                         if (c, t) in m['use'] and self._chosen(m['use'][(c, t)])), None)
+
+        def scored_xi(m, t):
+            """Best lineup of the squad that plays this week, under the points the plan reports."""
+            chip = chip_played_in(m, t)
+            playing_ids = [j for j in player_ids if playing(m, j, t)]
+            picked = best_lineup(
+                playing_ids,
+                lambda j, gw=t: get_attr(j, f'xp_gw{gw}'),
+                lambda j, gw=t: blank_of(j, gw),
+                lambda j: get_attr(j, 'element_type'),
+                self.STARTER_MIN, self.STARTER_MAX,
+                bench_boost=chip == 'bench_boost',
+            )
+            if picked is not None:
+                starters, captain = picked
+                return list(starters), captain, chip
+            starters = [j for j in playing_ids if self._chosen(m['starter'][(j, t)])]
+            captain = next((j for j in starters if self._chosen(m['captain'][(j, t)])), None)
+            return starters, captain, chip
+
+        def lineup_blanks(m):
+            means, gks = {}, {}
+            for t in horizon:
+                xi, _, _ = scored_xi(m, t)
+                means[t] = sum(blank_of(j, t) for j in xi if get_attr(j, 'element_type') != 1)
+                keeper = next((j for j in xi if get_attr(j, 'element_type') == 1), None)
+                gks[t] = blank_of(keeper, t) if keeper is not None else 0.0
+            return means, gks
+
+        def weight_shift(old, new):
+            return max((abs(old.get(t, 0.0) - new.get(t, 0.0)) for t in horizon), default=0.0)
+
+        def exact_plan_value(m):
+            """The points the plan is scored on: lineup, captain, substitutes, hits, chip value given up."""
+            if m['prob'].status != 1:
+                return None
+            total = 0.0
+            for t in horizon:
+                starters, captain, chip = scored_xi(m, t)
+                playing_ids = [j for j in player_ids if playing(m, j, t)]
+                bench = [j for j in playing_ids if j not in starters]
+                multiplier = 3 if chip == 'triple_captain' else 2
+                total += sum(get_attr(j, f'xp_gw{t}') * (multiplier if j == captain else 1) for j in starters)
+                if chip == 'bench_boost':
+                    total += sum(get_attr(j, f'xp_gw{t}') for j in bench)
+                else:
+                    bench.sort(key=lambda j, gw=t: -get_attr(j, f'xp_gw{gw}'))
+                    total += autosub_points(
+                        starters, bench, lambda j, gw=t: get_attr(j, f'xp_gw{gw}'),
+                        lambda j, gw=t: blank_of(j, gw), lambda j: get_attr(j, 'element_type'))
+                total -= self.TRANSFER_PENALTY * self._count(m['hits'][t])
+                if chip:
+                    total -= chip_cost.get((chip, self._half(t)), 0.0)
+            return total
+
+        if model['prob'].status == 1:
+            # The weights were taken from the squad held now. If the plan's own lineup blanks
+            # at a different rate, solve once more so the substitutes are priced for that lineup.
+            revised_mean, revised_gk = lineup_blanks(model)
+            mean_shift = weight_shift(outfield_mean, revised_mean)
+            gk_shift = weight_shift(gk_weight, revised_gk)
+            if mean_shift > self.WEIGHT_REFRESH_TOLERANCE or gk_shift > self.WEIGHT_REFRESH_TOLERANCE:
+                print(f"Refreshing autosub weights from the plan's lineup "
+                      f"(outfield {mean_shift:.2f}, keeper {gk_shift:.2f})")
+                outfield_mean.clear()
+                outfield_mean.update(revised_mean)
+                gk_weight.clear()
+                gk_weight.update(revised_gk)
+                incumbent_value = exact_plan_value(model)
+                incumbent = {var.name: self._snapped(var) for var in model['prob'].variables()}
+                refreshed = build(with_chips=active_chips, free_hit_weeks=set(active_free_hit_weeks))
+                plant(refreshed, incumbent)
+                self._solve_from_current_values(
+                    refreshed['prob'], solver, self.WEIGHT_REFRESH_TIME_LIMIT)
+                refreshed_value = exact_plan_value(refreshed)
+                if refreshed_value is not None and (
+                        incumbent_value is None or refreshed_value >= incumbent_value - 0.05):
+                    model = refreshed
         (prob, squad, starter, captain, z_in, z_out, ft_used, hits, ft_banked, itb,
          use, tc, bb, fh_in, fh_out) = (model[k] for k in ('prob', 'squad', 'starter', 'captain', 'z_in', 'z_out', 'ft_used', 'hits', 'ft_banked', 'itb', 'use', 'tc', 'bb', 'fh_in', 'fh_out'))
         solve_time = time.time() - solve_start
@@ -1426,6 +1538,25 @@ class MultiPeriodFPLOptimizer:
                         'element_type': int(get_attr(j, 'element_type'))
                     })
             
+            # The squad is what the search decided. Among lineups of that squad, show the one
+            # the scoring rule ranks first. Two lineups can tie in the search when a substitute
+            # is paid the same as a starter.
+            scored = best_lineup(
+                [p['id'] for p in gw_squad],
+                lambda i, gw=t: attrs_by_id[i].get(f'xp_gw{gw}', 0),
+                lambda i, gw=t: blank_of(i, gw),
+                lambda i: attrs_by_id[i].get('element_type', 0),
+                self.STARTER_MIN, self.STARTER_MAX,
+                bench_boost=chip_played == 'bench_boost',
+            )
+            if scored is not None:
+                starter_ids, gw_captain_id = scored
+                for player in gw_squad:
+                    player['is_starter'] = player['id'] in starter_ids
+                    player['is_captain'] = player['id'] == gw_captain_id
+                gw_starters = [player for player in gw_squad if player['is_starter']]
+                gw_bench = [player for player in gw_squad if not player['is_starter']]
+
             # Sort by position for display
             gw_starters.sort(key=lambda p: (p['element_type'], -p['expected_points']))
             gw_bench.sort(key=lambda p: -p['expected_points'])
