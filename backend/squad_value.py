@@ -8,6 +8,8 @@ used for the first blank, the second for the next, each at most once. A starter 
 as certain not to play therefore brings the first substitute on for certain.
 """
 
+from itertools import combinations
+
 DOUBT_RECOVERY_PER_GW = 0.5
 # Averaging this many minutes a gameweek means the player appears.
 APPEARANCE_MINUTES = 60
@@ -74,3 +76,39 @@ def autosub_points(starters, bench, xp, blank, position) -> float:
     for slot, player in enumerate(out_bench[:3], start=1):
         added += slot_weight(mean, slot) * xp(player)
     return added
+
+
+def best_lineup(players, xp, blank, position, starter_min, starter_max, bench_boost=False):
+    """
+    The starting eleven and captain that score the most for this fixed squad.
+
+    The search can be indifferent between two lineups when a substitute is paid the same
+    as a starter. The plan shows the lineup that the scoring rule itself ranks first.
+    A Bench Boost scores the whole bench either way, so only the starters and captain matter.
+    """
+    ids = list(players)
+    if len(ids) != 15:
+        return None
+    best = None
+    best_score = None
+    for combo in combinations(ids, 11):
+        counts = {}
+        legal = True
+        for j in combo:
+            pos = position(j)
+            counts[pos] = counts.get(pos, 0) + 1
+            if counts[pos] > starter_max[pos]:
+                legal = False
+                break
+        if not legal or any(counts.get(pos, 0) < starter_min[pos] for pos in starter_min):
+            continue
+        captain = max(combo, key=lambda j: xp(j))
+        score = sum(xp(j) for j in combo) + xp(captain)
+        if not bench_boost:
+            bench = [j for j in ids if j not in combo]
+            bench.sort(key=lambda j: -xp(j))
+            score += autosub_points(combo, bench, xp, blank, position)
+        if best_score is None or score > best_score:
+            best_score = score
+            best = (set(combo), captain)
+    return best
