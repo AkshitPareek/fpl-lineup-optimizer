@@ -275,19 +275,7 @@ class PointPredictor:
         
         total_xg = 0
         for fix in fixtures:
-            opponent = fix['opponent']
-            is_home = fix['is_home']
-            
-            # Adjust xG based on opponent defense (higher strength = fewer goals expected)
-            if is_home:
-                defense_strength = self.team_defense_away.get(opponent, 1000) / 1000
-            else:
-                defense_strength = self.team_defense_home.get(opponent, 1000) / 1000
-            
-            # Dampened fixture multiplier (was 0.5-1.5, now 0.85-1.15)
-            multiplier = 1.0 + (1.0 - defense_strength) * 0.15
-            adjusted_xg = xg_per_90 * max(0.85, min(1.15, multiplier))
-            total_xg += adjusted_xg
+            total_xg += xg_per_90 * self.fixture_multiplier(fix['opponent'], fix['is_home'])
         
         goal_points = total_xg * self.POINTS_GOAL.get(element_type, 4)
         # Cap at reasonable maximum (~1.5 goals worth per match)
@@ -310,17 +298,7 @@ class PointPredictor:
         
         total_xa = 0
         for fix in fixtures:
-            opponent = fix['opponent']
-            is_home = fix['is_home']
-            
-            if is_home:
-                defense_strength = self.team_defense_away.get(opponent, 1000) / 1000
-            else:
-                defense_strength = self.team_defense_home.get(opponent, 1000) / 1000
-            
-            # Dampened fixture multiplier
-            multiplier = 1.0 + (1.0 - defense_strength) * 0.15
-            total_xa += xa_per_90 * max(0.85, min(1.15, multiplier))
+            total_xa += xa_per_90 * self.fixture_multiplier(fix['opponent'], fix['is_home'])
         
         assist_points = total_xa * self.POINTS_ASSIST
         # Cap at reasonable maximum (~2 assists worth per match)
@@ -546,15 +524,49 @@ class PointPredictor:
         games = max(num('starts'), num('minutes') / 90)
         return (games * current + self.PRIOR_SEASON_GAMES * prior) / (games + self.PRIOR_SEASON_GAMES)
 
+    def fixture_multiplier(self, opponent: int, is_home: bool) -> float:
+        """How many times a neutral match this fixture is worth, from the opponent's defence.
+
+        Kept inside 0.85 to 1.15 so one fixture cannot dominate the season rate.
+        """
+        if is_home:
+            defense_strength = self.team_defense_away.get(opponent, 1000) / 1000
+        else:
+            defense_strength = self.team_defense_home.get(opponent, 1000) / 1000
+        raw = 1.0 + (1.0 - defense_strength) * 0.15
+        return max(0.85, min(1.15, raw))
+
+    def fixture_factor(self, team_id: int, gameweek: int) -> float:
+        """Average fixture multiplier for this team's matches in the gameweek."""
+        fixtures = self.fixture_map.get((team_id, gameweek), [])
+        if not fixtures:
+            return 1.0
+        return sum(self.fixture_multiplier(fix['opponent'], fix['is_home']) for fix in fixtures) / len(fixtures)
+
     def average_minutes_per_gameweek(self, player: pd.Series) -> float:
-        """Last four gameweeks when known; live bootstrap data only has season minutes."""
+        """Last four gameweeks when known; otherwise this season, or last season if he has barely played."""
         recent = player.get('recent_4_minutes')
         if recent is not None and not pd.isna(recent):
             return float(recent) / 4.0
+        minutes = float(player.get('minutes', 0) or 0)
+        if minutes < self.MIN_MINUTES_FOR_RATES:
+            prior_minutes = player.get('prior_minutes')
+            try:
+                prior_minutes = 0.0 if prior_minutes is None or pd.isna(prior_minutes) else float(prior_minutes)
+            except (TypeError, ValueError):
+                prior_minutes = 0.0
+            if prior_minutes >= self.MIN_PRIOR_MINUTES:
+                prior_starts = player.get('prior_starts')
+                try:
+                    prior_starts = 0.0 if prior_starts is None or pd.isna(prior_starts) else float(prior_starts)
+                except (TypeError, ValueError):
+                    prior_starts = 0.0
+                games = max(prior_starts, prior_minutes / 90.0, 1.0)
+                return min(90.0, prior_minutes / games)
         played_gameweeks = self.current_gw - 1
         if played_gameweeks < 1:
             return 90.0
-        return float(player.get('minutes', 0) or 0) / played_gameweeks
+        return minutes / played_gameweeks
 
     def availability(self, player: pd.Series, gameweek: int) -> float:
         """Chance of playing in `gameweek`; doubts fade over later weeks, ruled-out players stay out."""
@@ -595,10 +607,11 @@ class PointPredictor:
         
         model_total = sum(v for k, v in breakdown.items() if k not in ('regression_factor', 'fixtures'))
         
-        # Dynamic calibration factor - decreases as season progresses
-        # GW1: 0.85, GW19: 0.65, GW38: 0.50
-        # This compensates for xG/xA accumulation making predictions drift upward
-        dynamic_calibration = max(0.50, 0.85 - (gameweek - 1) * 0.01)
+        # Season-progress calibration. It depends on how much of the season has been
+        # played, not on which future week is being scored. Later weeks in one plan
+        # keep the same scale, so a good fixture in week 8 is not cheaper than the
+        # same fixture this week.
+        dynamic_calibration = max(0.50, 0.85 - (self.current_gw - 1) * 0.01)
         
         model_total *= dynamic_calibration
         breakdown['calibration'] = dynamic_calibration
@@ -609,7 +622,7 @@ class PointPredictor:
         blended_ppg = self.blended_points_per_game(player)
         breakdown['blended_ppg'] = blended_ppg
         total = (self.MODEL_WEIGHT * model_total
-                 + (1 - self.MODEL_WEIGHT) * blended_ppg * fixture_count)
+                 + (1 - self.MODEL_WEIGHT) * blended_ppg * fixture_count * self.fixture_factor(player['team'], gameweek))
         
         # Minutes decay: players averaging under 70 minutes get lower predictions
         avg_recent_mins = self.average_minutes_per_gameweek(player)

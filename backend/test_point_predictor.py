@@ -49,6 +49,35 @@ class BlendedPointsPerGameTests(unittest.TestCase):
         self.assertEqual(make_predictor([player()]).blended_points_per_game(lucky), 4.75)
 
 
+class ProjectionShapeTests(unittest.TestCase):
+    def test_a_later_week_with_the_same_fixture_is_not_discounted(self):
+        predictor = make_predictor([player()], current_gw=7)
+        now = predictor.predict_gameweek(pd.Series(player()), 7)[0]
+        later = predictor.predict_gameweek(pd.Series(player()), 14)[0]
+        self.assertAlmostEqual(now, later)
+
+    def test_a_weaker_defence_raises_the_points_per_game_half(self):
+        mid = pd.Series(player())
+        easy = make_predictor([player()])
+        hard = make_predictor([player()])
+        easy.MODEL_WEIGHT = 0
+        hard.MODEL_WEIGHT = 0
+        easy.team_defense_away[2] = 700
+        hard.team_defense_away[2] = 1500
+        self.assertGreater(easy.predict_gameweek(mid, 7)[0], hard.predict_gameweek(mid, 7)[0])
+
+    def test_a_new_signing_keeps_last_season_minutes(self):
+        predictor = make_predictor([player()])
+        signing = pd.Series(player(minutes=0, starts=0, points_per_game="0.0",
+                                   prior_points=152, prior_minutes=3420, prior_starts=38))
+        fringe = pd.Series(player(minutes=27, starts=0))
+        self.assertAlmostEqual(predictor.average_minutes_per_gameweek(signing), 90.0)
+        self.assertGreater(
+            predictor.predict_gameweek(signing, 7)[0],
+            predictor.predict_gameweek(fringe, 7)[0],
+        )
+
+
 class FormIndependenceTests(unittest.TestCase):
     def test_a_cold_month_does_not_cut_the_projection(self):
         predictor = make_predictor([player()])
