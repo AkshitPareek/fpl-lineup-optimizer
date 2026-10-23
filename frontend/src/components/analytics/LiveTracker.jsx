@@ -1,5 +1,26 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
+import { Card, CardHeader, LoadingState, SectionLabel } from '../ui'
+import { IconPound, IconTrendDown, IconTrendUp } from '../icons'
+
+function MoverList({ players, empty, tone }) {
+    if (!players.length) return <p className="text-xs text-fg-3 italic py-2">{empty}</p>
+    return (
+        <ul className="divide-y divide-ink-700/60">
+            {players.slice(0, 5).map((p, i) => (
+                <li key={i} className="flex items-center justify-between py-2 text-sm tabular">
+                    <span className="text-fg">{p.web_name}</span>
+                    <span className="text-right">
+                        <span className="block text-xs text-fg-2">£{p.current_price}m</span>
+                        <span className={`block text-[11px] ${tone === 'up' ? 'text-good' : 'text-bad'}`}>
+                            {tone === 'up' ? '+' : ''}{p.net_transfers.toLocaleString()} net
+                        </span>
+                    </span>
+                </li>
+            ))}
+        </ul>
+    )
+}
 
 function LiveTracker() {
     const [summary, setSummary] = useState(null)
@@ -27,112 +48,61 @@ function LiveTracker() {
         fetchData()
     }, [])
 
-    if (loading) return <div className="text-center p-8 text-gray-500">Connecting to FPL Live API...</div>
+    if (loading) return <Card className="flex min-h-[320px]"><LoadingState title="Connecting to the FPL live API" /></Card>
 
     return (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            {/* Live GW Summary */}
-            <div className="lg:col-span-2 bg-gray-800 rounded-xl p-6 border border-gray-700">
-                <div className="flex justify-between items-center mb-6">
-                    <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                        <span className="animate-pulse text-red-500">●</span> Live Gameweek {summary?.gameweek}
-                    </h3>
-                    <span className="text-xs bg-gray-700 px-2 py-1 rounded text-gray-300">Updated: Just now</span>
-                </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
+            <Card className="lg:col-span-2 p-5">
+                <CardHeader
+                    title={<span className="flex items-center gap-2"><span className="h-2 w-2 rounded-full bg-fpl-pink animate-pulse" />Gameweek {summary?.gameweek ?? '–'}</span>}
+                    subtitle="Top performers and transfer trends"
+                />
 
-                {/* Top Scorers */}
-                <h4 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">Top Performers</h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 mb-8">
+                <SectionLabel className="mt-5 mb-2.5">Top performers</SectionLabel>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
                     {summary?.top_scorers?.slice(0, 6).map((player, idx) => (
-                        <div key={idx} className="bg-gray-700/50 p-3 rounded-lg flex justify-between items-center border border-gray-700">
-                            <div className="flex items-center gap-2">
-                                <div className="w-6 h-6 rounded-full bg-gray-600 flex items-center justify-center text-xs font-bold">
-                                    {idx + 1}
-                                </div>
-                                <div>
-                                    <p className="font-bold text-sm text-white">{player.web_name}</p>
-                                    <p className="text-[10px] text-gray-400">{player.team}</p>
+                        <div key={idx} className="flex items-center justify-between rounded-xl bg-ink-900/70 px-3 py-2.5 ring-1 ring-inset ring-ink-700/70">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                                <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-ink-700 text-[11px] font-semibold text-fg-2 tabular">{idx + 1}</span>
+                                <div className="min-w-0">
+                                    <p className="truncate text-sm font-medium text-fg">{player.web_name}</p>
+                                    <p className="text-[11px] text-fg-3">{player.team}</p>
                                 </div>
                             </div>
-                            <div className="text-fpl-green font-bold text-lg">{player.event_points}</div>
+                            <span className="font-display text-lg font-semibold text-fpl-green tabular">{player.event_points}</span>
                         </div>
                     ))}
                 </div>
 
-                {/* Transfer Trends */}
-                <h4 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-3">Transfer Trends</h4>
-                <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-green-900/10 p-3 rounded border border-green-900/30">
-                        <p className="text-xs text-green-400 font-bold mb-2">Most Transferred In</p>
-                        {summary?.most_transferred_in?.slice(0, 3).map((p, i) => (
-                            <div key={i} className="flex justify-between text-xs py-1">
-                                <span>{p.web_name}</span>
-                                <span className="text-green-400">+{p.transfers_in.toLocaleString()}</span>
-                            </div>
-                        ))}
-                    </div>
-                    <div className="bg-red-900/10 p-3 rounded border border-red-900/30">
-                        <p className="text-xs text-red-400 font-bold mb-2">Most Transferred Out</p>
-                        {summary?.most_transferred_out?.slice(0, 3).map((p, i) => (
-                            <div key={i} className="flex justify-between text-xs py-1">
-                                <span>{p.web_name}</span>
-                                <span className="text-red-400">-{p.transfers_out.toLocaleString()}</span>
-                            </div>
-                        ))}
-                    </div>
+                <SectionLabel className="mt-6 mb-2.5">Transfer trends</SectionLabel>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {[
+                        { title: 'Most transferred in', list: summary?.most_transferred_in, key: 'transfers_in', up: true },
+                        { title: 'Most transferred out', list: summary?.most_transferred_out, key: 'transfers_out', up: false },
+                    ].map(col => (
+                        <div key={col.title} className="rounded-xl bg-ink-900/60 p-3 ring-1 ring-inset ring-ink-700/70">
+                            <p className="flex items-center gap-1.5 text-xs font-semibold text-fg-2 mb-1.5">
+                                {col.up ? <IconTrendUp size={14} className="text-good" /> : <IconTrendDown size={14} className="text-bad" />}
+                                {col.title}
+                            </p>
+                            {col.list?.slice(0, 3).map((p, i) => (
+                                <div key={i} className="flex justify-between py-1 text-xs tabular">
+                                    <span className="text-fg">{p.web_name}</span>
+                                    <span className="text-fg-2">{col.up ? '+' : '−'}{p[col.key].toLocaleString()}</span>
+                                </div>
+                            ))}
+                        </div>
+                    ))}
                 </div>
-            </div>
+            </Card>
 
-            {/* Market Watch (Price Changes) */}
-            <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
-                <h3 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
-                    <span>💷</span> Market Watch
-                </h3>
-
-                <div className="space-y-6">
-                    <div>
-                        <h4 className="text-xs font-bold text-green-400 uppercase mb-2 flex items-center gap-1">
-                            <span>▲</span> Likely Risers
-                        </h4>
-                        {risers.length > 0 ? (
-                            <div className="space-y-2">
-                                {risers.slice(0, 5).map((p, i) => (
-                                    <div key={i} className="flex justify-between items-center text-sm bg-gray-700/30 p-2 rounded">
-                                        <span>{p.web_name}</span>
-                                        <div className="text-right">
-                                            <div className="text-xs text-gray-400">£{p.current_price}m</div>
-                                            <div className="text-[10px] text-green-400">+{p.net_transfers.toLocaleString()} net</div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        ) : (
-                            <p className="text-xs text-gray-500 italic">No imminent price rises detected</p>
-                        )}
-                    </div>
-
-                    <div>
-                        <h4 className="text-xs font-bold text-red-400 uppercase mb-2 flex items-center gap-1">
-                            <span>▼</span> Likely Fallers
-                        </h4>
-                        {fallers.length > 0 ? (
-                            <div className="space-y-2">
-                                {fallers.slice(0, 5).map((p, i) => (
-                                    <div key={i} className="flex justify-between items-center text-sm bg-gray-700/30 p-2 rounded">
-                                        <span>{p.web_name}</span>
-                                        <div className="text-right">
-                                            <div className="text-xs text-gray-400">£{p.current_price}m</div>
-                                            <div className="text-[10px] text-red-400">{p.net_transfers.toLocaleString()} net</div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        ) : (
-                            <p className="text-xs text-gray-500 italic">No imminent price falls detected</p>
-                        )}
-                    </div>
-                </div>
-            </div>
+            <Card className="p-5">
+                <CardHeader icon={<IconPound />} title="Price watch" subtitle="Net transfer pressure since the last change" />
+                <SectionLabel className="mt-5 mb-1 flex items-center gap-1.5"><IconTrendUp size={13} className="text-good" />Likely risers</SectionLabel>
+                <MoverList players={risers} tone="up" empty="No imminent price rises detected" />
+                <SectionLabel className="mt-5 mb-1 flex items-center gap-1.5"><IconTrendDown size={13} className="text-bad" />Likely fallers</SectionLabel>
+                <MoverList players={fallers} tone="down" empty="No imminent price falls detected" />
+            </Card>
         </div>
     )
 }

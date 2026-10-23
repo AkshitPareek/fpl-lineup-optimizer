@@ -1,143 +1,138 @@
-import React from 'react'
+import { useState } from 'react'
+import { cx } from '../lib/cx'
+import { num, positionOf, price, shirtUrl } from '../lib/format'
+
+const ROWS = [1, 2, 3, 4] // GKP, DEF, MID, FWD
+
+function Shirt({ player, small }) {
+  const [failed, setFailed] = useState(false)
+  const size = small ? 'w-9 sm:w-10' : 'w-10 sm:w-14'
+  if (failed || !player.team_code) {
+    return (
+      <svg viewBox="0 0 64 64" className={cx(size, 'drop-shadow-[0_6px_8px_rgb(0_0_0/0.45)]')} aria-hidden="true">
+        <path d="M18 10 6 22l8 9 4-3v26h28V28l4 3 8-9-12-12h-8a6 6 0 0 1-12 0h-8Z" fill={player.element_type === 1 ? '#ffc94d' : '#ff2e7e'} stroke="rgb(255 255 255 / 0.6)" strokeWidth="1.5" />
+      </svg>
+    )
+  }
+  return (
+    <img
+      src={shirtUrl(player)}
+      alt=""
+      loading="lazy"
+      onError={() => setFailed(true)}
+      className={cx(size, 'object-contain drop-shadow-[0_6px_8px_rgb(0_0_0/0.45)]')}
+    />
+  )
+}
+
+function PlayerToken({ player, small = false, benchIndex }) {
+  const xp = player.expected_points
+  return (
+    <div className={cx('group relative flex flex-col items-center', small ? 'w-[68px] sm:w-20' : 'w-[62px] sm:w-[88px]')}>
+      {benchIndex != null && (
+        <span className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-fg-3">{benchIndex === 0 ? 'GK' : `Sub ${benchIndex}`}</span>
+      )}
+      <div className="relative">
+        <Shirt player={player} small={small} />
+        {(player.is_captain || player.is_vice_captain) && (
+          <span
+            className={cx(
+              'absolute -right-2 -top-1 grid h-5 w-5 place-items-center rounded-full text-[10px] font-bold ring-2 ring-ink-950',
+              player.is_captain ? 'bg-fpl-green text-ink-950' : 'bg-fg text-ink-950',
+            )}
+            title={player.is_captain ? 'Captain' : 'Vice-captain'}
+          >
+            {player.is_captain ? 'C' : 'V'}
+          </span>
+        )}
+      </div>
+
+      <div className="mt-1 w-full overflow-hidden rounded-md shadow-[0_6px_14px_-6px_rgb(0_0_0/0.6)]">
+        <div className="truncate bg-fg px-1 py-[3px] text-center text-[10px] sm:text-[11px] font-semibold leading-tight text-ink-950">
+          {player.web_name}
+        </div>
+        <div className="flex items-center justify-center gap-1 bg-fpl-purple px-1 py-[2px] text-[10px] sm:text-[11px] text-fg tabular">
+          <span className="font-semibold">{num(xp, 1)}</span>
+          <span className="text-[9px] text-fg-3">xP</span>
+        </div>
+      </div>
+
+      {/* Hover card */}
+      <div className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-2 w-44 -translate-x-1/2 rounded-xl bg-ink-950/95 p-3 text-left opacity-0 shadow-xl ring-1 ring-ink-700 transition group-hover:opacity-100">
+        <div className="text-sm font-semibold text-fg">{player.web_name}</div>
+        <div className="text-[11px] text-fg-3">{[player.team_name, positionOf(player)].filter(Boolean).join(' · ')}</div>
+        <dl className="mt-2 grid grid-cols-2 gap-y-1 text-[11px] tabular">
+          <dt className="text-fg-3">Expected</dt><dd className="text-right text-fg">{num(xp, 2)} xP</dd>
+          {player.now_cost != null && (<><dt className="text-fg-3">Price</dt><dd className="text-right text-fg">{price(player.now_cost > 20 ? player.now_cost / 10 : player.now_cost)}</dd></>)}
+          {player.analytics?.ownership_pct != null && (<><dt className="text-fg-3">Owned</dt><dd className="text-right text-fg">{player.analytics.ownership_pct}%</dd></>)}
+          {player.analytics?.ceiling != null && (<><dt className="text-fg-3">Ceiling</dt><dd className="text-right text-fg">{num(player.analytics.ceiling)}</dd></>)}
+        </dl>
+      </div>
+    </div>
+  )
+}
+
+function PitchMarkings() {
+  // Half-pitch drawn on a fixed viewBox; `slice` keeps the circles round at any aspect.
+  return (
+    <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 110" preserveAspectRatio="xMidYMin slice" aria-hidden="true">
+      <g fill="none" stroke="rgb(255 255 255 / 0.28)" strokeWidth="0.35">
+        <rect x="3" y="2" width="94" height="200" />
+        <rect x="22" y="2" width="56" height="18" />
+        <rect x="37" y="2" width="26" height="6.5" />
+        <path d="M40 20a12 12 0 0 0 20 0" />
+        <circle cx="50" cy="14" r="0.5" fill="rgb(255 255 255 / 0.35)" />
+        <path d="M44 2V0.5h12V2" />
+        <line x1="3" y1="104" x2="97" y2="104" />
+        <path d="M37 104a13 13 0 0 1 26 0" />
+      </g>
+    </svg>
+  )
+}
 
 const Pitch = ({ lineup }) => {
-    if (!lineup) return null
+  if (!lineup) return null
 
-    // Separate starters and bench
-    const starters = lineup.filter(p => p.is_starter)
-    const bench = lineup.filter(p => !p.is_starter)
+  const starters = lineup.filter(p => p.is_starter)
+  const bench = lineup.filter(p => !p.is_starter)
+  // Bench order: the backup keeper first, then outfield order as returned by the optimizer.
+  const orderedBench = [...bench.filter(p => p.element_type === 1), ...bench.filter(p => p.element_type !== 1)]
 
-    // Group starters by position
-    const gkp = starters.filter(p => p.element_type === 1)
-    const def = starters.filter(p => p.element_type === 2)
-    const mid = starters.filter(p => p.element_type === 3)
-    const fwd = starters.filter(p => p.element_type === 4)
+  return (
+    <div className="w-full select-none">
+      <div className="relative overflow-hidden rounded-2xl ring-1 ring-inset ring-white/10 bg-[#0f5a35]">
+        {/* Mowed stripes + vignette */}
+        <div
+          className="absolute inset-0"
+          style={{
+            backgroundImage:
+              'repeating-linear-gradient(180deg, rgb(255 255 255 / 0.035) 0 9%, transparent 9% 18%), radial-gradient(120% 80% at 50% 0%, rgb(39 160 96 / 0.55), transparent 70%), linear-gradient(180deg, #13703f 0%, #0c4a2b 100%)',
+          }}
+        />
+        <PitchMarkings />
 
-    const getShirtUrl = (player) => {
-        const isGK = player.element_type === 1
-        const code = player.team_code
-        return `https://fantasy.premierleague.com/dist/img/shirts/standard/shirt_${code}${isGK ? '_1' : ''}-66.png`
-    }
-
-    const PlayerCard = ({ player, isBench = false, index = 0, total = 1 }) => {
-        // Arch logic:
-        // If not bench, and row has > 2 players, add some vertical offset.
-        // We want the center players to be slightly lower (or higher) than outer.
-        // Standard back 4: CBs slightly deeper (lower Y)? or flat?
-        // User wants "not a line". FPL view has FBs slightly higher than CBs usually.
-        // Let's make outer indices higher (smaller Y, or negative translate).
-
-        let translateY = 0
-        if (!isBench && total > 2) {
-            const midIndex = (total - 1) / 2
-            const distFromMid = Math.abs(index - midIndex)
-            // Outer players (high distance) -> Move UP (negative translate)
-            // Center players -> Standard
-            // Magnitude: 15px per distance unit?
-            translateY = -(distFromMid * 15)
-        }
-
-        return (
-            <div
-                className={`flex flex-col items-center justify-start ${isBench ? 'w-20' : 'w-24'} transition-transform hover:scale-110 cursor-pointer group relative`}
-                style={{
-                    transform: `translateY(${translateY}px)`
-                }}
-            >
-
-                {/* Shirt Image */}
-                <div className="relative mb-1">
-                    <img
-                        src={getShirtUrl(player)}
-                        alt={player.team_name}
-                        className={`drop-shadow-lg ${isBench ? "w-10" : "w-12"} object-contain`}
-                        onError={(e) => {
-                            e.target.style.display = 'none';
-                            e.target.nextSibling.style.display = 'block'
-                        }}
-                    />
-                    {/* Fallback SVG if image broken */}
-                    <svg width={isBench ? "32" : "40"} height={isBench ? "32" : "40"} viewBox="0 0 64 64" fill="none" className="hidden" xmlns="http://www.w3.org/2000/svg">
-                        <path d="M16 12 L8 24 L16 32 L20 28 L20 56 L44 56 L44 28 L48 32 L56 24 L48 12 H16Z" fill={player.element_type === 1 ? "#fbbf24" : "#ef4444"} stroke="white" strokeWidth="2" />
-                    </svg>
-                </div>
-
-                {/* Info Box */}
-                <div className="flex flex-col items-center bg-[#38003c]/90 text-white rounded w-full overflow-hidden border border-gray-600 shadow-xl z-20">
-                    <div className={`w-full text-center ${isBench ? 'text-[9px] py-0.5' : 'text-[10px] py-1'} font-bold bg-[#00ff87] text-[#38003c] truncate px-1`}>
-                        {player.web_name}
-                    </div>
-                    {!isBench && (
-                        <div className="w-full text-center bg-[#38003c] py-0.5 border-t border-gray-600 flex justify-center items-center gap-1">
-                            <span className="text-[10px] font-bold text-gray-200">{player.expected_points?.toFixed(2)}</span>
-                            <span className="text-[8px] text-gray-400">XP</span>
-                        </div>
-                    )}
-                </div>
-            </div>
-        )
-    }
-
-    return (
-        <div className="w-full select-none">
-            {/* Pitch Area */}
-            <div className="relative w-full h-[700px] border-4 border-white/40 rounded-xl overflow-hidden shadow-2xl mx-auto bg-green-600">
-
-                {/* Realistic Pitch Background */}
-                <div className="absolute inset-0">
-                    {/* Grass Stripes Pattern */}
-                    <div className="w-full h-full" style={{
-                        backgroundImage: 'repeating-linear-gradient(0deg, transparent, transparent 40px, rgba(0,0,0,0.1) 40px, rgba(0,0,0,0.1) 80px)'
-                    }}></div>
-
-                    {/* Pitch Markings */}
-                    {/* Center Circle */}
-                    <div className="absolute top-1/2 left-1/2 w-32 h-32 border-2 border-white/60 rounded-full transform -translate-x-1/2 -translate-y-1/2"></div>
-                    <div className="absolute top-1/2 left-0 w-full h-0.5 bg-white/60 transform -translate-y-1/2"></div>
-
-                    {/* Penalty Boxes */}
-                    <div className="absolute top-0 left-1/2 w-64 h-32 border-2 border-t-0 border-white/60 transform -translate-x-1/2 bg-white/5"></div>
-                    <div className="absolute top-0 left-1/2 w-24 h-12 border-2 border-t-0 border-white/60 transform -translate-x-1/2"></div>
-
-                    <div className="absolute bottom-0 left-1/2 w-64 h-32 border-2 border-b-0 border-white/60 transform -translate-x-1/2 bg-white/5"></div>
-                    <div className="absolute bottom-0 left-1/2 w-24 h-12 border-2 border-b-0 border-white/60 transform -translate-x-1/2"></div>
-                </div>
-
-                {/* Players Layout */}
-                <div className="relative z-10 w-full h-full flex flex-col justify-between py-6">
-
-                    {/* GKP */}
-                    <div className="flex justify-center items-center h-1/5 pt-4">
-                        {gkp.map((p, i) => <PlayerCard key={p.id} player={p} index={i} total={gkp.length} />)}
-                    </div>
-
-                    {/* DEF */}
-                    <div className="flex justify-center gap-4 sm:gap-12 items-center h-1/5 px-4">
-                        {def.map((p, i) => <PlayerCard key={p.id} player={p} index={i} total={def.length} />)}
-                    </div>
-
-                    {/* MID */}
-                    <div className="flex justify-center gap-4 sm:gap-12 items-center h-1/5 px-4">
-                        {mid.map((p, i) => <PlayerCard key={p.id} player={p} index={i} total={mid.length} />)}
-                    </div>
-
-                    {/* FWD */}
-                    <div className="flex justify-center gap-8 sm:gap-20 items-center h-1/5 px-4 pb-4">
-                        {fwd.map((p, i) => <PlayerCard key={p.id} player={p} index={i} total={fwd.length} />)}
-                    </div>
-
-                </div>
-            </div>
-
-            {/* Bench Area */}
-            <div className="mt-6 bg-gradient-to-r from-gray-800 to-gray-900 p-4 rounded-xl border border-gray-700 shadow-lg">
-                <h4 className="text-gray-400 text-xs font-bold mb-3 uppercase tracking-[0.2em] ml-2">Substitutes</h4>
-                <div className="flex justify-center gap-6 sm:gap-10 overflow-x-auto py-2">
-                    {bench.map(p => <PlayerCard key={p.id} player={p} isBench={true} />)}
-                </div>
-            </div>
+        <div className="relative z-10 flex flex-col gap-4 sm:gap-6 px-1 sm:px-4 pt-6 pb-8 sm:pt-8 sm:pb-10">
+          {ROWS.map(type => {
+            const row = starters.filter(p => p.element_type === type)
+            return (
+              <div key={type} className="flex justify-evenly items-start">
+                {row.map(p => <PlayerToken key={p.id} player={p} />)}
+              </div>
+            )
+          })}
         </div>
-    )
+      </div>
+
+      {orderedBench.length > 0 && (
+        <div className="mt-3 rounded-2xl bg-ink-900/70 ring-1 ring-inset ring-ink-700 px-3 pt-3 pb-4">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-fg-3 mb-3 px-1">Bench</div>
+          <div className="flex justify-evenly">
+            {orderedBench.map((p, i) => <PlayerToken key={p.id} player={p} small benchIndex={i} />)}
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default Pitch

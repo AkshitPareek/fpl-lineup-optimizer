@@ -1,14 +1,115 @@
 @import "tailwindcss";
 
-/* Custom FPL theme colors */
+/*
+ * Design tokens. Surfaces step up from a near-black aubergine; the FPL green is
+ * reserved for primary actions and headline numbers, pink for selection/live.
+ */
 @theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Space Grotesk", "Inter", ui-sans-serif, system-ui, sans-serif;
+
+  --color-ink-950: #0b0810;
+  --color-ink-900: #110d17;
+  --color-ink-850: #16111d;
+  --color-ink-800: #1d1726;
+  --color-ink-700: #2a2235;
+  --color-ink-600: #3a3047;
+
+  --color-fg: #f4f0f8;
+  --color-fg-2: #b9b0c7;
+  --color-fg-3: #827795;
+
   --color-fpl-purple: #37003c;
   --color-fpl-green: #00ff87;
-  --color-fpl-pink: #e90052;
-  --color-fpl-cyan: #00ff85;
+  --color-fpl-pink: #ff2e7e;
+  --color-fpl-cyan: #04f5ff;
+
+  --color-good: #3ee08f;
+  --color-warn: #ffc94d;
+  --color-bad: #ff5d6c;
+
+  /* Chart series, validated for the dark surface (ink-850) */
+  --color-series-actual: #00a85a;
+  --color-series-predicted: #8f78f0;
+
+  --animate-fade-in: fade-in 240ms ease-out both;
+  --animate-shimmer: shimmer 1.6s linear infinite;
+
+  @keyframes fade-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes shimmer {
+    from { background-position: -200% 0; }
+    to { background-position: 200% 0; }
+  }
+}
+
+html {
+  color-scheme: dark;
 }
 
 body {
-  background-color: var(--color-gray-900);
-  color: white;
+  margin: 0;
+  background-color: var(--color-ink-950);
+  background-image:
+    radial-gradient(1200px 500px at 15% -10%, rgb(55 0 60 / 0.55), transparent 70%),
+    radial-gradient(900px 400px at 100% 0%, rgb(0 255 135 / 0.06), transparent 70%);
+  background-attachment: fixed;
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+  font-feature-settings: "cv11", "ss01";
+  -webkit-font-smoothing: antialiased;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Range inputs: thin track, solid thumb */
+input[type="range"] {
+  appearance: none;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--color-ink-700);
+}
+input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--color-fpl-green);
+  border: 3px solid var(--color-ink-850);
+  box-shadow: 0 0 0 1px var(--color-fpl-green);
+  cursor: pointer;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--color-fpl-green);
+  border: 3px solid var(--color-ink-850);
+  cursor: pointer;
+}
+
+/* Hide number spinners; the steppers are custom */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  appearance: textfield;
+}
+
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-ink-600) transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

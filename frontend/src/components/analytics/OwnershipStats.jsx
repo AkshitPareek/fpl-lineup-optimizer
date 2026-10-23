@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
+import { Card, CardHeader, LoadingState } from '../ui'
+import { IconShield, IconTarget } from '../icons'
 
 function OwnershipStats() {
     const [template, setTemplate] = useState([])
@@ -24,71 +26,63 @@ function OwnershipStats() {
         fetchData()
     }, [])
 
-    if (loading) return <div className="text-center p-8 text-gray-500">Loading ownership data...</div>
+    if (loading) return <Card className="flex min-h-[320px]"><LoadingState title="Loading ownership data" /></Card>
 
     return (
-        <div className="space-y-6">
-            {/* Template Players */}
-            <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
-                <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-                    <span>🛡️</span> Template Players (Highly Owned)
-                </h3>
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-4 items-start">
+            <Card className="overflow-hidden">
+                <CardHeader className="p-5 pb-4" icon={<IconShield />} title="Template players" subtitle="The most-owned players — not owning them is a risk." />
                 <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                        <thead className="text-gray-400 bg-gray-900/50 uppercase text-xs">
+                    <table className="w-full text-sm tabular">
+                        <thead className="bg-ink-900 text-[11px] uppercase tracking-wider text-fg-3">
                             <tr>
-                                <th className="p-3 text-left">Player</th>
-                                <th className="p-3 text-right">Ownership</th>
-                                <th className="p-3 text-right">EO (Est.)</th>
-                                <th className="p-3 text-right">Price</th>
+                                <th className="py-2.5 pl-5 text-left font-semibold">Player</th>
+                                <th className="py-2.5 px-2 text-right font-semibold">Ownership</th>
+                                <th className="py-2.5 px-2 text-right font-semibold">EO (est.)</th>
+                                <th className="py-2.5 pr-5 text-right font-semibold">Price</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-700">
+                        <tbody>
                             {template.slice(0, 10).map((player, idx) => (
-                                <tr key={idx} className="hover:bg-gray-700/50 transition">
-                                    <td className="p-3 font-bold text-white">
-                                        {player.web_name} <span className="text-xs font-normal text-gray-500 ml-1">{player.team}</span>
+                                <tr key={idx} className="border-t border-ink-700/60 hover:bg-ink-800/60 transition">
+                                    <td className="py-2.5 pl-5">
+                                        <span className="font-medium text-fg">{player.web_name}</span>
+                                        <span className="ml-1.5 text-[11px] text-fg-3">{player.team}</span>
                                     </td>
-                                    <td className="p-3 text-right">
+                                    <td className="py-2.5 px-2">
                                         <div className="flex items-center justify-end gap-2">
-                                            <span className="text-fpl-cyan font-bold">{player.ownership_pct}%</span>
-                                            <div className="w-16 bg-gray-700 rounded-full h-1.5">
-                                                <div
-                                                    className="bg-fpl-cyan h-1.5 rounded-full"
-                                                    style={{ width: `${Math.min(player.ownership_pct, 100)}%` }}
-                                                ></div>
+                                            <div className="hidden sm:block w-16 h-1.5 rounded-full bg-ink-700">
+                                                <div className="h-1.5 rounded-full bg-fpl-green/80" style={{ width: `${Math.min(player.ownership_pct, 100)}%` }} />
                                             </div>
+                                            <span className="w-12 text-right font-semibold text-fg">{player.ownership_pct}%</span>
                                         </div>
                                     </td>
-                                    <td className="p-3 text-right text-gray-300">{player.effective_ownership?.toFixed(1)}%</td>
-                                    <td className="p-3 text-right text-fpl-green font-mono">£{player.price}m</td>
+                                    <td className="py-2.5 px-2 text-right text-fg-2">{player.effective_ownership?.toFixed(1)}%</td>
+                                    <td className="py-2.5 pr-5 text-right text-fg-2">£{player.price}m</td>
                                 </tr>
                             ))}
                         </tbody>
                     </table>
                 </div>
-            </div>
+            </Card>
 
-            {/* Differentials */}
-            <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
-                <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-                    <span>🚀</span> Top Differentials (Low Owned)
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Card className="p-5">
+                <CardHeader icon={<IconTarget />} title="Top differentials" subtitle="Low-owned picks that can swing your rank." />
+                <div className="mt-4 space-y-2">
                     {differentials.slice(0, 6).map((player, idx) => (
-                        <div key={idx} className="bg-gray-700/50 p-4 rounded-lg flex justify-between items-center border border-gray-600 hover:border-fpl-pink transition">
+                        <div key={idx} className="flex items-center justify-between rounded-xl bg-ink-900/60 px-3 py-2.5 ring-1 ring-inset ring-ink-700/70 hover:ring-fpl-pink/50 transition">
                             <div>
-                                <p className="font-bold text-white">{player.web_name}</p>
-                                <p className="text-xs text-gray-400">{player.team} • {player.position}</p>
+                                <p className="text-sm font-medium text-fg">{player.web_name}</p>
+                                <p className="text-[11px] text-fg-3">{player.team} · {player.position}</p>
                             </div>
-                            <div className="text-right">
-                                <p className="text-fpl-pink font-bold text-lg">{player.ownership_pct}%</p>
-                                <p className="text-xs text-fpl-green">£{player.price}m</p>
+                            <div className="text-right tabular">
+                                <p className="font-display text-base font-semibold text-fg">{player.ownership_pct}%</p>
+                                <p className="text-[11px] text-fg-3">£{player.price}m</p>
                             </div>
                         </div>
                     ))}
                 </div>
-            </div>
+            </Card>
         </div>
     )
 }
