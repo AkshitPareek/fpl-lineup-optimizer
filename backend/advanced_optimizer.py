@@ -83,6 +83,7 @@ class MultiPeriodSolution:
     chips_remaining: List[str]
     optimization_time_seconds: float
     chip_suggestion: Optional[Dict[str, Any]] = None  # Legacy: single best chip
+    chip_hold: Optional[List[Dict[str, Any]]] = None  # Chips saved, with the reason
     chip_recommendations: Optional[List[Dict[str, Any]]] = None  # All chip recommendations
     captain_recommendations: Optional[List[Dict[str, Any]]] = None  # Per-GW captain suggestions
     # False when the solver stopped at its time limit with its best plan so far.
@@ -753,9 +754,17 @@ class MultiPeriodFPLOptimizer:
                         'element_type': int(get_attr(j, 'element_type'))
                     })
             
-            # Sort by position for display
+            # Sort by position for display. The bench is the goalkeeper, then
+            # outfield substitutes in the order they come on.
             gw_starters.sort(key=lambda p: (p['element_type'], -p['expected_points']))
-            gw_bench.sort(key=lambda p: -p['expected_points'])
+            gw_bench.sort(key=lambda p: (p['element_type'] != 1, -p['expected_points']))
+            vice_id = max(
+                (p for p in gw_starters if p['id'] != gw_captain_id),
+                key=lambda p: p['expected_points'],
+                default={'id': None},
+            )['id']
+            for player in gw_starters:
+                player['is_vice_captain'] = player['id'] == vice_id
             
             gw_xp = float(sum(p['expected_points'] * (2 if p['is_captain'] else 1) for p in gw_starters))
             
@@ -810,11 +819,7 @@ class MultiPeriodFPLOptimizer:
                 starting_xi=gw_starters,
                 bench=gw_bench,
                 captain_id=gw_captain_id,
-                vice_captain_id=max(
-                    (p for p in gw_starters if p['id'] != gw_captain_id),
-                    key=lambda p: p['expected_points'],
-                    default={'id': None},
-                )['id'],
+                vice_captain_id=vice_id,
                 expected_points=gw_xp,
                 chip_used=gw_chip_used,
                 transfers=transfer_plan,
@@ -832,6 +837,7 @@ class MultiPeriodFPLOptimizer:
         
         # === Enhanced Chip & Captain Analysis ===
         chip_suggestion = None
+        chip_hold = []
         chip_recommendations = []
         captain_recommendations = []
         
@@ -865,6 +871,7 @@ class MultiPeriodFPLOptimizer:
                 chip_recommendations = analysis.get('chip_recommendations', [])
                 captain_recommendations = analysis.get('captain_recommendations', [])
                 chip_suggestion = analysis.get('best_chip')
+                chip_hold = analysis.get('chip_hold', [])
                 
                 # Update gameweek_plans with captain recommendations
                 for i, gp in enumerate(gameweek_plans):
@@ -886,6 +893,7 @@ class MultiPeriodFPLOptimizer:
                 # Fallback to basic analysis if ChipAdvisor fails
                 chip_recommendations = []
                 captain_recommendations = []
+                chip_hold = []
         
         return MultiPeriodSolution(
             status='Optimal',
@@ -897,6 +905,7 @@ class MultiPeriodFPLOptimizer:
             chips_remaining=[c for c in ChipAdvisor.CHIPS if c not in chips_used],
             optimization_time_seconds=end_time - start_time,
             chip_suggestion=chip_suggestion,
+            chip_hold=chip_hold,
             chip_recommendations=chip_recommendations,
             captain_recommendations=captain_recommendations,
             proven_optimal=proven
@@ -1039,6 +1048,7 @@ class MultiPeriodFPLOptimizer:
                 for tp in solution.transfer_summary
             ],
             'chip_suggestion': solution.chip_suggestion,
+            'chip_hold': solution.chip_hold or [],
             'chip_recommendations': solution.chip_recommendations or [],
             'captain_recommendations': solution.captain_recommendations or []
         }

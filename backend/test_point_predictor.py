@@ -101,7 +101,10 @@ class FixtureCountTests(unittest.TestCase):
         mid = pd.Series(player())
         single = make_predictor([player()], fixtures=[home]).predict_gameweek(mid, 8)
         double = make_predictor([player()], fixtures=[home, away]).predict_gameweek(mid, 8)
-        self.assertAlmostEqual(double[0], 2 * single[0])
+        away_only = make_predictor([player()], fixtures=[away]).predict_gameweek(mid, 8)
+        # Home and away are both counted. They are not the same fixture, so the
+        # total is the sum of the two matches, and appearance still doubles.
+        self.assertAlmostEqual(double[0], single[0] + away_only[0])
         for part in ("appearance", "bonus", "cbit_bonus"):
             self.assertAlmostEqual(double[1][part], 2 * single[1][part])
 
@@ -111,6 +114,69 @@ class FixtureCountTests(unittest.TestCase):
         striker = pd.Series(player(element_type=4, expected_goals="12.0"))
         predictor = make_predictor([player()], fixtures=fixtures)
         self.assertGreater(predictor.calculate_xg_points(striker, 8), 9.0)
+
+
+def team_row(team_id, attack_home, attack_away, defence_home, defence_away):
+    return {
+        "id": team_id, "name": f"Team {team_id}",
+        "strength_attack_home": attack_home, "strength_attack_away": attack_away,
+        "strength_defence_home": defence_home, "strength_defence_away": defence_away,
+    }
+
+
+class FixtureSensitivityTests(unittest.TestCase):
+    def test_later_weeks_keep_this_weeks_calibration(self):
+        fixtures = [
+            {"event": gw, "team_h": 1, "team_a": 2, "team_h_difficulty": 3, "team_a_difficulty": 3}
+            for gw in (8, 13)
+        ]
+        predictor = make_predictor([player()], fixtures=fixtures, current_gw=8)
+        now = predictor.predict_gameweek(pd.Series(player()), 8)
+        later = predictor.predict_gameweek(pd.Series(player()), 13)
+        self.assertEqual(now[1]['calibration'], later[1]['calibration'])
+        self.assertAlmostEqual(now[0], later[0])
+
+    def test_a_hard_away_trip_cuts_a_defender(self):
+        teams = pd.DataFrame([
+            team_row(1, 1100, 1050, 1100, 1000),
+            team_row(2, 1450, 1350, 1400, 1300),
+            team_row(3, 900, 850, 950, 900),
+        ])
+        defender = pd.Series(player(element_type=2, web_name="Def", points_per_game="4.5",
+                                    expected_goals="0.4", expected_assists="0.3", goals_scored=0, assists=0))
+        hard = [{"event": 9, "team_h": 2, "team_a": 1, "team_h_difficulty": 5, "team_a_difficulty": 5}]
+        easy = [{"event": 9, "team_h": 1, "team_a": 3, "team_h_difficulty": 2, "team_a_difficulty": 2}]
+        hard_xp = PointPredictor(pd.DataFrame([player()]), teams, hard, 9, use_understat=False).predict_gameweek(defender, 9)[0]
+        easy_xp = PointPredictor(pd.DataFrame([player()]), teams, easy, 9, use_understat=False).predict_gameweek(defender, 9)[0]
+        self.assertGreater(easy_xp, hard_xp * 1.12)
+        self.assertGreater(easy_xp - hard_xp, 0.6)
+
+    def test_missing_team_strengths_fall_back_to_fixture_difficulty(self):
+        teams = pd.DataFrame([
+            team_row(1, 0, 0, 0, 0),
+            team_row(2, 0, 0, 0, 0),
+        ])
+        defender = pd.Series(player(element_type=2, web_name="Def"))
+        hard = [{"event": 9, "team_h": 2, "team_a": 1, "team_h_difficulty": 2, "team_a_difficulty": 5}]
+        easy = [{"event": 9, "team_h": 1, "team_a": 2, "team_h_difficulty": 2, "team_a_difficulty": 4}]
+        hard_xp, hard_br = PointPredictor(pd.DataFrame([player()]), teams, hard, 9, use_understat=False).predict_gameweek(defender, 9)
+        easy_xp, easy_br = PointPredictor(pd.DataFrame([player()]), teams, easy, 9, use_understat=False).predict_gameweek(defender, 9)
+        self.assertAlmostEqual(hard_br['fixture_factor'], 0.70)
+        self.assertAlmostEqual(easy_br['fixture_factor'], 1.12)
+        self.assertGreater(easy_xp, hard_xp)
+
+    def test_an_attackers_fixture_moves_the_projection(self):
+        teams = pd.DataFrame([
+            team_row(1, 1200, 1150, 1100, 1050),
+            team_row(2, 1100, 1100, 1450, 1400),
+            team_row(3, 1000, 950, 850, 800),
+        ])
+        mid = pd.Series(player())
+        fortress = [{"event": 9, "team_h": 2, "team_a": 1, "team_h_difficulty": 5, "team_a_difficulty": 4}]
+        leaky = [{"event": 9, "team_h": 1, "team_a": 3, "team_h_difficulty": 2, "team_a_difficulty": 2}]
+        hard_xp = PointPredictor(pd.DataFrame([player()]), teams, fortress, 9, use_understat=False).predict_gameweek(mid, 9)[0]
+        easy_xp = PointPredictor(pd.DataFrame([player()]), teams, leaky, 9, use_understat=False).predict_gameweek(mid, 9)[0]
+        self.assertGreater(easy_xp, hard_xp * 1.08)
 
 
 class UnderstatSeasonTests(unittest.TestCase):

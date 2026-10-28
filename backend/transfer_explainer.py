@@ -205,12 +205,22 @@ class TransferExplainer:
         avg_fdr = sum(f['difficulty'] for f in fixtures) / len(fixtures) if fixtures else 3
         
         reasons = []
-        
-        # Bad form
-        if form < 3.0:
+        chance = player.get('chance_of_playing_next_round')
+        ruled_out = chance is not None and not pd.isna(chance) and float(chance) <= 0
+
+        if fixtures:
+            first = fixtures[0]
+            side = 'H' if first['is_home'] else 'A'
+            reasons.append(f"This week: {first['opponent_name']} ({side}), FDR {first['difficulty']}")
+
+        if ruled_out:
+            reasons.append("Ruled out this gameweek (0% chance of playing)")
+        elif chance is not None and not pd.isna(chance) and float(chance) < 75:
+            reasons.append(f"Injury doubt ({int(float(chance))}% available)")
+
+        if not ruled_out and form < 3.0:
             reasons.append(f"Poor form ({form:.1f} pts/game)")
-        
-        # Tough fixtures
+
         if avg_fdr >= 3.5:
             reasons.append(f"Tough upcoming fixtures (avg FDR: {avg_fdr:.1f})")
         
@@ -221,11 +231,6 @@ class TransferExplainer:
         # Low xG output
         if xg_trend['xg_per_90'] < 0.2 and player['element_type'] in [3, 4]:  # MID/FWD
             reasons.append(f"Low xG/90 ({xg_trend['xg_per_90']:.2f})")
-        
-        # Injury concern
-        chance = player.get('chance_of_playing_next_round')
-        if chance is not None and not pd.isna(chance) and int(chance) < 75:
-            reasons.append(f"Injury doubt ({int(chance)}% available)")
         
         # Low minutes
         minutes = float(player.get('minutes', 0) or 0)
@@ -295,7 +300,12 @@ class TransferExplainer:
         summary_parts = [f"**{name}** ({team_name} {position}, £{cost}m)"]
         
         reasons = []
-        
+
+        if fixtures:
+            first = fixtures[0]
+            side = 'H' if first['is_home'] else 'A'
+            reasons.append(f"this week {first['opponent_name']} ({side}), FDR {first['difficulty']}")
+
         # Fixture-based reasoning
         if avg_fdr < 2.5:
             reasons.append(f"excellent upcoming fixtures (avg FDR: {avg_fdr:.1f})")

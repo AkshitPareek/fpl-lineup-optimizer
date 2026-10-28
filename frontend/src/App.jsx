@@ -9,8 +9,8 @@ import BacktestView from './views/BacktestView'
 import AnalyticsDashboard from './components/analytics/AnalyticsDashboard'
 
 const TABS = [
-  { id: 'planner', label: 'Planner', icon: IconRoute, blurb: 'Multi-gameweek transfer plan' },
-  { id: 'quick', label: 'Quick Pick', icon: IconBolt, blurb: 'Single-gameweek lineup' },
+  { id: 'planner', label: 'Planner', icon: IconRoute, blurb: 'The team to set for the next deadline' },
+  { id: 'quick', label: 'Quick Pick', icon: IconBolt, blurb: 'This gameweek only, on the same projections' },
   { id: 'dream', label: 'Dream Team', icon: IconStar, blurb: 'Best XI, no budget' },
   { id: 'backtest', label: 'Backtest', icon: IconHistory, blurb: 'Replay past gameweeks' },
   { id: 'analytics', label: 'Analytics', icon: IconChart, blurb: 'Market, EV & ownership' },
@@ -30,6 +30,8 @@ function useDebounced(value, delay) {
   return debounced
 }
 
+const MANAGER_KEY = 'fpl-manager-id'
+
 function App() {
   const [data, setData] = useState(null)
   const [dataError, setDataError] = useState(false)
@@ -38,10 +40,41 @@ function App() {
   const [visited, setVisited] = useState(() => new Set([tabFromHash()]))
 
   // Settings shared by the Planner and Quick Pick views
-  const [managerId, setManagerId] = useState('')
+  const [managerId, setManagerId] = useState(() => localStorage.getItem(MANAGER_KEY) || '')
   const [budget, setBudget] = useState(100.0)
+  const [bankedTransfers, setBankedTransfers] = useState(1)
+  const [loadedChips, setLoadedChips] = useState(null)
   const debouncedManagerId = useDebounced(managerId.trim(), 500)
   const validManagerId = /^\d+$/.test(debouncedManagerId) ? debouncedManagerId : ''
+  const managerChips = loadedChips?.id === validManagerId ? loadedChips.data : null
+
+  const setManagerIdValue = value => {
+    setManagerId(value)
+    if (!String(value).trim()) setBudget(100)
+  }
+
+  useEffect(() => {
+    const id = managerId.trim()
+    if (/^\d+$/.test(id)) localStorage.setItem(MANAGER_KEY, id)
+    else if (!id) localStorage.removeItem(MANAGER_KEY)
+  }, [managerId])
+
+  useEffect(() => {
+    if (!validManagerId) return
+    let cancelled = false
+    api.get(`/api/manager-chips/${validManagerId}`)
+      .then(res => {
+        if (cancelled) return
+        setLoadedChips({ id: validManagerId, data: res.data })
+        if (Number.isInteger(res.data.banked_transfers)) setBankedTransfers(res.data.banked_transfers)
+        if (typeof res.data.bank === 'number') setBudget(res.data.bank)
+      })
+      .catch(err => {
+        console.error('Error fetching manager chips', err)
+        if (!cancelled) setLoadedChips({ id: validManagerId, data: { error: true } })
+      })
+    return () => { cancelled = true }
+  }, [validManagerId])
 
   useEffect(() => {
     api.get('/api/data')
@@ -70,7 +103,10 @@ function App() {
 
   const season = data?.season
   const seasonLabel = season?.label || '2026/27'
-  const shared = { season, managerId, setManagerId, validManagerId, budget, setBudget, teamCodes }
+  const shared = {
+    season, managerId, setManagerId: setManagerIdValue, validManagerId, budget, setBudget, teamCodes,
+    managerChips, bankedTransfers, setBankedTransfers,
+  }
 
   const views = {
     planner: <PlannerView {...shared} />,
