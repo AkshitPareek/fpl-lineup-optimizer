@@ -17,7 +17,7 @@ import pandas as pd
 import json
 import threading
 
-from fpl_service import FPLService, PRIOR_SEASON_WAIT_SECONDS
+from fpl_service import FPLService
 from optimizer import FPLOptimizer
 from advanced_optimizer import MultiPeriodFPLOptimizer
 from robust_optimizer import RobustOptimizer
@@ -113,10 +113,9 @@ async def startup_event():
     print(f"🚀 FPL Optimizer API starting...")
     print(f"📋 CORS allowed origins: {ALLOWED_ORIGINS}")
     # Warm the FPL cache and last season's totals before the first request.
-    threading.Thread(
-        target=lambda: fpl_service.get_latest_data(prior_wait=PRIOR_SEASON_WAIT_SECONDS),
-        daemon=True,
-    ).start()
+    # Last season is fetched one player at a time in the background. Waiting for
+    # it here, or fetching in parallel, stalls the only worker past the host timeout.
+    threading.Thread(target=fpl_service.get_latest_data, daemon=True).start()
 
 
 # Custom exception handler to ensure CORS headers on errors
@@ -1303,7 +1302,7 @@ async def get_manager_chips(manager_id: int):
 
 @app.get("/health")
 def health_check():
-    return {"status": "ok", "version": "2.0.0"}
+    return {"status": "ok", "version": "2.1.0"}
 
 
 # =============================================================================
