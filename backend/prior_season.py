@@ -42,7 +42,7 @@ def totals_from_summary(summary: Dict, season_name: str) -> Optional[Dict[str, i
 
 
 class PriorSeasonStats:
-    def __init__(self, cache_dir: str = CACHE_DIR, workers: int = 8):
+    def __init__(self, cache_dir: str = CACHE_DIR, workers: int = 1):
         self.cache_dir = cache_dir
         self.workers = workers
         self._by_code: Dict[str, Dict[str, int]] = {}
