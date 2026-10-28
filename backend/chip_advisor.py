@@ -13,6 +13,68 @@ import pandas as pd
 from fixture_analyzer import FixtureAnalyzer
 
 
+CHIP_NAMES = {
+    'wildcard': 'Wildcard',
+    'free_hit': 'Free Hit',
+    'bench_boost': 'Bench Boost',
+    'triple_captain': 'Triple Captain',
+}
+
+# A chip is worth playing only when its best week in the plan beats the next
+# week by this many points. A flat captain score is not a Triple Captain week.
+HOLD_MARGIN = {
+    'wildcard': 8.0,
+    'free_hit': 6.0,
+    'bench_boost': 3.0,
+    'triple_captain': 2.0,
+}
+
+
+def choose_chip_to_play(recommendations: List[Dict]) -> Dict:
+    """Pick at most one chip whose best week is clearly ahead of the rest of the plan.
+
+    Returns `play` (the chip to use, or None) and `held` (a reason for each chip
+    that was considered and saved).
+    """
+    grouped: Dict[str, List[Dict]] = {}
+    for rec in recommendations:
+        chip = rec.get('chip')
+        if chip:
+            grouped.setdefault(chip, []).append(rec)
+
+    playable = []
+    held = []
+    for chip, options in grouped.items():
+        options = sorted(options, key=lambda r: r.get('estimated_gain') or 0, reverse=True)
+        best = dict(options[0])
+        gains = [r.get('estimated_gain') or 0 for r in options]
+        second = gains[1] if len(gains) > 1 else None
+        margin = (gains[0] - second) if second is not None else None
+        best['margin_over_next_week'] = None if margin is None else round(margin, 1)
+        name = CHIP_NAMES.get(chip, chip)
+        threshold = HOLD_MARGIN.get(chip, 2.0)
+        spike = bool(best.get('is_dgw')) and margin is not None and margin >= 1.5
+        clear = margin is not None and (margin >= threshold or spike)
+        if clear:
+            best['play'] = True
+            playable.append(best)
+            continue
+        if margin is None:
+            reason = f"Hold {name}. One week is not enough to know this is the week to use it."
+        else:
+            reason = (
+                f"Hold {name}. GW{best.get('recommended_gameweek')} leads the next week "
+                f"in this plan by {margin:.1f} points."
+            )
+        held.append({'chip': chip, 'reason': reason})
+
+    playable.sort(
+        key=lambda r: (r['margin_over_next_week'] or 0) / HOLD_MARGIN.get(r['chip'], 2.0),
+        reverse=True,
+    )
+    return {'play': playable[0] if playable else None, 'held': held}
+
+
 class ChipAdvisor:
     """
     Advisor for optimal chip usage timing.
@@ -350,15 +412,12 @@ class ChipAdvisor:
                 if fh_analysis:
                     chip_recommendations.append(fh_analysis)
         
-        # Sort recommendations by estimated gain
-        chip_recommendations.sort(key=lambda x: x.get('estimated_gain', 0), reverse=True)
-        
-        # Determine best chip
-        best_chip = chip_recommendations[0] if chip_recommendations else None
-        
+        decision = choose_chip_to_play(chip_recommendations)
+
         return {
             'chip_recommendations': chip_recommendations,
-            'best_chip': best_chip,
+            'best_chip': decision['play'],
+            'chip_hold': decision['held'],
             'captain_recommendations': captain_recommendations,
             'available_chips': available_chips
         }

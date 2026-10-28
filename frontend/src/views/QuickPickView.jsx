@@ -1,41 +1,46 @@
 import { useState } from 'react'
 import { api, errorMessage } from '../lib/api'
 import { num, price } from '../lib/format'
-import { Badge, Button, Card, CardHeader, EmptyState, ErrorNote, Field, LoadingState, Select, Spinner, Stat, Stepper } from '../components/ui'
-import { IconBolt, IconSwap } from '../components/icons'
+import { Badge, Button, Card, EmptyState, ErrorNote, LoadingState, Spinner, Stat } from '../components/ui'
+import { IconBolt } from '../components/icons'
 import SquadView from '../components/SquadView'
+import TransferPanel from '../components/TransferPanel'
 import { ManagerFields } from './PlannerView'
 import { Canvas, Workspace } from './Workspace'
 
-const MODES = {
-  standard: { label: 'Best squad (wildcard)', hint: 'Build the best 15 from scratch within budget.' },
-  my_squad: { label: 'Best XI from my squad', hint: 'Pick the starting XI and captain from your current 15.', needsManager: true },
-  transfers: { label: 'Suggest transfers', hint: 'Recommend transfers from your current squad.', needsManager: true },
+function recommendedStrategy(compare) {
+  const noHits = compare.comparison.no_hits
+  const feasible = noHits?.feasible !== false && compare.no_hits?.gameweek_plans?.length > 0
+  return feasible && noHits?.recommended ? 'no_hits' : 'with_hits'
 }
 
-export default function QuickPickView({ managerId, setManagerId, validManagerId, budget, setBudget }) {
-  const [strategy, setStrategy] = useState('standard')
-  const [freeTransfers, setFreeTransfers] = useState(1)
+export default function QuickPickView({
+  managerId, setManagerId, validManagerId, budget, setBudget, bankedTransfers,
+}) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [result, setResult] = useState(null)
-
-  const mode = MODES[strategy]
-  const blocked = mode.needsManager && !validManagerId
 
   const run = async () => {
     setLoading(true)
     setError(null)
     setResult(null)
     try {
-      const res = await api.post('/api/optimize', {
+      const res = await api.post('/api/optimize/compare', {
         budget: parseFloat(budget),
         gameweeks: 1,
-        strategy,
         manager_id: validManagerId ? parseInt(validManagerId) : null,
-        free_transfers: parseInt(freeTransfers),
+        banked_transfers: parseInt(bankedTransfers) || 1,
+        strategy: 'standard',
       })
-      setResult(res.data)
+      const { with_hits: withHits, no_hits: noHits, note } = res.data.comparison
+      if (withHits?.feasible === false && noHits?.feasible === false) {
+        setError(note || 'No lineup could be solved.')
+        return
+      }
+      const key = recommendedStrategy(res.data)
+      const plan = res.data[key]
+      setResult({ plan, gw: plan.gameweek_plans?.[0], hits: key === 'with_hits' })
     } catch (err) {
       console.error(err)
       setError(errorMessage(err))
@@ -44,25 +49,20 @@ export default function QuickPickView({ managerId, setManagerId, validManagerId,
     }
   }
 
-  const squad = result?.lineup || result?.squad
-  const transfers = result?.transfers
+  const gw = result?.gw
+  const squad = gw ? [...gw.starting_xi, ...gw.bench] : null
+  const summary = gw && result.plan.transfer_summary?.find(t => t.gameweek === gw.gameweek)
 
   const settings = (
     <>
-      <Field label="Mode" hint={blocked ? 'This mode needs your manager ID.' : mode.hint}>
-        <Select value={strategy} onChange={e => setStrategy(e.target.value)}>
-          {Object.entries(MODES).map(([value, m]) => <option key={value} value={value}>{m.label}</option>)}
-        </Select>
-      </Field>
       <ManagerFields {...{ managerId, setManagerId, validManagerId, budget, setBudget }} />
-      {strategy === 'transfers' && (
-        <Field label="Free transfers" hint="Transfers beyond this cost −4 each.">
-          <Stepper value={freeTransfers} onChange={setFreeTransfers} min={0} max={5} />
-        </Field>
-      )}
-      <Button size="lg" className="w-full" onClick={run} disabled={loading || blocked}>
-        {loading ? <><Spinner /> Optimising…</> : 'Optimise lineup'}
+      <p className="text-xs text-fg-3">
+        Scores the next gameweek with the same projections as the Planner. The Planner is the team to set, because it keeps the weeks after this one.
+      </p>
+      <Button size="lg" className="w-full" onClick={run} disabled={loading || !validManagerId}>
+        {loading ? <><Spinner /> Solving…</> : 'Show this week'}
       </Button>
+      {!validManagerId && <p className="text-xs text-fg-3">Enter your manager ID so this uses your squad, bank and free transfers.</p>}
       <ErrorNote>{error}</ErrorNote>
     </>
   )
@@ -72,42 +72,27 @@ export default function QuickPickView({ managerId, setManagerId, validManagerId,
       {loading || !squad ? (
         <Canvas>
           {loading ? (
-            <LoadingState title="Optimising lineup" detail="Picking the best XI and captain for this gameweek." />
+            <LoadingState title="Scoring this gameweek" detail="Using your squad and the same projections as the Planner." />
           ) : (
-            <EmptyState icon={<IconBolt size={24} />} title="One gameweek, one answer">
-              The fastest way to a lineup: best squad, best XI and captain for the upcoming gameweek only.
+            <EmptyState icon={<IconBolt size={24} />} title="This gameweek, from your squad">
+              A one-week look at the same model. For the team to set at the deadline, use the Planner.
             </EmptyState>
           )}
         </Canvas>
       ) : (
         <div className="space-y-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            <Stat label="Expected points" value={num(result.total_expected_points)} tone="green" />
-            <Stat label="Squad cost" value={price(result.budget_used)} />
-            <Stat label="In the bank" value={price(result.bank)} />
-            <Stat label="Transfer cost" value={transfers?.cost ? `−${transfers.cost}` : '0'} tone={transfers?.cost ? 'bad' : undefined} />
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            <Stat label={`GW${gw.gameweek} xP`} value={num(gw.expected_points)} tone="green" />
+            <Stat label="In the bank" value={price(gw.bank)} />
+            <Stat label="Hits" value={gw.transfers?.hits ? `−${gw.transfers.hits * 4}` : '0'} tone={gw.transfers?.hits ? 'bad' : undefined} />
           </div>
-
-          {transfers && (
-            <Card className="p-4">
-              <CardHeader icon={<IconSwap />} title="Suggested transfers" subtitle={transfers.in?.length ? null : 'Your squad is already optimal for this gameweek.'} />
-              {transfers.in?.length > 0 && (
-                <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-                  <div>
-                    <div className="text-[11px] font-semibold uppercase tracking-wider text-fg-3 mb-1.5">Out</div>
-                    <div className="flex flex-wrap gap-1.5">{transfers.out.map(n => <Badge key={n} tone="bad" className="normal-case text-xs">↓ {n}</Badge>)}</div>
-                  </div>
-                  <div>
-                    <div className="text-[11px] font-semibold uppercase tracking-wider text-fg-3 mb-1.5">In</div>
-                    <div className="flex flex-wrap gap-1.5">{transfers.in.map(n => <Badge key={n} tone="green" className="normal-case text-xs">↑ {n}</Badge>)}</div>
-                  </div>
-                </div>
-              )}
-            </Card>
-          )}
-
+          <TransferPanel transfers={gw.transfers} summary={summary ?? gw.transfers} explainOpen />
           <Card className="p-4 sm:p-5">
-            <SquadView squad={squad} title={<h2 className="font-display text-lg font-semibold">Your lineup</h2>} />
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <h2 className="font-display text-lg font-semibold">Gameweek {gw.gameweek}</h2>
+              {result.hits && <Badge tone="warn">Includes a hit</Badge>}
+            </div>
+            <SquadView squad={squad} />
           </Card>
         </div>
       )}

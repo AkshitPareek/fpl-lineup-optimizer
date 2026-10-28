@@ -146,6 +146,10 @@ class PointPredictor:
             self.teams['strength_defence_away']
         ))
         self.team_names = dict(zip(self.teams['id'], self.teams['name']))
+        attacks = list(self.team_attack_home.values()) + list(self.team_attack_away.values())
+        defences = list(self.team_defense_home.values()) + list(self.team_defense_away.values())
+        self.avg_attack = (sum(attacks) / len(attacks)) if attacks else 1000.0
+        self.avg_defense = (sum(defences) / len(defences)) if defences else 1000.0
         
     def _build_fixture_map(self):
         """Build lookup structure for fixtures by team and gameweek."""
@@ -254,6 +258,52 @@ class PointPredictor:
         else:
             return self.BASELINE_XA.get(element_type, 0.08)
     
+    # Share of the opponent-strength ratio that reaches the projection. 0 ignores
+    # the fixture; 1 uses the full ratio. A narrow band left hard away trips
+    # looking like average weeks, so the XI stopped depending on the opponent.
+    FIXTURE_SHRINK = 0.7
+    ATTACK_CLAMP = (0.70, 1.35)
+    DEFENCE_CLAMP = (0.58, 1.40)
+
+    def _clamp_fixture(self, raw: float, bounds: Tuple[float, float]) -> float:
+        shrunk = 1.0 + (raw - 1.0) * self.FIXTURE_SHRINK
+        return max(bounds[0], min(bounds[1], shrunk))
+
+    def attack_fixture_multiplier(self, opponent: int, is_home: bool) -> float:
+        """1.0 against an average defence. A weaker defence, and playing at home, raises it."""
+        if is_home:
+            opp_def = self.team_defense_away.get(opponent, self.avg_defense)
+            venue = 1.06
+        else:
+            opp_def = self.team_defense_home.get(opponent, self.avg_defense)
+            venue = 0.94
+        ratio = self.avg_defense / max(float(opp_def), 1.0)
+        return self._clamp_fixture(venue * ratio, self.ATTACK_CLAMP)
+
+    def defence_fixture_multiplier(self, team_id: int, opponent: int, is_home: bool) -> float:
+        """1.0 for an average defence against an average attack. An elite attack cuts it."""
+        if is_home:
+            own_def = self.team_defense_home.get(team_id, self.avg_defense)
+            opp_atk = self.team_attack_away.get(opponent, self.avg_attack)
+            venue = 1.08
+        else:
+            own_def = self.team_defense_away.get(team_id, self.avg_defense)
+            opp_atk = self.team_attack_home.get(opponent, self.avg_attack)
+            venue = 0.90
+        pressure = (float(opp_atk) / max(self.avg_attack, 1.0)) / max(float(own_def) / max(self.avg_defense, 1.0), 0.4)
+        return self._clamp_fixture(venue / max(pressure, 0.25), self.DEFENCE_CLAMP)
+
+    def fixture_factor(self, team_id: int, gameweek: int, element_type: int) -> float:
+        """Average per-match fixture multiplier for the season-rate half of the projection."""
+        fixtures = self.fixture_map.get((team_id, gameweek), [])
+        if not fixtures:
+            return 1.0
+        if element_type in (1, 2):
+            values = [self.defence_fixture_multiplier(team_id, fix['opponent'], fix['is_home']) for fix in fixtures]
+        else:
+            values = [self.attack_fixture_multiplier(fix['opponent'], fix['is_home']) for fix in fixtures]
+        return sum(values) / len(values)
+
     def calculate_xg_points(self, player: pd.Series, gameweek: int) -> float:
         """
         Calculate expected goal points for a player.
@@ -278,16 +328,7 @@ class PointPredictor:
             opponent = fix['opponent']
             is_home = fix['is_home']
             
-            # Adjust xG based on opponent defense (higher strength = fewer goals expected)
-            if is_home:
-                defense_strength = self.team_defense_away.get(opponent, 1000) / 1000
-            else:
-                defense_strength = self.team_defense_home.get(opponent, 1000) / 1000
-            
-            # Dampened fixture multiplier (was 0.5-1.5, now 0.85-1.15)
-            multiplier = 1.0 + (1.0 - defense_strength) * 0.15
-            adjusted_xg = xg_per_90 * max(0.85, min(1.15, multiplier))
-            total_xg += adjusted_xg
+            total_xg += xg_per_90 * self.attack_fixture_multiplier(opponent, is_home)
         
         goal_points = total_xg * self.POINTS_GOAL.get(element_type, 4)
         # Cap at reasonable maximum (~1.5 goals worth per match)
@@ -313,14 +354,7 @@ class PointPredictor:
             opponent = fix['opponent']
             is_home = fix['is_home']
             
-            if is_home:
-                defense_strength = self.team_defense_away.get(opponent, 1000) / 1000
-            else:
-                defense_strength = self.team_defense_home.get(opponent, 1000) / 1000
-            
-            # Dampened fixture multiplier
-            multiplier = 1.0 + (1.0 - defense_strength) * 0.15
-            total_xa += xa_per_90 * max(0.85, min(1.15, multiplier))
+            total_xa += xa_per_90 * self.attack_fixture_multiplier(opponent, is_home)
         
         assist_points = total_xa * self.POINTS_ASSIST
         # Cap at reasonable maximum (~2 assists worth per match)
@@ -347,20 +381,10 @@ class PointPredictor:
             opponent = fix['opponent']
             is_home = fix['is_home']
             
-            # Team's defensive strength
-            if is_home:
-                own_defense = self.team_defense_home.get(team_id, 1000) / 1000
-                opp_attack = self.team_attack_away.get(opponent, 1000) / 1000
-            else:
-                own_defense = self.team_defense_away.get(team_id, 1000) / 1000
-                opp_attack = self.team_attack_home.get(opponent, 1000) / 1000
-            
-            # Higher defense + lower opponent attack = higher CS probability
-            # Base probability around 25%, adjust by strength differential
-            strength_diff = own_defense - opp_attack
-            cs_prob = 0.25 + (strength_diff * 0.3)
-            cs_prob = max(0.05, min(0.6, cs_prob))  # Clamp between 5% and 60%
-            total_cs_prob += cs_prob
+            # 0.24 is a neutral clean-sheet rate. The fixture multiplier already
+            # includes home advantage and the opponent's attack.
+            cs_prob = 0.24 * self.defence_fixture_multiplier(team_id, opponent, is_home)
+            total_cs_prob += max(0.04, min(0.62, cs_prob))
         
         return total_cs_prob * self.POINTS_CLEAN_SHEET.get(element_type, 0)
     
@@ -595,10 +619,9 @@ class PointPredictor:
         
         model_total = sum(v for k, v in breakdown.items() if k not in ('regression_factor', 'fixtures'))
         
-        # Dynamic calibration factor - decreases as season progresses
-        # GW1: 0.85, GW19: 0.65, GW38: 0.50
-        # This compensates for xG/xA accumulation making predictions drift upward
-        dynamic_calibration = max(0.50, 0.85 - (gameweek - 1) * 0.01)
+        # How far the season has gone, not which future week is being scored.
+        # A good fixture in a later week stays on the same scale as the same fixture now.
+        dynamic_calibration = max(0.50, 0.85 - (self.current_gw - 1) * 0.01)
         
         model_total *= dynamic_calibration
         breakdown['calibration'] = dynamic_calibration
@@ -607,9 +630,11 @@ class PointPredictor:
         model_total = min(model_total, 8.0 * fixture_count)
 
         blended_ppg = self.blended_points_per_game(player)
+        fixture_factor = self.fixture_factor(player['team'], gameweek, int(player['element_type']))
         breakdown['blended_ppg'] = blended_ppg
+        breakdown['fixture_factor'] = fixture_factor
         total = (self.MODEL_WEIGHT * model_total
-                 + (1 - self.MODEL_WEIGHT) * blended_ppg * fixture_count)
+                 + (1 - self.MODEL_WEIGHT) * blended_ppg * fixture_count * fixture_factor)
         
         # Minutes decay: players averaging under 70 minutes get lower predictions
         avg_recent_mins = self.average_minutes_per_gameweek(player)

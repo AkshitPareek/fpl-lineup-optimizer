@@ -60,7 +60,7 @@ function PlayerChip({ player, direction }) {
 }
 
 /** Multi-period plan transfers: structured in/out pairs with reasoning and alternatives. */
-export default function TransferPanel({ transfers, summary }) {
+export default function TransferPanel({ transfers, summary, explainOpen = false }) {
   const ins = transfers?.in || []
   const outs = transfers?.out || []
   const hits = transfers?.hits || 0
@@ -103,7 +103,7 @@ export default function TransferPanel({ transfers, summary }) {
                 {inn ? <PlayerChip player={inn} direction="in" /> : <div className="flex-1" />}
               </div>
               {block?.buy && (
-                <details className="group mt-1.5 ml-1 text-xs">
+                <details open={explainOpen} className="group mt-1.5 ml-1 text-xs">
                   <summary className="cursor-pointer list-none text-fg-3 hover:text-fg-2 select-none">
                     <span className="inline-block transition group-open:rotate-90">›</span> Why this move
                   </summary>

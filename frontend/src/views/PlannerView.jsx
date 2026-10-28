@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api, errorMessage } from '../lib/api'
 import { cx } from '../lib/cx'
 import { chipLabel, CHIP_LABELS, num, price, signed } from '../lib/format'
@@ -135,7 +135,7 @@ function recommendedStrategy(compare) {
   return feasible && noHits?.recommended ? 'no_hits' : 'with_hits'
 }
 
-function CaptainCard({ rec }) {
+function CaptainCard({ rec, vice }) {
   if (!rec) return null
   return (
     <Card className="p-4">
@@ -150,6 +150,9 @@ function CaptainCard({ rec }) {
           <div className="text-[11px] text-fg-3">xP {rec.has_dgw && <Badge tone="violet" className="ml-1">DGW</Badge>}</div>
         </div>
       </div>
+      {vice && (
+        <p className="mt-2 text-xs text-fg-3">Vice-captain <span className="text-fg-2 font-medium">{vice.web_name}</span> <span className="tabular">{num(vice.expected_points)} xP</span></p>
+      )}
       {rec.alternatives?.length > 0 && (
         <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-ink-700/70 pt-3">
           <span className="text-[11px] text-fg-3 mr-1">Alternatives</span>
@@ -164,44 +167,58 @@ function CaptainCard({ rec }) {
   )
 }
 
-function ChipAdviceCard({ suggestion, others }) {
-  if (!suggestion && !others?.length) return null
-  return (
-    <Card className="p-4">
-      <CardHeader icon={<IconChip />} title="Chip outlook" />
-      {suggestion && (
+function ChipAdviceCard({ suggestion, hold, remaining, deadlineGw }) {
+  const saved = (remaining || []).map(chipLabel).filter(Boolean)
+  if (suggestion) {
+    const thisWeek = suggestion.recommended_gameweek === deadlineGw
+    return (
+      <Card className="p-4">
+        <CardHeader icon={<IconChip />} title={thisWeek ? 'Play this chip this week' : `Save ${chipLabel(suggestion.chip)} for GW${suggestion.recommended_gameweek}`} />
         <div className="mt-3">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-semibold">{chipLabel(suggestion.chip)}</span>
-            <span className="text-fg-3">in</span>
+            <span className="text-fg-3">{thisWeek ? 'this week' : 'in'}</span>
             <span className="font-semibold tabular">GW{suggestion.recommended_gameweek}</span>
             <ConfidenceBadge level={suggestion.confidence} />
             {suggestion.is_dgw && <Badge tone="violet">DGW</Badge>}
           </div>
-          <p className="mt-1 text-xs text-fg-3"><span className="text-fg-2 tabular">{signed(suggestion.estimated_gain)} pts</span> · {suggestion.reason}</p>
+          <p className="mt-1 text-xs text-fg-3">{suggestion.reason}</p>
+          {suggestion.margin_over_next_week != null && (
+            <p className="mt-1 text-xs text-fg-3 tabular">{signed(suggestion.margin_over_next_week)} pts ahead of the next week in this plan</p>
+          )}
         </div>
-      )}
-      {others?.length > 1 && (
-        <div className="mt-3 flex flex-wrap gap-1.5 border-t border-ink-700/70 pt-3">
-          {others.slice(1, 4).map((r, i) => (
-            <span key={i} className="rounded-md bg-ink-900 px-2 py-0.5 text-[11px] text-fg-2 ring-1 ring-inset ring-ink-700 tabular">
-              {chipLabel(r.chip)} GW{r.recommended_gameweek} <span className="text-fg-3">{signed(r.estimated_gain)}</span>
-            </span>
-          ))}
-        </div>
+      </Card>
+    )
+  }
+  if (!saved.length && !hold?.length) return null
+  return (
+    <Card className="p-4">
+      <CardHeader icon={<IconChip />} title="Hold your chips" subtitle="No week in this plan is clearly the one to use them." />
+      {saved.length > 0 && <p className="mt-3 text-sm text-fg-2">{saved.join(' · ')}</p>}
+      {hold?.length > 0 && (
+        <ul className="mt-2 space-y-1 text-xs text-fg-3">
+          {hold.map(h => <li key={h.chip}>{h.reason}</li>)}
+        </ul>
       )}
     </Card>
   )
 }
 
-export default function PlannerView({ season, managerId, setManagerId, validManagerId, budget, setBudget }) {
+function benchOrder(bench) {
+  const gk = (bench || []).filter(p => p.element_type === 1)
+  const outfield = (bench || []).filter(p => p.element_type !== 1)
+  return [...gk, ...outfield]
+}
+
+export default function PlannerView({
+  season, managerId, setManagerId, validManagerId, budget, setBudget,
+  managerChips, bankedTransfers, setBankedTransfers,
+}) {
   const [horizon, setHorizon] = useState(8)
-  const [bankedTransfers, setBankedTransfers] = useState(1)
   const [strategy, setStrategy] = useState('standard')
   const [useRobust, setUseRobust] = useState(false)
 
   const [chipRecs, setChipRecs] = useState(null)
-  const [managerChips, setManagerChips] = useState(null)
   const [selectedChip, setSelectedChip] = useState(null)
 
   const [loading, setLoading] = useState(false)
@@ -212,18 +229,6 @@ export default function PlannerView({ season, managerId, setManagerId, validMana
   const [view, setView] = useState('pitch')
 
   const maxBanked = season?.max_banked_transfers || 5
-
-  useEffect(() => {
-    setManagerChips(null)
-    if (!validManagerId) return
-    api.get(`/api/manager-chips/${validManagerId}`)
-      .then(res => {
-        setManagerChips(res.data)
-        if (Number.isInteger(res.data.banked_transfers)) setBankedTransfers(res.data.banked_transfers)
-        if (typeof res.data.bank === 'number') setBudget(res.data.bank)
-      })
-      .catch(err => console.error('Error fetching manager chips', err))
-  }, [validManagerId, setBudget])
 
   useEffect(() => {
     api.post('/api/chip-recommendations', {
@@ -274,7 +279,20 @@ export default function PlannerView({ season, managerId, setManagerId, validMana
     }
   }
 
+  const generateRef = useRef(generate)
+  generateRef.current = generate
+  const autoKey = useRef('')
+  useEffect(() => {
+    if (!validManagerId || !managerChips || managerChips.error) return
+    const key = `${validManagerId}:${managerChips.bank}:${managerChips.banked_transfers}`
+    if (autoKey.current === key) return
+    autoKey.current = key
+    generateRef.current()
+  }, [validManagerId, managerChips])
+
   const plan = compare?.[hitStrategy]
+  const deadlinePlan = plan?.gameweek_plans?.[0]
+  const onDeadline = gwIndex === 0
   const gwPlan = plan?.gameweek_plans?.[gwIndex]
   const gwSummary = gwPlan && plan.transfer_summary?.find(t => t.gameweek === gwPlan.gameweek)
   const squad = gwPlan ? [...gwPlan.starting_xi, ...gwPlan.bench] : null
@@ -318,8 +336,8 @@ export default function PlannerView({ season, managerId, setManagerId, validMana
         <Toggle checked={useRobust} onChange={setUseRobust} label="Robust optimisation" description="Hedge against projection uncertainty." />
       </div>
 
-      <Button size="lg" className="w-full" onClick={generate} disabled={loading}>
-        {loading ? <><Spinner /> Solving…</> : 'Generate plan'}
+      <Button size="lg" className="w-full" onClick={generate} disabled={loading || (Boolean(validManagerId) && !managerChips)}>
+        {loading ? <><Spinner /> Solving…</> : (validManagerId && !managerChips) ? 'Loading your squad…' : 'Generate plan'}
       </Button>
       <ErrorNote>{error}</ErrorNote>
     </>
@@ -335,8 +353,8 @@ export default function PlannerView({ season, managerId, setManagerId, validMana
               detail={`Comparing hit vs. no-hit strategies across ${horizon} gameweeks with the MILP solver. This can take up to a minute.`}
             />
           ) : (
-            <EmptyState icon={<IconRoute size={24} />} title={`Plan your next ${horizon} gameweeks`}>
-              Link your manager ID to plan transfers from your current squad, or leave it blank to build the best squad from scratch.
+            <EmptyState icon={<IconRoute size={24} />} title="Your team for the next deadline">
+              Enter your manager ID. The plan loads your squad, bank and free transfers, then sets the XI, captain, bench and transfers for the next deadline.
             </EmptyState>
           )}
         </Canvas>
@@ -386,7 +404,7 @@ export default function PlannerView({ season, managerId, setManagerId, validMana
                 )}
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-[11px] font-semibold text-fg-3">GW{p.gameweek}</span>
+                  <span className="text-[11px] font-semibold text-fg-3">{idx === 0 ? 'This week' : `GW${p.gameweek}`}</span>
                   {p.chip_used && <Badge tone="pink">{chipLabel(p.chip_used).split(' ').map(w => w[0]).join('')}</Badge>}
                 </div>
                 <div className="mt-0.5 font-display text-lg font-semibold tabular">{num(p.expected_points)}<span className="ml-1 text-xs font-sans font-normal text-fg-3">xP</span></div>
@@ -404,21 +422,39 @@ export default function PlannerView({ season, managerId, setManagerId, validMana
             <Card className="p-4 sm:p-5">
               <div className="mb-4 flex items-center justify-between gap-3">
                 <div>
+                  <SectionLabel>{onDeadline ? 'Set this team' : 'Draft'}</SectionLabel>
                   <h2 className="font-display text-lg font-semibold">Gameweek {gwPlan.gameweek}</h2>
-                  <p className="text-xs text-fg-3 tabular">
+                  <p className="text-xs text-fg-3">
+                    {onDeadline
+                      ? 'Make the transfers, set this XI, and save the chip unless the plan says to play it. Later weeks are a draft and update when you plan again.'
+                      : `A draft for GW${gwPlan.gameweek}. The team to set is GW${deadlinePlan?.gameweek}.`}
+                  </p>
+                  <p className="text-xs text-fg-3 tabular mt-1">
                     {num(gwPlan.expected_points)} xP from the starting XI, captain doubled
                     {typeof gwPlan.bank === 'number' && <> · {price(gwPlan.bank)} in the bank after transfers</>}
                   </p>
                 </div>
                 <ViewToggle value={view} onChange={setView} />
               </div>
+              {!onDeadline && (
+                <button type="button" onClick={() => setGwIndex(0)} className="mb-4 text-xs font-semibold text-fpl-green hover:underline cursor-pointer">
+                  Back to GW{deadlinePlan?.gameweek}
+                </button>
+              )}
               <SquadView squad={squad} view={view} />
+              {onDeadline && benchOrder(gwPlan.bench).length > 0 && (
+                <p className="mt-3 text-xs text-fg-3">
+                  Bench, first substitute first: {benchOrder(gwPlan.bench).map(p => p.web_name).join(' · ')}
+                </p>
+              )}
             </Card>
 
             <div className="space-y-4">
-              <TransferPanel transfers={gwPlan.transfers} summary={gwSummary ?? gwPlan.transfers} />
-              <CaptainCard rec={gwPlan.captain_recommendation} />
-              <ChipAdviceCard suggestion={plan.chip_suggestion} others={plan.chip_recommendations} />
+              <TransferPanel transfers={gwPlan.transfers} summary={gwSummary ?? gwPlan.transfers} explainOpen={onDeadline} />
+              <CaptainCard rec={gwPlan.captain_recommendation} vice={squad?.find(p => p.is_vice_captain)} />
+              {onDeadline && (
+                <ChipAdviceCard suggestion={plan.chip_suggestion} hold={plan.chip_hold} remaining={plan.chips_remaining} deadlineGw={deadlinePlan?.gameweek} />
+              )}
             </div>
           </div>
         )}
