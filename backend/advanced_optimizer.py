@@ -90,6 +90,23 @@ class MultiPeriodSolution:
     proven_optimal: bool = True
 
 
+def prediction_pool(players: pd.DataFrame, keep_ids: Optional[List[int]], per_position: int) -> pd.DataFrame:
+    """Top points-per-game players in each position, plus anyone already in the squad."""
+    ppg = pd.to_numeric(players.get('points_per_game'), errors='coerce').fillna(0)
+    frame = players.assign(_ppg=ppg)
+    keep = set(keep_ids or [])
+    chosen = []
+    for pos in (1, 2, 3, 4):
+        pos_df = frame[frame['element_type'] == pos]
+        if pos_df.empty:
+            continue
+        chosen.append(pos_df.nlargest(per_position, '_ppg'))
+        chosen.append(pos_df[pos_df['id'].isin(keep)])
+    if not chosen:
+        return players.iloc[0:0].copy()
+    return pd.concat(chosen, ignore_index=True).drop_duplicates('id').drop(columns='_ppg')
+
+
 class MultiPeriodFPLOptimizer:
     """
     Multi-period MILP optimizer for FPL 2025/26 season.
@@ -114,6 +131,9 @@ class MultiPeriodFPLOptimizer:
     LAST_GAMEWEEK = 38
     MAX_HORIZON = 15
     POOL_PER_POSITION = 30
+    # Detailed projections are the slow part on a small host. Score a shortlist,
+    # then the search keeps the best of those per position.
+    CANDIDATES_PER_POSITION = 40
     SOLVER_TIME_LIMIT = 15
     SOLVER_GAP = 0.01
     
@@ -396,7 +416,11 @@ class MultiPeriodFPLOptimizer:
         gameweeks = min(max(3, min(self.MAX_HORIZON, gameweeks)), remaining)
         horizon = list(range(self.current_gw, self.current_gw + gameweeks))
         
-        # Get predictions for all gameweeks
+        # Score a shortlist. Projecting the whole league is what blows the host timeout.
+        if self.predictions is None:
+            self.predictor.players = prediction_pool(
+                self.predictor.players, current_squad_ids, self.CANDIDATES_PER_POSITION
+            )
         predictions = self._get_predictions(gameweeks=gameweeks)
         
         if robust:
