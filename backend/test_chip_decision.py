@@ -19,12 +19,18 @@ class ChipDecisionTests(unittest.TestCase):
         self.assertIsNone(decision['play'])
         self.assertEqual(decision['held'][0]['chip'], 'triple_captain')
         self.assertIn('Hold Triple Captain', decision['held'][0]['reason'])
+        self.assertIn('0.1 points', decision['held'][0]['reason'])
 
     def test_a_double_gameweek_spike_plays_the_chip(self):
         decision = choose_chip_to_play([tc(12, 14.0, dgw=True), tc(13, 7.2), tc(14, 7.0)])
         self.assertEqual(decision['play']['recommended_gameweek'], 12)
         self.assertTrue(decision['play']['play'])
         self.assertEqual(decision['held'], [])
+
+    def test_a_tied_week_does_not_claim_a_lead(self):
+        decision = choose_chip_to_play([tc(9, 7.2), tc(10, 7.2), tc(11, 7.2)])
+        self.assertIsNone(decision['play'])
+        self.assertIn('No week in this plan is ahead', decision['held'][0]['reason'])
 
     def test_one_week_is_not_enough_to_spend_the_chip(self):
         decision = choose_chip_to_play([tc(9, 8.0)])

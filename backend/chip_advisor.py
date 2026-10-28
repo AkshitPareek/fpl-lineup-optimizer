@@ -61,6 +61,8 @@ def choose_chip_to_play(recommendations: List[Dict]) -> Dict:
             continue
         if margin is None:
             reason = f"Hold {name}. One week is not enough to know this is the week to use it."
+        elif round(margin, 1) <= 0:
+            reason = f"Hold {name}. No week in this plan is ahead."
         else:
             reason = (
                 f"Hold {name}. GW{best.get('recommended_gameweek')} leads the next week "
