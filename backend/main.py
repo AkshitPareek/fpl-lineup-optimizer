@@ -17,7 +17,7 @@ import pandas as pd
 import json
 import threading
 
-from fpl_service import FPLService
+from fpl_service import FPLService, PRIOR_SEASON_WAIT_SECONDS
 from optimizer import FPLOptimizer
 from advanced_optimizer import MultiPeriodFPLOptimizer
 from robust_optimizer import RobustOptimizer
@@ -113,7 +113,10 @@ async def startup_event():
     print(f"🚀 FPL Optimizer API starting...")
     print(f"📋 CORS allowed origins: {ALLOWED_ORIGINS}")
     # Warm the FPL cache and last season's totals before the first request.
-    threading.Thread(target=fpl_service.get_latest_data, daemon=True).start()
+    threading.Thread(
+        target=lambda: fpl_service.get_latest_data(prior_wait=PRIOR_SEASON_WAIT_SECONDS),
+        daemon=True,
+    ).start()
 
 
 # Custom exception handler to ensure CORS headers on errors

@@ -1,3 +1,4 @@
+import time
 import unittest
 from unittest import mock
 
@@ -176,6 +177,44 @@ class ComparisonSummaryTests(unittest.TestCase):
         self.assertFalse(summary["feasible"])
         self.assertIsNone(summary["net_xp"])
         self.assertFalse(summary["recommended"])
+
+
+class LatestDataTests(unittest.TestCase):
+    def test_a_request_does_not_wait_on_last_season(self):
+        service = FPLService()
+        service._update_cache("bootstrap-static", {"elements": [], "events": []})
+        service._update_cache("fixtures", [])
+
+        def slow_attach(static, wait=0):
+            time.sleep(wait)
+
+        service.prior_season.attach = slow_attach
+        started = time.time()
+        data = service.get_latest_data()
+        self.assertLess(time.time() - started, 0.5)
+        self.assertEqual(data["fixtures"], [])
+
+        started = time.time()
+        service.get_latest_data(prior_wait=0.3)
+        self.assertGreaterEqual(time.time() - started, 0.3)
+
+    def test_bootstrap_is_cached_before_last_season_is_waited_on(self):
+        service = FPLService()
+        order = []
+
+        def get_json(url):
+            order.append(url)
+            if url.endswith("/bootstrap-static/"):
+                return {"elements": [], "events": [{"deadline_time": "2026-08-21T17:30:00Z"}]}
+            return []
+
+        def attach(static, wait=0):
+            order.append("cached" if service._is_cache_valid("bootstrap-static") else "missing")
+
+        service._get_json = get_json
+        service.prior_season.attach = attach
+        service.get_latest_data()
+        self.assertEqual(order[-1], "cached")
 
 
 if __name__ == "__main__":

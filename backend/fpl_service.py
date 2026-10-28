@@ -117,29 +117,25 @@ class FPLService:
         self.prior_season = PriorSeasonStats()
 
     def _get_json(self, url):
-        response = requests.get(url, headers=FPL_HEADERS, timeout=30)
+        response = requests.get(url, headers=FPL_HEADERS, timeout=12)
         response.raise_for_status()
         return response.json()
 
-    def get_latest_data(self):
-        """Fetches bootstrap-static and fixtures data."""
+    def get_latest_data(self, prior_wait: float = 0):
+        """Bootstrap and fixtures. Last season loads in the background and does not hold the request."""
         if self._is_cache_valid("bootstrap-static") and self._is_cache_valid("fixtures"):
-            self.prior_season.attach(self._cache["bootstrap-static"], wait=PRIOR_SEASON_WAIT_SECONDS)
+            self.prior_season.attach(self._cache["bootstrap-static"], wait=prior_wait)
             return {
                 "static": self._cache["bootstrap-static"],
                 "fixtures": self._cache["fixtures"]
             }
 
-        # Fetch Bootstrap Static
         try:
             static_data = self._get_json(f"{self.BASE_URL}/bootstrap-static/")
-            self.prior_season.attach(static_data, wait=PRIOR_SEASON_WAIT_SECONDS)
             self._update_cache("bootstrap-static", static_data)
-
-            # Fetch Fixtures
             fixtures_data = self._get_json(f"{self.BASE_URL}/fixtures/")
             self._update_cache("fixtures", fixtures_data)
-            
+            self.prior_season.attach(static_data, wait=prior_wait)
             return {
                 "static": static_data,
                 "fixtures": fixtures_data
