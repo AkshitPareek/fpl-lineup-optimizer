@@ -2,6 +2,8 @@ import time
 import unittest
 from unittest import mock
 
+import pandas as pd
+
 from fpl_service import FPLService, banked_transfers_for_next_deadline, manager_squad_state, selling_price
 from main import _comparison_entry
 
@@ -177,6 +179,21 @@ class ComparisonSummaryTests(unittest.TestCase):
         self.assertFalse(summary["feasible"])
         self.assertIsNone(summary["net_xp"])
         self.assertFalse(summary["recommended"])
+
+
+class PredictionPoolTests(unittest.TestCase):
+    def test_the_squad_stays_in_and_the_pool_is_capped(self):
+        from advanced_optimizer import prediction_pool
+        rows = []
+        for pos in (1, 2, 3, 4):
+            for i in range(10):
+                rows.append({"id": pos * 100 + i, "element_type": pos, "points_per_game": i})
+        # The squad player is the lowest points-per-game midfielder.
+        squad_id = 300
+        pool = prediction_pool(pd.DataFrame(rows), [squad_id], per_position=3)
+        self.assertIn(squad_id, set(pool['id']))
+        self.assertEqual(len(pool), 3 * 4 + 1)
+        self.assertFalse((pool['id'] == 301).any())
 
 
 class LatestDataTests(unittest.TestCase):
