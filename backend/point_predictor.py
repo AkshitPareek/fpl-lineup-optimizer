@@ -269,8 +269,25 @@ class PointPredictor:
         shrunk = 1.0 + (raw - 1.0) * self.FIXTURE_SHRINK
         return max(bounds[0], min(bounds[1], shrunk))
 
-    def attack_fixture_multiplier(self, opponent: int, is_home: bool) -> float:
+    # FPL's strength ratings are 0 for every club this season, so a ratio against
+    # them is noise. Fixture difficulty (1 easy, 5 hard) is the rating that is set.
+    FDR_ATTACK = {1: 1.22, 2: 1.11, 3: 1.00, 4: 0.88, 5: 0.76}
+    FDR_DEFENCE = {1: 1.26, 2: 1.12, 3: 1.00, 4: 0.84, 5: 0.70}
+
+    def _strengths_usable(self) -> bool:
+        return self.avg_attack >= 100 and self.avg_defense >= 100
+
+    def _fdr_multiplier(self, difficulty, table: Dict[int, float]) -> float:
+        try:
+            rating = int(difficulty)
+        except (TypeError, ValueError):
+            rating = 3
+        return table.get(rating, 1.0)
+
+    def attack_fixture_multiplier(self, opponent: int, is_home: bool, difficulty=None) -> float:
         """1.0 against an average defence. A weaker defence, and playing at home, raises it."""
+        if not self._strengths_usable():
+            return self._fdr_multiplier(difficulty, self.FDR_ATTACK)
         if is_home:
             opp_def = self.team_defense_away.get(opponent, self.avg_defense)
             venue = 1.06
@@ -280,8 +297,10 @@ class PointPredictor:
         ratio = self.avg_defense / max(float(opp_def), 1.0)
         return self._clamp_fixture(venue * ratio, self.ATTACK_CLAMP)
 
-    def defence_fixture_multiplier(self, team_id: int, opponent: int, is_home: bool) -> float:
+    def defence_fixture_multiplier(self, team_id: int, opponent: int, is_home: bool, difficulty=None) -> float:
         """1.0 for an average defence against an average attack. An elite attack cuts it."""
+        if not self._strengths_usable():
+            return self._fdr_multiplier(difficulty, self.FDR_DEFENCE)
         if is_home:
             own_def = self.team_defense_home.get(team_id, self.avg_defense)
             opp_atk = self.team_attack_away.get(opponent, self.avg_attack)
@@ -299,9 +318,9 @@ class PointPredictor:
         if not fixtures:
             return 1.0
         if element_type in (1, 2):
-            values = [self.defence_fixture_multiplier(team_id, fix['opponent'], fix['is_home']) for fix in fixtures]
+            values = [self.defence_fixture_multiplier(team_id, fix['opponent'], fix['is_home'], fix.get('difficulty')) for fix in fixtures]
         else:
-            values = [self.attack_fixture_multiplier(fix['opponent'], fix['is_home']) for fix in fixtures]
+            values = [self.attack_fixture_multiplier(fix['opponent'], fix['is_home'], fix.get('difficulty')) for fix in fixtures]
         return sum(values) / len(values)
 
     def calculate_xg_points(self, player: pd.Series, gameweek: int) -> float:
@@ -328,7 +347,7 @@ class PointPredictor:
             opponent = fix['opponent']
             is_home = fix['is_home']
             
-            total_xg += xg_per_90 * self.attack_fixture_multiplier(opponent, is_home)
+            total_xg += xg_per_90 * self.attack_fixture_multiplier(opponent, is_home, fix.get('difficulty'))
         
         goal_points = total_xg * self.POINTS_GOAL.get(element_type, 4)
         # Cap at reasonable maximum (~1.5 goals worth per match)
@@ -354,7 +373,7 @@ class PointPredictor:
             opponent = fix['opponent']
             is_home = fix['is_home']
             
-            total_xa += xa_per_90 * self.attack_fixture_multiplier(opponent, is_home)
+            total_xa += xa_per_90 * self.attack_fixture_multiplier(opponent, is_home, fix.get('difficulty'))
         
         assist_points = total_xa * self.POINTS_ASSIST
         # Cap at reasonable maximum (~2 assists worth per match)
@@ -383,7 +402,7 @@ class PointPredictor:
             
             # 0.24 is a neutral clean-sheet rate. The fixture multiplier already
             # includes home advantage and the opponent's attack.
-            cs_prob = 0.24 * self.defence_fixture_multiplier(team_id, opponent, is_home)
+            cs_prob = 0.24 * self.defence_fixture_multiplier(team_id, opponent, is_home, fix.get('difficulty'))
             total_cs_prob += max(0.04, min(0.62, cs_prob))
         
         return total_cs_prob * self.POINTS_CLEAN_SHEET.get(element_type, 0)

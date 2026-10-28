@@ -151,6 +151,20 @@ class FixtureSensitivityTests(unittest.TestCase):
         self.assertGreater(easy_xp, hard_xp * 1.12)
         self.assertGreater(easy_xp - hard_xp, 0.6)
 
+    def test_missing_team_strengths_fall_back_to_fixture_difficulty(self):
+        teams = pd.DataFrame([
+            team_row(1, 0, 0, 0, 0),
+            team_row(2, 0, 0, 0, 0),
+        ])
+        defender = pd.Series(player(element_type=2, web_name="Def"))
+        hard = [{"event": 9, "team_h": 2, "team_a": 1, "team_h_difficulty": 2, "team_a_difficulty": 5}]
+        easy = [{"event": 9, "team_h": 1, "team_a": 2, "team_h_difficulty": 2, "team_a_difficulty": 4}]
+        hard_xp, hard_br = PointPredictor(pd.DataFrame([player()]), teams, hard, 9, use_understat=False).predict_gameweek(defender, 9)
+        easy_xp, easy_br = PointPredictor(pd.DataFrame([player()]), teams, easy, 9, use_understat=False).predict_gameweek(defender, 9)
+        self.assertAlmostEqual(hard_br['fixture_factor'], 0.70)
+        self.assertAlmostEqual(easy_br['fixture_factor'], 1.12)
+        self.assertGreater(easy_xp, hard_xp)
+
     def test_an_attackers_fixture_moves_the_projection(self):
         teams = pd.DataFrame([
             team_row(1, 1200, 1150, 1100, 1050),
