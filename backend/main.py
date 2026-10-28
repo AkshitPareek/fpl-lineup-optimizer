@@ -546,10 +546,10 @@ async def optimize_compare(request: MultiPeriodRequest):
         loop = asyncio.get_event_loop()
         
         try:
-            # Run the with-hits optimization first (45s timeout)
+            # Run the with-hits optimization first. The small host needs the extra time to build the model.
             solution_with_hits = await asyncio.wait_for(
                 loop.run_in_executor(None, run_with_hits),
-                timeout=45.0
+                timeout=75.0
             )
         except asyncio.TimeoutError:
             print("With-hits optimization timed out")
@@ -601,7 +601,7 @@ async def optimize_compare(request: MultiPeriodRequest):
         try:
             solution_no_hits = await asyncio.wait_for(
                 loop.run_in_executor(None, run_no_hits),
-                timeout=45.0
+                timeout=75.0
             )
         except asyncio.TimeoutError:
             # If no-hits times out, return with-hits only with estimate
@@ -1302,7 +1302,7 @@ async def get_manager_chips(manager_id: int):
 
 @app.get("/health")
 def health_check():
-    return {"status": "ok", "version": "2.1.0"}
+    return {"status": "ok", "version": "2.1.1"}
 
 
 # =============================================================================
