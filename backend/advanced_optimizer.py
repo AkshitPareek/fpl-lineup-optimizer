@@ -131,9 +131,6 @@ class MultiPeriodFPLOptimizer:
     LAST_GAMEWEEK = 38
     MAX_HORIZON = 15
     POOL_PER_POSITION = 30
-    # Detailed projections are the slow part on a small host. Score a shortlist,
-    # then the search keeps the best of those per position.
-    CANDIDATES_PER_POSITION = 40
     SOLVER_TIME_LIMIT = 15
     SOLVER_GAP = 0.01
     
@@ -415,12 +412,7 @@ class MultiPeriodFPLOptimizer:
         remaining = max(1, self.LAST_GAMEWEEK + 1 - self.current_gw)
         gameweeks = min(max(3, min(self.MAX_HORIZON, gameweeks)), remaining)
         horizon = list(range(self.current_gw, self.current_gw + gameweeks))
-        
-        # Score a shortlist. Projecting the whole league is what blows the host timeout.
-        if self.predictions is None:
-            self.predictor.players = prediction_pool(
-                self.predictor.players, current_squad_ids, self.CANDIDATES_PER_POSITION
-            )
+
         predictions = self._get_predictions(gameweeks=gameweeks)
         
         if robust:

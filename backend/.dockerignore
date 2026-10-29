@@ -1,6 +1,6 @@
 __pycache__
 *.pyc
 .venv
-data/cache
+data/cache/seasons
 *.log
 .pytest_cache

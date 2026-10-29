@@ -1,3 +1,6 @@
+import json
+import os
+import tempfile
 import time
 import unittest
 from unittest import mock
@@ -213,6 +216,19 @@ class PriorSeasonSwitchTests(unittest.TestCase):
             stats.attach(static, wait=5)
         self.assertEqual(started, [])
         self.assertNotIn("prior_points", static["elements"][0])
+
+    def test_a_saved_season_is_applied_without_a_fetch(self):
+        from prior_season import PriorSeasonStats
+        with tempfile.TemporaryDirectory() as cache_dir:
+            path = os.path.join(cache_dir, "prior_season_2025-26.json")
+            with open(path, "w") as f:
+                json.dump({"154561": {"prior_points": 162, "prior_minutes": 3330, "prior_starts": 37}}, f)
+            stats = PriorSeasonStats(cache_dir=cache_dir)
+            stats._load = lambda *_a, **_k: (_ for _ in ()).throw(AssertionError("network fetch"))
+            static = {"events": [{"deadline_time": "2026-08-21T17:30:00Z"}],
+                      "elements": [{"id": 1, "code": 154561}]}
+            stats.attach(static, wait=0)
+        self.assertEqual(static["elements"][0]["prior_points"], 162)
 
 
 class LatestDataTests(unittest.TestCase):
