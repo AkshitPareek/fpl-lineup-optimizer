@@ -15,6 +15,7 @@ fi
 gcloud run deploy "$SERVICE" \
   --project "$PROJECT" \
   --region "$REGION" \
+  --quiet \
   --source "$(CDPATH= cd -- "$(dirname "$0")" && pwd)" \
   --allow-unauthenticated \
   --cpu 1 \
