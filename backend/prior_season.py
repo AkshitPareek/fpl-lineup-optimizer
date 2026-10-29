@@ -17,7 +17,7 @@ import requests
 
 BASE_URL = "https://fantasy.premierleague.com/api"
 CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "cache")
-HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; FPLLineupOptimizer/1.0)"}
+HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"}
 PRIOR_FIELDS = ("prior_points", "prior_minutes", "prior_starts")
 
 
@@ -79,8 +79,7 @@ class PriorSeasonStats:
                             continue
                         if totals:
                             by_code[code] = totals
-                # A partial result is used for this process only, so the next start retries.
-                if not failures:
+                if by_code:
                     os.makedirs(self.cache_dir, exist_ok=True)
                     with open(path, "w") as f:
                         json.dump(by_code, f)
@@ -105,6 +104,13 @@ class PriorSeasonStats:
         season_name = previous_season_name(static_data.get("events", []))
         if not season_name:
             return
+        cached = self._read_cache(season_name)
+        if cached is not None:
+            with self._lock:
+                self._by_code = cached
+                self._season = season_name
+            self._apply(static_data, cached)
+            return
         with self._lock:
             if self._season != season_name and not self._loading:
                 self._loading = True
@@ -121,6 +127,20 @@ class PriorSeasonStats:
             if self._season != season_name:
                 return
             by_code = self._by_code
+        self._apply(static_data, by_code)
+
+    def _bundled_path(self, season_name: str) -> str:
+        name = f"prior_season_{season_name.replace('/', '-')}.json"
+        return os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", name)
+
+    def _read_cache(self, season_name: str) -> Optional[Dict[str, Dict[str, int]]]:
+        for path in (self._cache_path(season_name), self._bundled_path(season_name)):
+            if os.path.exists(path):
+                with open(path) as f:
+                    return json.load(f)
+        return None
+
+    def _apply(self, static_data: Dict, by_code: Dict[str, Dict[str, int]]) -> None:
         for element in static_data.get("elements", []):
             totals = by_code.get(str(element.get("code")))
             for field in PRIOR_FIELDS:

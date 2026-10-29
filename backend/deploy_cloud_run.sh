@@ -25,4 +25,4 @@ gcloud run deploy "$SERVICE" \
   --min-instances 0 \
   --max-instances 2 \
   --cpu-boost \
-  --set-env-vars "FRONTEND_URL=https://fploptimize.netlify.app,LOAD_PRIOR_SEASON=0"
+  --set-env-vars "FRONTEND_URL=https://fploptimize.netlify.app"
