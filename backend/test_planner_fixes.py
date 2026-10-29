@@ -123,6 +123,40 @@ class ManagerBankTests(unittest.TestCase):
             chips = service.get_manager_chips(1)
         self.assertAlmostEqual(chips["bank"], 0.3)
         self.assertEqual(chips["banked_transfers"], 2)
+        self.assertTrue(chips["synced"])
+
+    def test_a_forbidden_response_is_retried(self):
+        service = FPLService()
+        calls = []
+
+        class Response:
+            def __init__(self, code, body):
+                self.status_code = code
+                self._body = body
+
+            def raise_for_status(self):
+                if self.status_code >= 400:
+                    raise __import__("requests").HTTPError(str(self.status_code))
+
+            def json(self):
+                return self._body
+
+        def get(url, headers=None, timeout=None):
+            calls.append(url)
+            body = {"current": [], "chips": []}
+            return Response(403 if len(calls) == 1 else 200, body)
+
+        with mock.patch("fpl_service.requests.get", get), mock.patch("fpl_service.time.sleep"):
+            chips = service.get_manager_chips(1)
+        self.assertGreaterEqual(len(calls), 2)
+        self.assertTrue(chips["synced"])
+
+    def test_a_failed_account_read_is_not_treated_as_loaded(self):
+        service = FPLService()
+        with mock.patch.object(service, "_get_json", side_effect=__import__("requests").RequestException("nope")):
+            chips = service.get_manager_chips(1)
+        self.assertFalse(chips["synced"])
+        self.assertNotIn("bank", chips)
 
     def test_unknown_bank_is_left_to_the_user(self):
         service = FPLService()
@@ -267,6 +301,33 @@ class LatestDataTests(unittest.TestCase):
         service.prior_season.attach = attach
         service.get_latest_data()
         self.assertEqual(order[-1], "cached")
+
+
+class StrategyAndRobustTests(unittest.TestCase):
+    def test_differential_only_helps_players_under_ten_percent(self):
+        from advanced_optimizer import ownership_adjustment
+        self.assertAlmostEqual(ownership_adjustment(0, "differential"), 1.5)
+        self.assertEqual(ownership_adjustment(10, "differential"), 0)
+        self.assertEqual(ownership_adjustment(40, "differential"), 0)
+        self.assertEqual(ownership_adjustment(0, "standard"), 0)
+
+    def test_template_rewards_the_popular_and_trims_the_rare(self):
+        from advanced_optimizer import ownership_adjustment
+        self.assertEqual(ownership_adjustment(20, "template"), 0)
+        self.assertGreater(ownership_adjustment(50, "template"), ownership_adjustment(25, "template"))
+        self.assertAlmostEqual(ownership_adjustment(50, "template"), 1.2)
+        self.assertEqual(ownership_adjustment(15, "template"), 0)
+        self.assertLess(ownership_adjustment(0, "template"), 0)
+        self.assertAlmostEqual(ownership_adjustment(0, "template"), -0.6)
+
+    def test_robust_charges_the_riskier_projection_more(self):
+        from advanced_optimizer import robust_points
+        safe = robust_points(5, 0.75, 0.3)
+        risky = robust_points(5, 4.0, 0.3)
+        self.assertAlmostEqual(safe, 4.775)
+        self.assertAlmostEqual(risky, 3.8)
+        self.assertGreater(safe, risky)
+        self.assertEqual(robust_points(2, 100, 0.3), 0)
 
 
 if __name__ == "__main__":

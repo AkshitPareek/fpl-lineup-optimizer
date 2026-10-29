@@ -16,11 +16,11 @@ const MAX_HORIZON = 15
 
 const STRATEGIES = [
   { value: 'standard', label: 'Standard', hint: 'Maximise expected points.' },
-  { value: 'differential', label: 'Differential', hint: 'Boost low-ownership players (<10%).' },
-  { value: 'template', label: 'Template', hint: 'Favour popular, proven picks.' },
+  { value: 'differential', label: 'Differential', hint: 'Adds points to players owned by under 10% of managers. The rest of the search is the same.' },
+  { value: 'template', label: 'Template', hint: 'Adds points to players owned by 20% or more, and trims players under 10%.' },
 ]
 
-export function ManagerFields({ managerId, setManagerId, validManagerId, budget, setBudget }) {
+export function ManagerFields({ managerId, setManagerId, validManagerId, budget, setBudget, bankLocked = false }) {
   const invalid = managerId.trim() && !/^\d+$/.test(managerId.trim())
   return (
     <>
@@ -32,8 +32,15 @@ export function ManagerFields({ managerId, setManagerId, validManagerId, budget,
       >
         <TextInput id="manager-id" inputMode="numeric" value={managerId} onChange={e => setManagerId(e.target.value)} placeholder="e.g. 123456" />
       </Field>
-      <Field label={validManagerId ? 'Money in the bank' : 'Budget'} hint={validManagerId ? 'Your remaining ITB.' : null}>
-        <Stepper value={budget} onChange={setBudget} min={0} max={200} step={0.5} suffix="£m" />
+      <Field
+        label={validManagerId ? 'Money in the bank' : 'Budget'}
+        hint={bankLocked ? 'Loaded from your FPL account.' : 'Used when your bank could not be read from FPL.'}
+      >
+        {bankLocked ? (
+          <p className="text-sm font-semibold tabular">{price(budget)}</p>
+        ) : (
+          <Stepper value={budget} onChange={setBudget} min={0} max={200} step={0.5} suffix="£m" />
+        )}
       </Field>
     </>
   )
@@ -42,7 +49,7 @@ export function ManagerFields({ managerId, setManagerId, validManagerId, budget,
 function ChipPicker({ season, horizon, available, recs, selected, onChange }) {
   const startGw = season?.active_gameweek || 1
   const endGw = startGw + horizon - 1
-  const chips = available || Object.keys(CHIP_LABELS)
+  const chips = Array.isArray(available) ? available : Object.keys(CHIP_LABELS)
   const rec = selected && recs?.recommendations?.[selected.chip]
 
   const pick = chip => {
@@ -55,7 +62,7 @@ function ChipPicker({ season, horizon, available, recs, selected, onChange }) {
   return (
     <Field
       label="Chip"
-      aside={recs?.best_chip && selected?.chip !== recs.best_chip.chip && (
+      aside={recs?.best_chip && selected?.chip !== recs.best_chip.chip && (!Array.isArray(available) || available.includes(recs.best_chip.chip)) && (
         <button
           type="button"
           onClick={() => onChange({ chip: recs.best_chip.chip, gw: recs.best_chip.gw ?? recs.best_chip.recommended_gameweek })}
@@ -64,7 +71,9 @@ function ChipPicker({ season, horizon, available, recs, selected, onChange }) {
           Apply suggested: {chipLabel(recs.best_chip.chip)}
         </button>
       )}
-      hint={rec?.reason || 'Chips change the solve, so they are only used when you pick one.'}
+      hint={rec?.reason || (Array.isArray(available)
+        ? `Chips left: ${available.map(chipLabel).join(', ') || 'none'}. Leave this on No chip and the plan decides.`
+        : 'Leave this on No chip and the plan decides. Pick one only to force it.')}
     >
       <div className="flex gap-2">
         <div className="flex-1">
@@ -300,7 +309,7 @@ export default function PlannerView({
 
   const settings = (
     <>
-      <ManagerFields {...{ managerId, setManagerId, validManagerId, budget, setBudget }} />
+      <ManagerFields {...{ managerId, setManagerId, validManagerId, budget, setBudget }} bankLocked={Boolean(managerChips?.synced && typeof managerChips.bank === 'number')} />
 
       <Field label="Planning horizon" aside={<span className="text-xs font-semibold text-fg tabular">{horizon} GWs</span>}>
         <input type="range" min="3" max={MAX_HORIZON} value={horizon} onChange={e => setHorizon(Number(e.target.value))} className="w-full" aria-label="Planning horizon" />
@@ -311,12 +320,16 @@ export default function PlannerView({
       </Field>
 
       <Field
-        label="Free transfers banked"
-        hint={managerChips && Number.isInteger(managerChips.banked_transfers)
-          ? `From your FPL history${managerChips.pending_transfers > 0 ? `, after the ${managerChips.pending_transfers} already made` : ''}. Chips left: ${(managerChips.available || []).map(chipLabel).join(', ') || 'none'}.`
-          : null}
+        label="Free transfers"
+        hint={managerChips?.synced && Number.isInteger(managerChips.banked_transfers)
+          ? `Loaded from your FPL history${managerChips.pending_transfers > 0 ? `, after the ${managerChips.pending_transfers} already made` : ''}.`
+          : 'How many free transfers you can use this week.'}
       >
-        <Stepper value={bankedTransfers} onChange={setBankedTransfers} min={0} max={maxBanked} />
+        {managerChips?.synced && Number.isInteger(managerChips.banked_transfers) ? (
+          <p className="text-sm font-semibold tabular">{bankedTransfers}</p>
+        ) : (
+          <Stepper value={bankedTransfers} onChange={setBankedTransfers} min={0} max={maxBanked} />
+        )}
       </Field>
 
       <Field label="Strategy" hint={strategyMeta?.hint}>
@@ -326,14 +339,14 @@ export default function PlannerView({
       <ChipPicker
         season={season}
         horizon={horizon}
-        available={managerChips?.available}
+        available={managerChips?.synced ? managerChips.available : undefined}
         recs={chipRecs}
         selected={selectedChip}
         onChange={setSelectedChip}
       />
 
       <div className="rounded-xl bg-ink-900/60 p-3 ring-1 ring-inset ring-ink-700/70">
-        <Toggle checked={useRobust} onChange={setUseRobust} label="Robust optimisation" description="Hedge against projection uncertainty." />
+        <Toggle checked={useRobust} onChange={setUseRobust} label="Robust optimisation" description="Prefer a nailed player over the same points from rotation or an injury doubt." />
       </div>
 
       <Button size="lg" className="w-full" onClick={generate} disabled={loading || (Boolean(validManagerId) && !managerChips)}>

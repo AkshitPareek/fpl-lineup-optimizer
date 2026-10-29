@@ -15,7 +15,7 @@ function recommendedStrategy(compare) {
 }
 
 export default function QuickPickView({
-  managerId, setManagerId, validManagerId, budget, setBudget, bankedTransfers,
+  managerId, setManagerId, validManagerId, budget, setBudget, bankedTransfers, managerChips,
 }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -55,7 +55,7 @@ export default function QuickPickView({
 
   const settings = (
     <>
-      <ManagerFields {...{ managerId, setManagerId, validManagerId, budget, setBudget }} />
+      <ManagerFields {...{ managerId, setManagerId, validManagerId, budget, setBudget }} bankLocked={Boolean(managerChips?.synced && typeof managerChips.bank === 'number')} />
       <p className="text-xs text-fg-3">
         Scores the next gameweek with the same projections as the Planner. The Planner is the team to set, because it keeps the weeks after this one.
       </p>

@@ -751,6 +751,26 @@ class PointPredictor:
             breakdown['availability_adj'] = availability_factor
             
         return total, breakdown
+
+    def projection_risk(self, player: pd.Series, breakdown: Dict[str, float], xp: float) -> float:
+        """Extra points of doubt around `xp`. Nailed players carry less than rotation or injuries."""
+        if xp <= 0:
+            return 0.0
+        fraction = 0.15
+        try:
+            starts = float(player.get('starts') or 0)
+            minutes = float(player.get('minutes') or 0)
+        except (TypeError, ValueError):
+            starts, minutes = 0.0, 0.0
+        if max(starts, minutes / 90.0) < 6:
+            fraction += 0.2
+        decay = breakdown.get('minutes_decay', 1) or 1
+        if decay < 1:
+            fraction += 0.3 * (1 - decay)
+        availability = breakdown.get('availability_adj', 1)
+        if availability is not None and availability < 1:
+            fraction += 0.45 * (1 - availability)
+        return xp * min(fraction, 1.0)
     
     def predict_multi_gameweek(self, player_id: int, gameweeks: int = 5) -> PointPrediction:
         """
@@ -805,8 +825,9 @@ class PointPredictor:
             total_xp = 0
             
             for gw in range(self.current_gw, self.current_gw + gameweeks):
-                xp, _ = self.predict_gameweek(player, gw)
+                xp, breakdown = self.predict_gameweek(player, gw)
                 gw_cols[f'xp_gw{gw}'] = xp
+                gw_cols[f'sigma_gw{gw}'] = self.projection_risk(player, breakdown, xp)
                 total_xp += xp
             
             predictions.append({

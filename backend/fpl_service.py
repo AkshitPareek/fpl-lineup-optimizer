@@ -117,9 +117,21 @@ class FPLService:
         self.prior_season = PriorSeasonStats()
 
     def _get_json(self, url):
-        response = requests.get(url, headers=FPL_HEADERS, timeout=12)
-        response.raise_for_status()
-        return response.json()
+        last_error = None
+        for attempt in range(3):
+            try:
+                response = requests.get(url, headers=FPL_HEADERS, timeout=12)
+                if response.status_code in (403, 429) and attempt < 2:
+                    time.sleep(0.4 * (attempt + 1))
+                    continue
+                response.raise_for_status()
+                return response.json()
+            except requests.RequestException as exc:
+                last_error = exc
+                if attempt == 2:
+                    raise
+                time.sleep(0.4 * (attempt + 1))
+        raise last_error
 
     def get_latest_data(self, prior_wait: float = 0):
         """Bootstrap and fixtures. Last season loads in the background and does not hold the request."""
@@ -251,6 +263,7 @@ class FPLService:
                     data.get('chips') or [],
                 ),
                 'bank': history[-1].get('bank', 0) / 10.0 if history else None,
+                'synced': True,
             }
             if history:
                 try:
@@ -269,4 +282,5 @@ class FPLService:
                 'used_this_half': [],
                 'available': ['wildcard', 'free_hit', 'bench_boost', 'triple_captain'],
                 'banked_transfers': 1,
+                'synced': False,
             }

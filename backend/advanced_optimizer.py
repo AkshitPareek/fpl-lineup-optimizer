@@ -16,7 +16,7 @@ from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass, field
 from enum import Enum
 
-from point_predictor import PointPredictor, compute_uncertainty_bounds
+from point_predictor import PointPredictor
 from transfer_explainer import TransferExplainer
 from chip_advisor import ChipAdvisor
 
@@ -88,6 +88,28 @@ class MultiPeriodSolution:
     captain_recommendations: Optional[List[Dict[str, Any]]] = None  # Per-GW captain suggestions
     # False when the solver stopped at its time limit with its best plan so far.
     proven_optimal: bool = True
+
+
+def ownership_adjustment(ownership: float, strategy: str) -> float:
+    """Points added to one gameweek for Differential or Template. Standard adds none."""
+    try:
+        owned = float(ownership or 0)
+    except (TypeError, ValueError):
+        owned = 0.0
+    if strategy == "differential":
+        return max(0.0, 10.0 - owned) * 0.15
+    if strategy == "template":
+        if owned >= 20:
+            return min(1.2, (owned - 20.0) * 0.04)
+        if owned < 10:
+            return -min(0.6, (10.0 - owned) * 0.06)
+        return 0.0
+    return 0.0
+
+
+def robust_points(xp: float, sigma: float, uncertainty_budget: float) -> float:
+    """Expected points after paying for this player's own doubt, not a flat haircut."""
+    return max(0.0, float(xp) - float(uncertainty_budget) * float(sigma or 0))
 
 
 def prediction_pool(players: pd.DataFrame, keep_ids: Optional[List[int]], per_position: int) -> pd.DataFrame:
@@ -422,50 +444,30 @@ class MultiPeriodFPLOptimizer:
         horizon = list(range(self.current_gw, self.current_gw + gameweeks))
 
         predictions = self._get_predictions(gameweeks=gameweeks)
-        
-        if robust:
-            predictions = compute_uncertainty_bounds(predictions)
-        
-        # Apply strategy-based adjustments
-        if strategy in ["differential", "template"]:
-            # Get ownership from players_df and merge into predictions
+
+        if strategy in ("differential", "template"):
             ownership_df = self.players[['id', 'selected_by_percent']].copy()
             ownership_df['selected_by_percent'] = pd.to_numeric(
                 ownership_df['selected_by_percent'], errors='coerce'
             ).fillna(0)
             predictions = predictions.merge(ownership_df, on='id', how='left')
             predictions['selected_by_percent'] = predictions['selected_by_percent'].fillna(0)
-        
-        if strategy == "differential":
-            # Boost low-ownership players
-            ownership = predictions['selected_by_percent']
-            # Players < 10% owned get bonus, up to +1.5 xP per gameweek
-            differential_bonus = (10 - ownership).clip(lower=0) * 0.15
+            adjustment = predictions['selected_by_percent'].map(lambda own: ownership_adjustment(own, strategy))
             for col in [c for c in predictions.columns if c.startswith('xp_gw')]:
-                # A blank gameweek stays at zero.
-                predictions[col] = predictions[col] + differential_bonus * (predictions[col] > 0)
-            print(f"Strategy: Differential - boosting {(ownership < 10).sum()} low-owned players")
-        elif strategy == "template":
-            # Favor high-ownership (safe picks), penalize low-ownership
-            ownership = predictions['selected_by_percent']
-            # Players > 20% owned get bonus, < 5% get penalty
-            template_bonus = (ownership - 10).clip(lower=-5, upper=10) * 0.05
-            for col in [c for c in predictions.columns if c.startswith('xp_gw')]:
-                predictions[col] = predictions[col] + template_bonus * (predictions[col] > 0)
-            print(f"Strategy: Template - favoring {(ownership > 20).sum()} popular players")
+                predictions[col] = predictions[col] + adjustment * (predictions[col] > 0)
         
         available = self._filter_available_players(excluded_ids=excluded_players,
                                                    keep_ids=current_squad_ids or [])
         
         # Merge predictions
         gw_cols = [f'xp_gw{gw}' for gw in horizon]
-        merge_cols = ['id'] + gw_cols
+        sigma_cols = [f'sigma_gw{gw}' for gw in horizon if f'sigma_gw{gw}' in predictions.columns]
         available = available.merge(
-            predictions[merge_cols].drop_duplicates(), 
-            on='id', 
+            predictions[['id'] + gw_cols + sigma_cols].drop_duplicates(),
+            on='id',
             how='left'
         )
-        for col in gw_cols:
+        for col in gw_cols + sigma_cols:
             available[col] = available[col].fillna(0)
         
         # Calculate total expected points for filtering
@@ -573,10 +575,9 @@ class MultiPeriodFPLOptimizer:
             is_free_hit = active_chip == 'free_hit' and t == chip_gw
             
             for j in player_ids:
-                xp = get_attr(j, gw_col)
+                xp = float(get_attr(j, gw_col) or 0)
                 if robust:
-                    # Use lower bound for worst-case
-                    xp = xp * (1 - uncertainty_budget)
+                    xp = robust_points(xp, get_attr(j, f'sigma_gw{t}') or 0, uncertainty_budget)
                 
                 xp *= weight
 
