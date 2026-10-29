@@ -13,6 +13,8 @@ Calculates expected points using:
 
 import pandas as pd
 import numpy as np
+import re
+from datetime import date, datetime
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 import logging
@@ -568,8 +570,100 @@ class PointPredictor:
     # Stand-in prior for players without a usable last season (promoted, new
     # signings, fringe players); such regular starters went on to average ~2-2.5.
     NEWCOMER_PPG = 3.0
-    # Each week a flagged player is likelier to be back (75% -> 87.5% -> 94%).
+    # A doubt is likelier to be back each week (75% -> 87.5% -> 94%).
     DOUBT_RECOVERY_PER_GW = 0.5
+    # No stated return date: miss this week and the next two, then a 50% chance.
+    UNKNOWN_INJURY_WEEKS = 3
+    UNKNOWN_RETURN_CHANCE = 0.5
+    # A named return date is not certain on the first matching gameweek.
+    DATED_RETURN_CHANCE = 0.75
+    _MONTHS = {
+        "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
+        "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
+    }
+    _RETURN_DATE = re.compile(
+        r"(?:expected back|suspended until|until)\s+(\d{1,2})\s+([A-Za-z]{3})",
+        re.IGNORECASE,
+    )
+    _LEFT_CLUB = re.compile(
+        r"permanently|rest of the season|departed|free agent",
+        re.IGNORECASE,
+    )
+
+    def _gameweek_start(self, gameweek: int) -> Optional[date]:
+        dates = []
+        for fixture in self.fixtures:
+            if fixture.get("event") != gameweek or not fixture.get("kickoff_time"):
+                continue
+            kickoff = fixture["kickoff_time"].replace("Z", "+00:00")
+            dates.append(datetime.fromisoformat(kickoff).date())
+        return min(dates) if dates else None
+
+    def _return_date(self, news: str) -> Optional[date]:
+        match = self._RETURN_DATE.search(news or "")
+        if not match:
+            return None
+        day = int(match.group(1))
+        month = self._MONTHS.get(match.group(2).lower()[:3])
+        if month is None:
+            return None
+        anchor = self._gameweek_start(self.current_gw) or date.today()
+        year = anchor.year
+        try:
+            found = date(year, month, day)
+        except ValueError:
+            return None
+        if found < anchor:
+            try:
+                found = date(year + 1, month, day)
+            except ValueError:
+                return None
+        return found
+
+    def _weeks_after_return(self, gameweek: int, return_on: date) -> Optional[int]:
+        """Gameweeks played since the return, or None when this week is still before it."""
+        seen = 0
+        for gw in range(self.current_gw, gameweek + 1):
+            start = self._gameweek_start(gw)
+            if start is None or start < return_on:
+                continue
+            if gw == gameweek:
+                return seen
+            seen += 1
+        return None
+
+    def availability(self, player: pd.Series, gameweek: int) -> float:
+        """Chance of playing in `gameweek`.
+
+        A named return date is zero until that date, then a doubt that clears.
+        An injury with no date misses three gameweeks, then comes back as a 50%
+        doubt. A player who has left the club stays out. An ordinary doubt
+        fades a week at a time.
+        """
+        news = str(player.get("news") or "")
+        status = str(player.get("status") or "")
+        if self._LEFT_CLUB.search(news):
+            return 0.0
+        return_on = self._return_date(news)
+        if return_on is not None:
+            weeks_after = self._weeks_after_return(gameweek, return_on)
+            if weeks_after is None:
+                return 0.0
+            return 1.0 - (1.0 - self.DATED_RETURN_CHANCE) * self.DOUBT_RECOVERY_PER_GW ** weeks_after
+
+        chance = player.get("chance_of_playing_next_round")
+        if chance is None or pd.isna(chance):
+            return 1.0
+        chance = float(chance) / 100.0
+        weeks_ahead = max(0, gameweek - self.current_gw)
+        if chance <= 0:
+            if status != "i":
+                return 0.0
+            if weeks_ahead < self.UNKNOWN_INJURY_WEEKS:
+                return 0.0
+            weeks_back = weeks_ahead - self.UNKNOWN_INJURY_WEEKS
+            return 1.0 - (1.0 - self.UNKNOWN_RETURN_CHANCE) * self.DOUBT_RECOVERY_PER_GW ** weeks_back
+        return 1.0 - (1.0 - chance) * self.DOUBT_RECOVERY_PER_GW ** weeks_ahead
 
     def blended_points_per_game(self, player: pd.Series) -> float:
         """This season's points per game, shrunk toward last season's (or a newcomer baseline) while the sample is small."""
@@ -598,17 +692,6 @@ class PointPredictor:
         if played_gameweeks < 1:
             return 90.0
         return float(player.get('minutes', 0) or 0) / played_gameweeks
-
-    def availability(self, player: pd.Series, gameweek: int) -> float:
-        """Chance of playing in `gameweek`; doubts fade over later weeks, ruled-out players stay out."""
-        chance = player.get('chance_of_playing_next_round')
-        if chance is None or pd.isna(chance):
-            return 1.0
-        chance = float(chance) / 100.0
-        if chance <= 0:
-            return 0.0
-        weeks_ahead = max(0, gameweek - self.current_gw)
-        return 1.0 - (1.0 - chance) * self.DOUBT_RECOVERY_PER_GW ** weeks_ahead
 
     def predict_gameweek(self, player: pd.Series, gameweek: int) -> Tuple[float, Dict[str, float]]:
         """
