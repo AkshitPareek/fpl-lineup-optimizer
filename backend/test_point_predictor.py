@@ -88,6 +88,37 @@ class AvailabilityTests(unittest.TestCase):
         out = pd.Series(player(chance_of_playing_next_round=0))
         self.assertEqual(predictor.predict_gameweek(out, 9)[0], 0.0)
 
+    def test_a_named_return_date_is_zero_until_that_week(self):
+        fixtures = [
+            {"event": 9, "team_h": 1, "team_a": 2, "team_h_difficulty": 3, "team_a_difficulty": 3,
+             "kickoff_time": "2026-10-31T14:00:00Z"},
+            {"event": 10, "team_h": 1, "team_a": 2, "team_h_difficulty": 3, "team_a_difficulty": 3,
+             "kickoff_time": "2026-11-07T15:00:00Z"},
+            {"event": 11, "team_h": 1, "team_a": 2, "team_h_difficulty": 3, "team_a_difficulty": 3,
+             "kickoff_time": "2026-11-21T15:00:00Z"},
+        ]
+        predictor = make_predictor([player()], fixtures=fixtures, current_gw=9)
+        hurt = pd.Series(player(status="i", chance_of_playing_next_round=0,
+                                news="Hamstring injury - Expected back 1 Nov"))
+        self.assertEqual(predictor.availability(hurt, 9), 0.0)
+        self.assertAlmostEqual(predictor.availability(hurt, 10), 0.75)
+        self.assertGreater(predictor.availability(hurt, 11), 0.75)
+        self.assertEqual(predictor.predict_gameweek(hurt, 9)[0], 0.0)
+        self.assertGreater(predictor.predict_gameweek(hurt, 10)[0], 0.0)
+
+    def test_unknown_return_misses_three_weeks_then_comes_back(self):
+        predictor = make_predictor([player()], current_gw=9)
+        hurt = pd.Series(player(status="i", chance_of_playing_next_round=0,
+                                news="Back injury - Unknown return date"))
+        self.assertEqual([predictor.availability(hurt, gw) for gw in (9, 10, 11)], [0.0, 0.0, 0.0])
+        self.assertAlmostEqual(predictor.availability(hurt, 12), 0.5)
+
+    def test_a_player_who_has_left_stays_out(self):
+        predictor = make_predictor([player()], current_gw=9)
+        gone = pd.Series(player(status="u", chance_of_playing_next_round=0,
+                                news="Has joined Al Hilal permanently"))
+        self.assertEqual(predictor.availability(gone, 16), 0.0)
+
 
 class FixtureCountTests(unittest.TestCase):
     def test_blank_gameweek_scores_nothing(self):
