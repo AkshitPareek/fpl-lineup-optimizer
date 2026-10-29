@@ -5,7 +5,7 @@ from prior_season import PriorSeasonStats
 
 # FPL rejects clients that do not send a browser-like user agent.
 FPL_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (compatible; FPLLineupOptimizer/1.0)"
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
 }
 MAX_BANKED_TRANSFERS = 5
 LAST_FIRST_HALF_GAMEWEEK = 19
