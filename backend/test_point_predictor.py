@@ -31,6 +31,24 @@ def player(**overrides):
     return base
 
 
+class ProjectionRiskTests(unittest.TestCase):
+    def test_a_nailed_player_carries_less_doubt_than_a_rotation_doubt(self):
+        predictor = make_predictor([
+            player(id=1, web_name="Nailed", starts=10, minutes=900),
+            player(id=2, web_name="Risk", starts=1, minutes=40, chance_of_playing_next_round=50),
+        ])
+        frame = predictor.predict_all_players(gameweeks=1)
+        gw = predictor.current_gw
+        nailed = frame[frame.id == 1].iloc[0]
+        risk = frame[frame.id == 2].iloc[0]
+        self.assertGreater(nailed[f"xp_gw{gw}"], 0)
+        self.assertGreater(risk[f"xp_gw{gw}"], 0)
+        nailed_share = nailed[f"sigma_gw{gw}"] / nailed[f"xp_gw{gw}"]
+        risk_share = risk[f"sigma_gw{gw}"] / risk[f"xp_gw{gw}"]
+        self.assertAlmostEqual(nailed_share, 0.15)
+        self.assertGreater(risk_share, nailed_share)
+
+
 class BlendedPointsPerGameTests(unittest.TestCase):
     def test_shrinks_this_season_toward_last_season(self):
         p = pd.Series(player(points_per_game="9.0", prior_points=152, prior_minutes=3420, prior_starts=38))

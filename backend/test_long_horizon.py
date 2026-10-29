@@ -62,6 +62,28 @@ def plan_from_squad(squad_bank, selling=None, **kwargs):
     return players, squad, solution
 
 
+class RobustSelectionTests(unittest.TestCase):
+    def test_the_same_points_with_more_doubt_are_left_out(self):
+        players, teams, predictions = synthetic_league(5)
+
+        def solve(frame, robust):
+            optimizer = MultiPeriodFPLOptimizer(players, teams, [], 5, predictions_df=frame)
+            with contextlib.redirect_stdout(io.StringIO()):
+                return optimizer.optimize_multi_period(
+                    budget=100, gameweeks=3, robust=robust, uncertainty_budget=0.3, max_hits=0,
+                )
+
+        plain = solve(predictions, False)
+        risky_id = plain.gameweek_plans[0].captain_id
+        doubted = predictions.copy()
+        for gw in range(5, 8):
+            doubted[f"sigma_gw{gw}"] = 0.0
+            doubted.loc[doubted.id == risky_id, f"sigma_gw{gw}"] = 40
+        hedged = solve(doubted, True)
+        self.assertIn(risky_id, {p["id"] for p in plain.squad})
+        self.assertNotIn(risky_id, {p["id"] for p in hedged.squad})
+
+
 class SellingPriceTests(unittest.TestCase):
     def test_upgrades_are_paid_for_at_selling_prices(self):
         players, _, at_current = plan_from_squad(0.5, gameweeks=3, banked_transfers=1, max_hits=0)
