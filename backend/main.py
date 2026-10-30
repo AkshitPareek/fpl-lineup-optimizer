@@ -1302,7 +1302,7 @@ async def get_manager_chips(manager_id: int):
 
 @app.get("/health")
 def health_check():
-    return {"status": "ok", "version": "2.1.2"}
+    return {"status": "ok", "version": "2.1.3"}
 
 
 # =============================================================================

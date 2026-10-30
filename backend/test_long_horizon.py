@@ -162,5 +162,19 @@ class LongHorizonTests(unittest.TestCase):
         self.assertIs(optimizer.to_dict(solution)['proven_optimal'], True)
 
 
+class BenchOrderTests(unittest.TestCase):
+    def test_bench_lists_the_backup_keeper_then_the_likeliest_substitute(self):
+        _, solution = plan(current_gw=5, gameweeks=3)
+        for gp in solution.gameweek_plans:
+            self.assertEqual(gp.bench[0]['element_type'], 1)
+            outfield = [p['expected_points'] for p in gp.bench[1:]]
+            self.assertEqual(outfield, sorted(outfield, reverse=True))
+
+    def test_a_better_first_substitute_is_worth_more_than_a_better_third(self):
+        weights = MultiPeriodFPLOptimizer.BENCH_WEIGHTS
+        self.assertEqual(list(weights), sorted(weights, reverse=True))
+        self.assertLess(MultiPeriodFPLOptimizer.BENCH_GK_WEIGHT, weights[0])
+
+
 if __name__ == '__main__':
     unittest.main()
