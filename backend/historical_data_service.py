@@ -127,7 +127,8 @@ class HistoricalDataService:
             ict_index = sum(float(r.get('ict_index', 0)) for r in past_rounds)
             expected_goals = sum(float(r.get('expected_goals', 0)) for r in past_rounds)
             expected_assists = sum(float(r.get('expected_assists', 0)) for r in past_rounds)
-            
+            expected_goals_conceded = sum(float(r.get('expected_goals_conceded', 0) or 0) for r in past_rounds)
+
             # RECENT metrics (last 6 games) - more relevant for current form
             recent_rounds = [r for r in past_rounds if r['minutes'] > 0][-6:]
             recent_xg = sum(float(r.get('expected_goals', 0)) for r in recent_rounds)
@@ -172,6 +173,7 @@ class HistoricalDataService:
                 'ict_index': f"{ict_index:.1f}",
                 'expected_goals': f"{expected_goals:.2f}",
                 'expected_assists': f"{expected_assists:.2f}",
+                'expected_goals_conceded': f"{expected_goals_conceded:.2f}",
                 # NEW: Recent metrics for form-weighted predictions
                 'recent_xg': f"{recent_xg:.2f}",
                 'recent_xa': f"{recent_xa:.2f}",

@@ -56,7 +56,7 @@ class SeasonArchive:
         ]
         team_ids = dict(zip(self.teams["name"], self.teams["id"]))
         self.gws["team_id"] = self.gws["team"].map(team_ids)
-        for col in ["expected_goals", "expected_assists", "influence", "ict_index"]:
+        for col in ["expected_goals", "expected_assists", "expected_goals_conceded", "influence", "ict_index"]:
             self.gws[col] = pd.to_numeric(self.gws[col], errors="coerce").fillna(0.0)
 
         per_round = self.gws.groupby(["element", "round"])["total_points"].sum()
@@ -85,6 +85,7 @@ class SeasonArchive:
                 "assists": int(g["assists"].sum()),
                 "expected_goals": float(g["expected_goals"].sum()),
                 "expected_assists": float(g["expected_assists"].sum()),
+                "expected_goals_conceded": float(g["expected_goals_conceded"].sum()),
                 "influence": float(g["influence"].sum()),
                 "ict_index": float(g["ict_index"].sum()),
                 "points_per_game": g["total_points"].sum() / max(1, played["round"].nunique()),
