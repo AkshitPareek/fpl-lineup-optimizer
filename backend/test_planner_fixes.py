@@ -7,8 +7,23 @@ from unittest import mock
 
 import pandas as pd
 
-from fpl_service import FPLService, banked_transfers_for_next_deadline, manager_squad_state, selling_price
+from fpl_service import FPLService, banked_transfers_for_next_deadline, manager_squad_state, recent_minutes, selling_price
 from main import _comparison_entry
+
+
+class RecentMinutesTests(unittest.TestCase):
+    def test_last_four_weeks_his_club_played(self):
+        def live(rows):
+            return {"elements": [{"id": pid, "stats": {"minutes": m}, "explain": [] if m is None else [{}]}
+                                 for pid, m in rows]}
+        # Newest first. Player 1's club blanked in the second week; player 2 is new.
+        lives = [live([(1, 0), (2, 90)]), live([(1, None)]), live([(1, 0)]), live([(1, 90)]),
+                 live([(1, 90)]), live([(1, 90)])]
+        elements = [{"id": 1}, {"id": 2}, {"id": 3}]
+        recent_minutes(elements, lives)
+        self.assertEqual(elements[0]["recent_4_minutes"], 0 + 0 + 90 + 90)
+        self.assertEqual(elements[1]["recent_4_minutes"], 90)
+        self.assertNotIn("recent_4_minutes", elements[2])
 
 
 class BankedTransferTests(unittest.TestCase):
