@@ -21,6 +21,7 @@ point_predictor.UNDERSTAT_AVAILABLE = False  # current Understat totals would le
 
 import advanced_optimizer as ao
 import predictor_eval as pe
+from odds_ratings import SeasonOdds
 from point_predictor import PointPredictor
 
 VARIANTS = {
@@ -66,7 +67,7 @@ def autosub_score(xi, bench, captain_id, vice_id, pts, mins):
     return total
 
 
-def run(season, variant, start, end, horizon):
+def run(season, variant, start, end, horizon, use_odds=False):
     for k, v in VARIANTS[variant].items():
         setattr(ao.MultiPeriodFPLOptimizer, k, v)
     ao.MultiPeriodFPLOptimizer.generate_transfer_alternatives = lambda self, **kw: []
@@ -76,6 +77,7 @@ def run(season, variant, start, end, horizon):
     prior = pe.SeasonArchive(pe.previous_season(season)).season_totals_by_code()
     teams = archive.teams.copy()
     teams[STRENGTHS] = 0  # like 2026/27, so the live fixture-difficulty fallback is what runs
+    odds = SeasonOdds(season) if use_odds else None
     minutes = archive.gws.groupby(["element", "round"])["minutes"].sum()
 
     squad, bank, ft = [], 0.0, 1
@@ -85,7 +87,9 @@ def run(season, variant, start, end, horizon):
         state = archive.state_before(gw, prior)
         state["points_per_game"] = state["points_per_game"].astype(float)
         k = min(horizon, 39 - gw)
-        preds = PointPredictor(state, teams, archive.fixtures, gw, use_understat=False).predict_all_players(gameweeks=k)
+        ratings = odds.ratings(teams, archive.fixtures, gw) if odds else None
+        preds = PointPredictor(state, teams, archive.fixtures, gw, use_understat=False,
+                               team_ratings=ratings).predict_all_players(gameweeks=k)
         opt = ao.MultiPeriodFPLOptimizer(state, teams, archive.fixtures, gw, predictions_df=preds)
         price = dict(zip(state["id"], state["now_cost"] / 10.0))
         squad = [j for j in squad if j in price]
@@ -122,8 +126,9 @@ if __name__ == "__main__":
     ap.add_argument("--end", type=int, default=38)
     ap.add_argument("--horizon", type=int, default=8)
     ap.add_argument("--out")
+    ap.add_argument("--odds", action="store_true", help="Price fixtures from betting-market team ratings")
     a = ap.parse_args()
-    res = run(a.season, a.variant, a.start, a.end, a.horizon)
+    res = run(a.season, a.variant, a.start, a.end, a.horizon, a.odds)
     if a.out:
         json.dump(res, open(a.out, "w"), indent=1)
     print(json.dumps({k: res[k] for k in ("season", "variant", "total", "hits")}))
