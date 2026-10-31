@@ -31,7 +31,7 @@ jobs:
         run: python scorecard.py score --manager "$MANAGER_ID" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Commit new records
         run: |
-          git add backend/data/scorecard
+          git add backend/data/scorecard backend/data/snapshots
           if ! git diff --cached --quiet; then
             git config user.name "github-actions[bot]"
             git config user.email "41898699+github-actions[bot]@users.noreply.github.com"
