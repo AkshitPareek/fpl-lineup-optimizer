@@ -9,6 +9,10 @@ with the manager's own score, the average manager and the week's best.
 The advice is scored from the squad the manager actually held that week, so it
 answers: what would following this week's advice have scored?
 
+`record` also saves every player's availability and news as it stood before the
+deadline. FPL overwrites these each week, so these snapshots are the only way to
+backtest how projections handle injuries and rotation.
+
 Usage (from the backend dir):
     python scorecard.py record --manager 7706676 [--within-hours 4]
     python scorecard.py score --manager 7706676
@@ -23,6 +27,10 @@ import requests
 API_URL = os.getenv("PLANNER_API_URL", "https://fpl-optimizer-api-1099379580588.asia-south1.run.app")
 FPL_URL = "https://fantasy.premierleague.com/api"
 RECORDS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "scorecard")
+SNAPSHOT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "snapshots")
+SNAPSHOT_FIELDS = ("id", "code", "web_name", "team", "element_type", "status", "news", "news_added",
+                   "chance_of_playing_this_round", "chance_of_playing_next_round", "now_cost",
+                   "selected_by_percent", "form", "ep_next", "minutes", "starts", "total_points")
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"}
 MIN_PLAYERS = {1: 1, 2: 3, 3: 2, 4: 1}
 
@@ -37,19 +45,34 @@ def record_path(manager_id, gameweek):
     return os.path.join(RECORDS_DIR, str(manager_id), f"gw{gameweek:02d}.json")
 
 
-def record(manager_id, gameweeks=8, within_hours=None):
-    events = fpl("bootstrap-static/")["events"]
-    upcoming = next(e for e in events if e["is_next"])
-    path = record_path(manager_id, upcoming["id"])
+def snapshot(static, gameweek):
+    """Every player's availability and news before this gameweek's deadline."""
+    path = os.path.join(SNAPSHOT_DIR, f"gw{gameweek:02d}.json")
     if os.path.exists(path):
-        print(f"GW{upcoming['id']} already recorded: {path}")
         return
+    players = [{k: p.get(k) for k in SNAPSHOT_FIELDS} for p in static["elements"]]
+    os.makedirs(SNAPSHOT_DIR, exist_ok=True)
+    with open(path, "w") as f:
+        json.dump({"gameweek": gameweek, "taken_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                   "players": players}, f, separators=(",", ":"))
+    flagged = sum(1 for p in players if p["status"] != "a")
+    print(f"Snapshot GW{gameweek}: {len(players)} players, {flagged} flagged")
+
+
+def record(manager_id, gameweeks=8, within_hours=None):
+    static = fpl("bootstrap-static/")
+    upcoming = next(e for e in static["events"] if e["is_next"])
     deadline = datetime.fromisoformat(upcoming["deadline_time"].replace("Z", "+00:00"))
     if datetime.now(timezone.utc) >= deadline:
         raise SystemExit(f"GW{upcoming['id']} deadline has passed; advice now would not be honest")
     hours_left = (deadline - datetime.now(timezone.utc)).total_seconds() / 3600
     if within_hours is not None and hours_left > within_hours:
         print(f"GW{upcoming['id']} deadline is {hours_left:.1f}h away; recording waits for team news")
+        return
+    snapshot(static, upcoming["id"])
+    path = record_path(manager_id, upcoming["id"])
+    if os.path.exists(path):
+        print(f"GW{upcoming['id']} already recorded: {path}")
         return
 
     account = requests.get(f"{API_URL}/api/manager-chips/{manager_id}", timeout=60).json()
