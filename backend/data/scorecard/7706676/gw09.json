@@ -1,0 +1,112 @@
+{
+ "manager_id": 7706676,
+ "gameweek": 9,
+ "recorded_at": "2026-10-31T09:09:27+00:00",
+ "deadline": "2026-10-31T11:00:00Z",
+ "api_version": "2.1.3",
+ "expected_points": 61.22,
+ "starting_xi": [
+  {
+   "id": 1,
+   "name": "Raya",
+   "element_type": 1,
+   "xp": 4.57
+  },
+  {
+   "id": 391,
+   "name": "Gvardiol",
+   "element_type": 2,
+   "xp": 4.97
+  },
+  {
+   "id": 330,
+   "name": "Bogle",
+   "element_type": 2,
+   "xp": 4.75
+  },
+  {
+   "id": 449,
+   "name": "Hall",
+   "element_type": 2,
+   "xp": 4.74
+  },
+  {
+   "id": 229,
+   "name": "Tarkowski",
+   "element_type": 2,
+   "xp": 4.56
+  },
+  {
+   "id": 115,
+   "name": "De Cuyper",
+   "element_type": 2,
+   "xp": 4.52
+  },
+  {
+   "id": 68,
+   "name": "Tavernier",
+   "element_type": 3,
+   "xp": 5.26
+  },
+  {
+   "id": 427,
+   "name": "Mbeumo",
+   "element_type": 3,
+   "xp": 4.85
+  },
+  {
+   "id": 124,
+   "name": "Gro\u00df",
+   "element_type": 3,
+   "xp": 4.52
+  },
+  {
+   "id": 286,
+   "name": "Belloumi",
+   "element_type": 3,
+   "xp": 4.35
+  },
+  {
+   "id": 411,
+   "name": "Haaland",
+   "element_type": 4,
+   "xp": 7.07
+  }
+ ],
+ "bench": [
+  {
+   "id": 572,
+   "name": "Tzolakis",
+   "element_type": 1,
+   "xp": 3.66
+  },
+  {
+   "id": 268,
+   "name": "King",
+   "element_type": 3,
+   "xp": 4.17
+  },
+  {
+   "id": 138,
+   "name": "Kostoulas",
+   "element_type": 4,
+   "xp": 3.75
+  },
+  {
+   "id": 165,
+   "name": "Jo\u00e3o Pedro",
+   "element_type": 4,
+   "xp": 0.0
+  }
+ ],
+ "captain_id": 411,
+ "vice_captain_id": 68,
+ "chip": null,
+ "transfers_in": [
+  "Tavernier"
+ ],
+ "transfers_out": [
+  "Barnes"
+ ],
+ "hits": 0
+}

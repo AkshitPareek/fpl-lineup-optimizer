@@ -1,0 +1,40 @@
+name: Scorecard
+
+# Record the live planner's advice in the hours before each deadline, then score
+# finished gameweeks against the manager, the average and the week's best.
+on:
+  schedule:
+    - cron: "15 */2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency: scorecard
+
+jobs:
+  scorecard:
+    runs-on: ubuntu-latest
+    env:
+      MANAGER_ID: "7706676"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install requests
+      - name: Record advice before the deadline
+        working-directory: backend
+        run: python scorecard.py record --manager "$MANAGER_ID" --within-hours 4
+      - name: Score finished gameweeks
+        working-directory: backend
+        run: python scorecard.py score --manager "$MANAGER_ID" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Commit new records
+        run: |
+          git add backend/data/scorecard
+          if ! git diff --cached --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898699+github-actions[bot]@users.noreply.github.com"
+            git commit -m "Record planner advice"
+            git push
+          fi
