@@ -67,7 +67,7 @@ class PointPredictor:
     
     def __init__(self, players_df: pd.DataFrame, teams_df: pd.DataFrame, 
                  fixtures: List[Dict], current_gameweek: int,
-                 use_understat: bool = True):
+                 use_understat: bool = True, team_ratings=None):
         """
         Initialize predictor with FPL data.
         
@@ -77,12 +77,15 @@ class PointPredictor:
             fixtures: List of fixture dicts from FPL API
             current_gameweek: Current or next gameweek number
             use_understat: Whether to use Understat xG/xA data (default: True)
+            team_ratings: odds_ratings.TeamRatings pricing each fixture from betting
+                markets. Without it, fixtures are scored by FPL difficulty.
         """
         self.players = players_df.copy()
         self.teams = teams_df.copy()
         self.fixtures = fixtures
         self.current_gw = current_gameweek
         self.use_understat = use_understat and UNDERSTAT_AVAILABLE
+        self.ratings = team_ratings
         
         # Precompute team strengths
         self._compute_team_strengths()
@@ -276,6 +279,16 @@ class PointPredictor:
     FDR_ATTACK = {1: 1.22, 2: 1.11, 3: 1.00, 4: 0.88, 5: 0.76}
     FDR_DEFENCE = {1: 1.26, 2: 1.12, 3: 1.00, 4: 0.84, 5: 0.70}
 
+    # With market ratings the fixture ratio is a goal expectation, not a guess
+    # from difficulty bands, so it reaches the projection with a wider range.
+    ODDS_SHRINK = 0.7
+    ODDS_ATTACK_CLAMP = (0.55, 1.70)
+    ODDS_DEFENCE_CLAMP = (0.40, 1.90)
+    CLEAN_SHEET_BOUNDS = (0.03, 0.70)
+
+    def _shrink(self, raw: float, shrink: float, bounds: Tuple[float, float]) -> float:
+        return max(bounds[0], min(bounds[1], 1.0 + (raw - 1.0) * shrink))
+
     def _strengths_usable(self) -> bool:
         return self.avg_attack >= 100 and self.avg_defense >= 100
 
@@ -286,8 +299,13 @@ class PointPredictor:
             rating = 3
         return table.get(rating, 1.0)
 
-    def attack_fixture_multiplier(self, opponent: int, is_home: bool, difficulty=None) -> float:
+    def attack_fixture_multiplier(self, opponent: int, is_home: bool, difficulty=None, team_id=None) -> float:
         """1.0 against an average defence. A weaker defence, and playing at home, raises it."""
+        if self.ratings is not None and team_id is not None:
+            # Relative to the team's own average: a player's rates already carry his club's strength.
+            scored, _ = self.ratings.expected_goals(team_id, opponent, is_home)
+            typical, _ = self.ratings.typical_goals(team_id)
+            return self._shrink(scored / typical, self.ODDS_SHRINK, self.ODDS_ATTACK_CLAMP)
         if not self._strengths_usable():
             return self._fdr_multiplier(difficulty, self.FDR_ATTACK)
         if is_home:
@@ -301,6 +319,11 @@ class PointPredictor:
 
     def defence_fixture_multiplier(self, team_id: int, opponent: int, is_home: bool, difficulty=None) -> float:
         """1.0 for an average defence against an average attack. An elite attack cuts it."""
+        if self.ratings is not None:
+            _, conceded = self.ratings.expected_goals(team_id, opponent, is_home)
+            _, typical = self.ratings.typical_goals(team_id)
+            raw = np.exp(typical - conceded)
+            return self._shrink(raw, self.ODDS_SHRINK, self.ODDS_DEFENCE_CLAMP)
         if not self._strengths_usable():
             return self._fdr_multiplier(difficulty, self.FDR_DEFENCE)
         if is_home:
@@ -322,7 +345,7 @@ class PointPredictor:
         if element_type in (1, 2):
             values = [self.defence_fixture_multiplier(team_id, fix['opponent'], fix['is_home'], fix.get('difficulty')) for fix in fixtures]
         else:
-            values = [self.attack_fixture_multiplier(fix['opponent'], fix['is_home'], fix.get('difficulty')) for fix in fixtures]
+            values = [self.attack_fixture_multiplier(fix['opponent'], fix['is_home'], fix.get('difficulty'), team_id) for fix in fixtures]
         return sum(values) / len(values)
 
     def calculate_xg_points(self, player: pd.Series, gameweek: int) -> float:
@@ -349,7 +372,7 @@ class PointPredictor:
             opponent = fix['opponent']
             is_home = fix['is_home']
             
-            total_xg += xg_per_90 * self.attack_fixture_multiplier(opponent, is_home, fix.get('difficulty'))
+            total_xg += xg_per_90 * self.attack_fixture_multiplier(opponent, is_home, fix.get('difficulty'), team_id)
         
         goal_points = total_xg * self.POINTS_GOAL.get(element_type, 4)
         # Cap at reasonable maximum (~1.5 goals worth per match)
@@ -375,7 +398,7 @@ class PointPredictor:
             opponent = fix['opponent']
             is_home = fix['is_home']
             
-            total_xa += xa_per_90 * self.attack_fixture_multiplier(opponent, is_home, fix.get('difficulty'))
+            total_xa += xa_per_90 * self.attack_fixture_multiplier(opponent, is_home, fix.get('difficulty'), team_id)
         
         assist_points = total_xa * self.POINTS_ASSIST
         # Cap at reasonable maximum (~2 assists worth per match)
@@ -402,6 +425,12 @@ class PointPredictor:
             opponent = fix['opponent']
             is_home = fix['is_home']
             
+            if self.ratings is not None and self.CLEAN_SHEET_BOUNDS:
+                # No goals from a Poisson attack expected to score `conceded`.
+                _, conceded = self.ratings.expected_goals(team_id, opponent, is_home)
+                low, high = self.CLEAN_SHEET_BOUNDS
+                total_cs_prob += max(low, min(high, float(np.exp(-conceded))))
+                continue
             # 0.24 is a neutral clean-sheet rate. The fixture multiplier already
             # includes home advantage and the opponent's attack.
             cs_prob = 0.24 * self.defence_fixture_multiplier(team_id, opponent, is_home, fix.get('difficulty'))

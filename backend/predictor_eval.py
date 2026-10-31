@@ -17,6 +17,8 @@ from typing import Dict, List, Optional
 import numpy as np
 import pandas as pd
 
+from odds_ratings import SeasonOdds
+
 ARCHIVE_URL = "https://raw.githubusercontent.com/vaastav/Fantasy-Premier-League/master/data"
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "cache", "seasons")
 
@@ -50,6 +52,7 @@ class SeasonArchive:
                 "team_a": int(f.team_a),
                 "team_h_difficulty": int(f.team_h_difficulty),
                 "team_a_difficulty": int(f.team_a_difficulty),
+                "kickoff_time": f.kickoff_time,
             }
             for f in fixtures.itertuples()
             if not pd.isna(f.event)
@@ -120,7 +123,7 @@ def load_predictor_class(module_path: Optional[str]):
 
 
 def evaluate(season: str, horizons: List[int], start_gw: int = 5, end_gw: int = 30,
-             predictor_cls=None, use_prior: bool = True) -> Dict[int, Dict[str, float]]:
+             predictor_cls=None, use_prior: bool = True, use_odds: bool = False) -> Dict[int, Dict[str, float]]:
     """
     Score projections over each horizon K for players who started regularly
     in the four gameweeks before the deadline.
@@ -133,12 +136,14 @@ def evaluate(season: str, horizons: List[int], start_gw: int = 5, end_gw: int = 
     archive = SeasonArchive(season)
     prior = SeasonArchive(previous_season(season)).season_totals_by_code() if use_prior else None
     teams = archive.teams
+    odds = SeasonOdds(season) if use_odds else None
     max_k = max(horizons)
 
     scores = {k: {"corr": [], "mae": [], "top40": []} for k in horizons}
     for gw in range(start_gw, min(end_gw, 39 - max_k) + 1):
         state = archive.state_before(gw, prior)
-        predictor = predictor_cls(state, teams, archive.fixtures, gw, use_understat=False)
+        ratings = odds.ratings(teams, archive.fixtures, gw) if odds else None
+        predictor = predictor_cls(state, teams, archive.fixtures, gw, use_understat=False, team_ratings=ratings)
         preds = predictor.predict_all_players(gameweeks=max_k).set_index("id")
         regular = state.set_index("id")["recent_4_minutes"] >= 240
         ids = [i for i in regular[regular].index if i in archive.actual.index and i in preds.index]
@@ -160,10 +165,11 @@ def main():
     parser.add_argument("--end-gw", type=int, default=30)
     parser.add_argument("--predictor", help="Path to an alternative point_predictor.py to score")
     parser.add_argument("--no-prior", action="store_true", help="Withhold last season's totals")
+    parser.add_argument("--odds", action="store_true", help="Price fixtures from betting-market team ratings")
     args = parser.parse_args()
 
     results = evaluate(args.season, args.horizons, args.start_gw, args.end_gw,
-                       load_predictor_class(args.predictor), use_prior=not args.no_prior)
+                       load_predictor_class(args.predictor), use_prior=not args.no_prior, use_odds=args.odds)
     print(f"Season {args.season}, deadlines GW{args.start_gw}-{args.end_gw}")
     print(f"{'horizon':>8} {'corr':>7} {'mae/gw':>7} {'top40 pts/gw':>13}")
     for k, r in results.items():
