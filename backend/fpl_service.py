@@ -107,6 +107,26 @@ def manager_squad_state(history, transfers, picks_by_gw, elements, initial_price
     }
 
 
+def recent_minutes(elements, lives, rounds=4):
+    """
+    Minutes over each player's last `rounds` gameweeks in which his club played,
+    newest first in `lives` (event/{gw}/live payloads). Matches how backtests
+    rebuild `recent_4_minutes`, so live projections see a benched player too.
+    """
+    recent = {}
+    for live in lives:
+        for row in live.get("elements", []):
+            if not row.get("explain"):
+                continue  # his club had no fixture that week
+            seen = recent.setdefault(row["id"], [])
+            if len(seen) < rounds:
+                seen.append(row["stats"].get("minutes", 0))
+    for player in elements:
+        if player["id"] in recent:
+            player["recent_4_minutes"] = sum(recent[player["id"]])
+    return elements
+
+
 class FPLService:
     BASE_URL = "https://fantasy.premierleague.com/api"
     
@@ -144,6 +164,7 @@ class FPLService:
 
         try:
             static_data = self._get_json(f"{self.BASE_URL}/bootstrap-static/")
+            self._attach_recent_minutes(static_data)
             self._update_cache("bootstrap-static", static_data)
             fixtures_data = self._get_json(f"{self.BASE_URL}/fixtures/")
             self._update_cache("fixtures", fixtures_data)
@@ -155,6 +176,19 @@ class FPLService:
         except requests.RequestException as e:
             print(f"Error fetching FPL data: {e}")
             raise
+
+    def _attach_recent_minutes(self, static_data, lookback: int = 6):
+        """Add recent_4_minutes from the last few started gameweeks. Without it, minutes fall back to season averages."""
+        started = sorted((e["id"] for e in static_data.get("events", [])
+                          if e.get("finished") or e.get("is_current")), reverse=True)[:lookback]
+        lives = []
+        for gw in started:
+            try:
+                lives.append(self._get_json(f"{self.BASE_URL}/event/{gw}/live/"))
+            except requests.RequestException as e:
+                print(f"Recent minutes unavailable for GW{gw}: {e}")
+                return
+        recent_minutes(static_data.get("elements", []), lives)
 
     def get_manager_team(self, manager_id: int):
         """Fetches a manager's current team."""
