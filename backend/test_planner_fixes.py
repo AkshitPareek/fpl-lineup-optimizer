@@ -196,6 +196,25 @@ class PredictionPoolTests(unittest.TestCase):
         self.assertFalse((pool['id'] == 301).any())
 
 
+class PriorSeasonSwitchTests(unittest.TestCase):
+    def test_prior_season_load_can_be_turned_off(self):
+        from prior_season import PriorSeasonStats
+        stats = PriorSeasonStats()
+        started = []
+        stats._loader = None
+
+        def explode(*_args, **_kwargs):
+            started.append(True)
+            raise AssertionError("last season should not be fetched")
+
+        stats._load = explode
+        static = {"events": [{"deadline_time": "2026-08-21T17:30:00Z"}], "elements": [{"id": 1, "code": 1}]}
+        with mock.patch.dict("os.environ", {"LOAD_PRIOR_SEASON": "0"}):
+            stats.attach(static, wait=5)
+        self.assertEqual(started, [])
+        self.assertNotIn("prior_points", static["elements"][0])
+
+
 class LatestDataTests(unittest.TestCase):
     def test_a_request_does_not_wait_on_last_season(self):
         service = FPLService()

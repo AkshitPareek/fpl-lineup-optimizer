@@ -100,6 +100,8 @@ class PriorSeasonStats:
         seconds for it; until it finishes, predictions shrink toward the
         newcomer baseline instead of last season.
         """
+        if os.getenv("LOAD_PRIOR_SEASON", "1") == "0":
+            return
         season_name = previous_season_name(static_data.get("events", []))
         if not season_name:
             return
