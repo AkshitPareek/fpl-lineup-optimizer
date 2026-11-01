@@ -74,23 +74,33 @@ class ChipPlanningTests(unittest.TestCase):
         _, solution = plan(5, bank=0.0)
         self.assertEqual(chips(solution), {})
         self.assertEqual({h['chip'] for h in solution.chip_hold},
-                         {'triple_captain', 'bench_boost', 'free_hit'})
+                         {'triple_captain', 'bench_boost', 'free_hit', 'wildcard'})
 
     def test_chips_are_played_before_they_expire(self):
-        _, solution = plan(15)  # GW15-19, the last weeks of the half
+        # GW15-19, the last weeks of the half. After a Wildcard the planned squad is
+        # already each week's best and a Free Hit gains nothing, so spend it first.
+        _, solution = plan(15, chips_used=['wildcard'])
         played = sorted(c.value for c in chips(solution).values())
         self.assertEqual(played, ['bench_boost', 'freehit', 'triple_captain'])
         self.assertEqual(len(chips(solution)), 3)  # one chip a week
 
     def test_chips_used_this_half_are_not_planned(self):
-        _, solution = plan(15, chips_used=['triple_captain', 'bboost'])
+        _, solution = plan(15, chips_used=['triple_captain', 'bboost', 'wildcard'])
         self.assertEqual([c for c in chips(solution).values()], [Chip.FREE_HIT])
+
+    def test_wildcard_rebuilds_the_squad_before_it_expires(self):
+        _, solution = plan(15)
+        weeks = {gp.gameweek: gp for gp in solution.gameweek_plans}
+        wildcard = next(gw for gw, chip in chips(solution).items() if chip == Chip.WILDCARD)
+        self.assertGreater(len(weeks[wildcard].transfers.transfers_in), 1)
+        self.assertEqual(weeks[wildcard].transfers.hits_taken, 0)
 
     def test_free_hit_covers_a_blank_and_the_squad_comes_back(self):
         def blank(predictions, squad):
             predictions.loc[predictions.id.isin(squad), 'xp_gw7'] = 0.0
 
-        squad, solution = plan(5, adjust=blank)
+        # With the Wildcard to hand the plan rebuilds for good instead.
+        squad, solution = plan(5, adjust=blank, chips_used=['wildcard'])
         self.assertEqual(chips(solution).get(7), Chip.FREE_HIT)
         weeks = {gp.gameweek: gp for gp in solution.gameweek_plans}
         free_hit = {p['id'] for p in weeks[7].starting_xi + weeks[7].bench}
