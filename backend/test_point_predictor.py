@@ -247,7 +247,8 @@ class PriorSeasonStatsTests(unittest.TestCase):
                 return str(element["code"]), {"prior_points": 162, "prior_minutes": 3330, "prior_starts": 37}
 
         with tempfile.TemporaryDirectory() as cache_dir:
-            stats = SlowStats(cache_dir=cache_dir)
+            # Nothing bundled for this season, so the totals must come from the load.
+            stats = SlowStats(cache_dir=cache_dir, bundled_dir=cache_dir)
             static = {"events": [{"deadline_time": "2026-08-21T17:30:00Z"}],
                       "elements": [{"id": 1, "code": 154561}]}
             stats.attach(static)
@@ -255,6 +256,17 @@ class PriorSeasonStatsTests(unittest.TestCase):
             threading.Timer(0.05, release.set).start()
             stats.attach(static, wait=5)
             self.assertEqual(static["elements"][0]["prior_points"], 162)
+
+    def test_bundled_totals_are_used_when_nothing_is_cached(self):
+        with tempfile.TemporaryDirectory() as cache_dir, tempfile.TemporaryDirectory() as bundled_dir:
+            with open(f"{bundled_dir}/prior_season_2025-26.json", "w") as f:
+                f.write('{"154561": {"prior_points": 150, "prior_minutes": 3000, "prior_starts": 34}}')
+            stats = PriorSeasonStats(cache_dir=cache_dir, bundled_dir=bundled_dir)
+            stats._load = lambda *_a, **_k: self.fail("bundled totals should not be fetched")
+            static = {"events": [{"deadline_time": "2026-08-21T17:30:00Z"}],
+                      "elements": [{"id": 1, "code": 154561}]}
+            stats.attach(static)
+        self.assertEqual(static["elements"][0]["prior_points"], 150)
 
 
 class PriorSeasonHelperTests(unittest.TestCase):

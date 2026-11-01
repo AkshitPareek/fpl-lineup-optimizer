@@ -1302,7 +1302,8 @@ async def get_manager_chips(manager_id: int):
 
 @app.get("/health")
 def health_check():
-    return {"status": "ok", "version": "2.1.3"}
+    # GIT_COMMIT is set by deploy_cloud_run.sh, so each deploy reports its own.
+    return {"status": "ok", "version": "2.2.0", "commit": os.getenv("GIT_COMMIT", "unknown")}
 
 
 # =============================================================================

@@ -16,7 +16,8 @@ from typing import Dict, List, Optional
 import requests
 
 BASE_URL = "https://fantasy.premierleague.com/api"
-CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "cache")
+DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+CACHE_DIR = os.path.join(DATA_DIR, "cache")
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"}
 PRIOR_FIELDS = ("prior_points", "prior_minutes", "prior_starts")
 
@@ -42,8 +43,10 @@ def totals_from_summary(summary: Dict, season_name: str) -> Optional[Dict[str, i
 
 
 class PriorSeasonStats:
-    def __init__(self, cache_dir: str = CACHE_DIR, workers: int = 1):
+    def __init__(self, cache_dir: str = CACHE_DIR, workers: int = 1, bundled_dir: str = DATA_DIR):
         self.cache_dir = cache_dir
+        # Totals shipped with the code, read when the cache has none.
+        self.bundled_dir = bundled_dir
         self.workers = workers
         self._by_code: Dict[str, Dict[str, int]] = {}
         self._season: Optional[str] = None
@@ -130,8 +133,7 @@ class PriorSeasonStats:
         self._apply(static_data, by_code)
 
     def _bundled_path(self, season_name: str) -> str:
-        name = f"prior_season_{season_name.replace('/', '-')}.json"
-        return os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", name)
+        return os.path.join(self.bundled_dir, f"prior_season_{season_name.replace('/', '-')}.json")
 
     def _read_cache(self, season_name: str) -> Optional[Dict[str, Dict[str, int]]]:
         for path in (self._cache_path(season_name), self._bundled_path(season_name)):

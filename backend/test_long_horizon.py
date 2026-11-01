@@ -11,6 +11,18 @@ from advanced_optimizer import MultiPeriodFPLOptimizer
 TEAMS = 10
 SLOTS = [(1, 2), (2, 3), (3, 3), (4, 2)]  # (position, players per team)
 
+# The synthetic players never match Understat, so keep the optimizer's
+# predictor from fetching it.
+_offline = mock.patch('point_predictor.UNDERSTAT_AVAILABLE', False)
+
+
+def setUpModule():
+    _offline.start()
+
+
+def tearDownModule():
+    _offline.stop()
+
 
 def synthetic_league(first_gw, last_gw=38):
     players, predictions = [], []
@@ -140,16 +152,25 @@ class LongHorizonTests(unittest.TestCase):
             self.assertEqual(vice['expected_points'], max(p['expected_points'] for p in others))
 
     def test_lineups_survive_solver_tolerance(self):
-        class NearIntegerSolver(pulp.PULP_CBC_CMD):
-            def actualSolve(self, lp, **kwargs):
-                status = super().actualSolve(lp, **kwargs)
+        solver = MultiPeriodFPLOptimizer._multi_period_solver
+
+        def near_integer_solver():
+            # The same solver, so both plans pick the same optimum among ties.
+            nudged = solver()
+            solve = nudged.actualSolve
+
+            def actual_solve(lp, **kwargs):
+                status = solve(lp, **kwargs)
                 for var in lp.variables():
                     if var.varValue and var.varValue > 0.5:
                         var.varValue -= 1e-7
                 return status
 
+            nudged.actualSolve = actual_solve
+            return nudged
+
         _, exact = plan(current_gw=5, gameweeks=4)
-        nudging = staticmethod(lambda: NearIntegerSolver(msg=0))
+        nudging = staticmethod(near_integer_solver)
         with mock.patch.object(MultiPeriodFPLOptimizer, '_multi_period_solver', nudging):
             _, nudged = plan(current_gw=5, gameweeks=4)
         for gw_plan in nudged.gameweek_plans:
