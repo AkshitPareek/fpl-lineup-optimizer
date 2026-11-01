@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { api, errorMessage } from '../lib/api'
+import { errorKind, track } from '../lib/telemetry'
 import { num, price } from '../lib/format'
 import { Button, Card, EmptyState, ErrorNote, LoadingState, Stat } from '../components/ui'
 import { IconStar } from '../components/icons'
@@ -13,11 +14,13 @@ export default function DreamTeamView({ teamCodes }) {
   const load = async () => {
     setLoading(true)
     setError(null)
+    track('dream_team_requested')
     try {
       const res = await api.get('/api/dream-team')
       setDream(res.data)
     } catch (err) {
       console.error(err)
+      track('error_shown', { where: 'dream', kind: errorKind(err), message: errorMessage(err) })
       setError(errorMessage(err))
     } finally {
       setLoading(false)

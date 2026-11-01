@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { api, errorMessage } from '../lib/api'
+import { errorKind, track } from '../lib/telemetry'
 import { num, price } from '../lib/format'
 import { Badge, Button, Card, EmptyState, ErrorNote, LoadingState, Spinner, Stat } from '../components/ui'
 import { IconBolt } from '../components/icons'
@@ -25,6 +26,8 @@ export default function QuickPickView({
     setLoading(true)
     setError(null)
     setResult(null)
+    const started = performance.now()
+    track('plan_requested', { view: 'quick', horizon: 1, linked: Boolean(validManagerId) })
     try {
       const res = await api.post('/api/optimize/compare', {
         budget: parseFloat(budget),
@@ -35,14 +38,17 @@ export default function QuickPickView({
       })
       const { with_hits: withHits, no_hits: noHits, note } = res.data.comparison
       if (withHits?.feasible === false && noHits?.feasible === false) {
+        track('error_shown', { where: 'quick', kind: 'unsolved' })
         setError(note || 'No lineup could be solved.')
         return
       }
       const key = recommendedStrategy(res.data)
       const plan = res.data[key]
+      track('plan_shown', { view: 'quick', horizon: 1, ms: Math.round(performance.now() - started), best: key })
       setResult({ plan, gw: plan.gameweek_plans?.[0], hits: key === 'with_hits' })
     } catch (err) {
       console.error(err)
+      track('error_shown', { where: 'quick', kind: errorKind(err), message: errorMessage(err) })
       setError(errorMessage(err))
     } finally {
       setLoading(false)

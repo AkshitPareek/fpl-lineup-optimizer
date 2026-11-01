@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from './lib/api'
+import { errorKind, track } from './lib/telemetry'
 import { cx } from './lib/cx'
 import { IconBolt, IconChart, IconHistory, IconRoute, IconStar } from './components/icons'
 import PlannerView from './views/PlannerView'
@@ -59,18 +60,38 @@ function App() {
     else if (!id) localStorage.removeItem(MANAGER_KEY)
   }, [managerId])
 
+  // The first linked ID is either remembered from a past visit or typed now.
+  const storedManagerId = useRef(managerId.trim())
+  useEffect(() => {
+    track('page_view', {
+      tab: tabFromHash(),
+      mobile: window.matchMedia?.('(max-width: 767px)').matches ?? null,
+      returning: Boolean(storedManagerId.current),
+    })
+  }, [])
+
+  useEffect(() => {
+    if (!validManagerId) return
+    track('manager_entered', { source: validManagerId === storedManagerId.current ? 'stored' : 'typed' })
+    storedManagerId.current = null
+  }, [validManagerId])
+
   useEffect(() => {
     if (!validManagerId) return
     let cancelled = false
     api.get(`/api/manager-chips/${validManagerId}`)
       .then(res => {
         if (cancelled) return
+        // synced is false when FPL had no squad for this ID, often a mistyped one.
+        track('manager_loaded', { ok: true, synced: Boolean(res.data.synced) })
         setLoadedChips({ id: validManagerId, data: res.data })
         if (Number.isInteger(res.data.banked_transfers)) setBankedTransfers(res.data.banked_transfers)
         if (typeof res.data.bank === 'number') setBudget(res.data.bank)
       })
       .catch(err => {
         console.error('Error fetching manager chips', err)
+        // The UI does not show this failure; the plan just runs without the squad.
+        track('manager_loaded', { ok: false, kind: errorKind(err) })
         if (!cancelled) setLoadedChips({ id: validManagerId, data: { error: true } })
       })
     return () => { cancelled = true }
@@ -81,6 +102,7 @@ function App() {
       .then(res => setData(res.data))
       .catch(err => {
         console.error('Error fetching data', err)
+        track('error_shown', { where: 'app', kind: errorKind(err) })
         setDataError(true)
       })
   }, [])
@@ -88,6 +110,7 @@ function App() {
   useEffect(() => {
     const onHash = () => {
       const next = tabFromHash()
+      track('tab_view', { tab: next })
       setTab(next)
       setVisited(prev => (prev.has(next) ? prev : new Set(prev).add(next)))
     }
