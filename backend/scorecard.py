@@ -84,7 +84,7 @@ def record(manager_id, gameweeks=8, within_hours=None):
     week = plan["gameweek_plans"][0]
     if week["gameweek"] != upcoming["id"]:
         raise SystemExit(f"Planner answered for GW{week['gameweek']}, expected GW{upcoming['id']}")
-    version = requests.get(f"{API_URL}/health", timeout=30).json().get("version")
+    health = requests.get(f"{API_URL}/health", timeout=30).json()
 
     def slim(players):
         return [{"id": p["id"], "name": p["web_name"], "element_type": p["element_type"],
@@ -96,7 +96,8 @@ def record(manager_id, gameweeks=8, within_hours=None):
         "gameweek": week["gameweek"],
         "recorded_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "deadline": upcoming["deadline_time"],
-        "api_version": version,
+        "api_version": health.get("version"),
+        "api_commit": health.get("commit"),
         "expected_points": round(week["expected_points"], 2),
         "starting_xi": slim(week["starting_xi"]),
         "bench": slim(week["bench"]),

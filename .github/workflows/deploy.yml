@@ -1,0 +1,86 @@
+name: Deploy
+
+# Deploy the API to Cloud Run when backend changes reach master, once the
+# tests pass. Does nothing until the Workload Identity secrets are set.
+on:
+  push:
+    branches: [master]
+    paths:
+      - "backend/**"
+      - ".github/workflows/deploy.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deploy at a time; a newer push waits for the running one.
+concurrency:
+  group: deploy-cloud-run
+  cancel-in-progress: false
+
+env:
+  GOOGLE_CLOUD_PROJECT: fpl-optimizer-api
+  SERVICE_URL: https://fpl-optimizer-api-1099379580588.asia-south1.run.app
+
+jobs:
+  test:
+    uses: ./.github/workflows/ci.yml
+
+  credentials:
+    runs-on: ubuntu-latest
+    outputs:
+      configured: ${{ steps.check.outputs.configured }}
+    steps:
+      - id: check
+        env:
+          PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER || vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT || vars.GCP_SERVICE_ACCOUNT }}
+        run: |
+          if [ -n "$PROVIDER" ] && [ -n "$SERVICE_ACCOUNT" ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice title=Deploy skipped::GCP_WORKLOAD_IDENTITY_PROVIDER and GCP_SERVICE_ACCOUNT are not set, so nothing was deployed."
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  deploy:
+    needs: [test, credentials]
+    if: needs.credentials.outputs.configured == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER || vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT || vars.GCP_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Deploy to Cloud Run
+        id: deploy
+        run: |
+          commit="$(git rev-parse --short HEAD)"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          GIT_COMMIT="$commit" sh backend/deploy_cloud_run.sh
+
+      - name: Check the new revision is serving
+        env:
+          COMMIT: ${{ steps.deploy.outputs.commit }}
+        run: |
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            health="$(curl -sS --max-time 60 "$SERVICE_URL/health" || true)"
+            echo "Attempt $attempt: $health"
+            if [ "$(echo "$health" | jq -r '.commit // empty' 2>/dev/null)" = "$COMMIT" ]; then
+              echo "### Deployed $COMMIT" >> "$GITHUB_STEP_SUMMARY"
+              echo "\`$health\`" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "::error::$SERVICE_URL/health never reported commit $COMMIT"
+          exit 1
