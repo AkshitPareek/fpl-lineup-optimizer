@@ -74,14 +74,14 @@ def autosub_score(xi, bench, captain_id, vice_id, pts, mins, chip=None):
     return total
 
 
-def run(season, variant, start, end, horizon, chips="none"):
+def run(season, variant, start, end, horizon, chips="none", flags=False):
     for k, v in VARIANTS[variant].items():
         setattr(ao.MultiPeriodFPLOptimizer, k, v)
     ao.MultiPeriodFPLOptimizer.generate_transfer_alternatives = lambda self, **kw: []
     if chips != "advisor":
         ao.ChipAdvisor.analyze_chip_opportunities_for_horizon = lambda self, **kw: {}
 
-    archive = pe.SeasonArchive(season)
+    archive = pe.SeasonArchive(season, flags=flags)
     prior = pe.SeasonArchive(pe.previous_season(season)).season_totals_by_code()
     teams = archive.teams.copy()
     teams[STRENGTHS] = 0  # like 2026/27, so the live fixture-difficulty fallback is what runs
@@ -152,9 +152,10 @@ if __name__ == "__main__":
     ap.add_argument("--end", type=int, default=38)
     ap.add_argument("--horizon", type=int, default=8)
     ap.add_argument("--chips", default="none", choices=["none", "advisor", "planner"])
+    ap.add_argument("--flags", action="store_true", help="Apply injury flags as they stood at each deadline (2024-25 on)")
     ap.add_argument("--out")
     a = ap.parse_args()
-    res = run(a.season, a.variant, a.start, a.end, a.horizon, a.chips)
+    res = run(a.season, a.variant, a.start, a.end, a.horizon, a.chips, a.flags)
     if a.out:
         json.dump(res, open(a.out, "w"), indent=1)
     print(json.dumps({k: res[k] for k in ("season", "variant", "chips", "total", "hits")}))
