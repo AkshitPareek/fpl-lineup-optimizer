@@ -76,11 +76,13 @@ def season_info(events: list) -> dict:
     """What the site shows about the season: the gameweek being planned and the chip half."""
     planning = get_planning_gameweek(events)
     first_deadline = events[0].get("deadline_time", "") if events else ""
+    deadline = next((e.get("deadline_time") for e in events if e.get("id") == planning), None)
     year = int(first_deadline[:4]) if first_deadline[:4].isdigit() else None
     split = MultiPeriodFPLOptimizer.FIRST_HALF_END
     return {
         "label": f"{year}/{(year + 1) % 100:02d}" if year else None,
         "active_gameweek": planning,
+        "deadline_time": deadline,
         "finished_gameweeks": sum(1 for e in events if e.get("finished")),
         "chip_half": 1 if planning <= split else 2,
         "chip_half_split_gw": split,
@@ -202,6 +204,7 @@ class MultiPeriodRequest(BaseModel):
     gameweeks: int = Field(default=8, ge=3, le=15, description="Planning horizon (3-15)")
     manager_id: Optional[int] = None
     excluded_players: List[int] = []
+    locked_players: List[int] = Field(default=[], description="Players kept in the squad in every week of the plan")
     banked_transfers: int = Field(default=1, ge=0, le=5, description="Currently banked FTs (0-5)")
     chips_used: List[str] = Field(default=[], description="Already used chips")
     chip_to_use: Optional[List] = Field(default=None, description="Chip to activate: [chip_name, gameweek]")
@@ -354,7 +357,8 @@ async def get_data():
     try:
         data = fpl_service.get_latest_data()
         # A new dict, so the cached data is left as it was.
-        return {**data, "season": season_info(data["static"]["events"])}
+        season = {**season_info(data["static"]["events"]), "data_as_of": fpl_service.fetched_at()}
+        return {**data, "season": season}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -458,6 +462,7 @@ async def optimize_multi_period(request: MultiPeriodRequest):
             gameweeks=request.gameweeks,
             current_squad_ids=current_squad_ids,
             excluded_players=request.excluded_players,
+            locked_players=request.locked_players,
             banked_transfers=banked_transfers,
             chips_used=_chips_used(request.manager_id, request.chips_used),
             robust=request.robust,
@@ -582,6 +587,7 @@ async def optimize_compare(request: MultiPeriodRequest):
                 gameweeks=effective_gameweeks,
                 current_squad_ids=current_squad_ids,
                 excluded_players=request.excluded_players,
+                locked_players=request.locked_players,
                 banked_transfers=banked_transfers,
                 chips_used=_chips_used(request.manager_id, request.chips_used),
                 chip_to_use=chip_to_use,
@@ -599,6 +605,7 @@ async def optimize_compare(request: MultiPeriodRequest):
                 gameweeks=effective_gameweeks,
                 current_squad_ids=current_squad_ids,
                 excluded_players=request.excluded_players,
+                locked_players=request.locked_players,
                 banked_transfers=banked_transfers,
                 chips_used=_chips_used(request.manager_id, request.chips_used),
                 chip_to_use=chip_to_use,
@@ -1363,10 +1370,42 @@ async def get_manager_chips(manager_id: int):
     Returns used chips and available chips.
     """
     try:
+        # The team name confirms whose squad is planned; an unknown ID is an error, not an empty squad.
+        try:
+            entry = fpl_service.get_manager_entry(manager_id)
+        except Exception as e:
+            print(f"Error fetching manager entry: {e}")
+            entry = {}
+        if entry is None:
+            raise HTTPException(status_code=404, detail="No FPL team has this ID.")
         chips_info = fpl_service.get_manager_chips(manager_id)
-        return chips_info
+        return {**chips_info, "entry": entry or None}
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"Error fetching manager chips: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/track-record")
+async def get_track_record():
+    """
+    The live planner's advice for each tracked team, recorded before each deadline
+    by scorecard.py and scored once the gameweek is finished.
+    """
+    import scorecard
+    managers = sorted(d for d in os.listdir(scorecard.RECORDS_DIR) if d.isdigit()) \
+        if os.path.isdir(scorecard.RECORDS_DIR) else []
+
+    def get(path):
+        if path == "bootstrap-static/":
+            return fpl_service.get_latest_data()["static"]
+        return fpl_service.get_cached_json(path)
+
+    try:
+        return {"teams": [{"weeks": scorecard.scored_weeks(int(m), get)} for m in managers]}
+    except Exception as e:
+        print(f"Track record error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

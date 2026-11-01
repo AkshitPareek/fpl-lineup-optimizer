@@ -151,37 +151,60 @@ def lineup_points(entry, points, minutes):
     return total - 4 * entry["hits"]
 
 
-def score(manager_id):
+def scored_weeks(manager_id, get=fpl):
+    """
+    Each recorded week: the advice's projection and, once the gameweek is finished,
+    what following it scored next to the manager, the average and the week's best.
+    `get` fetches an FPL API path, so the API can pass its own cached client.
+    """
     folder = os.path.join(RECORDS_DIR, str(manager_id))
     if not os.path.isdir(folder):
-        raise SystemExit(f"No records for manager {manager_id}")
-    events = {e["id"]: e for e in fpl("bootstrap-static/")["events"]}
-    history = {h["event"]: h for h in fpl(f"entry/{manager_id}/history/")["current"]}
-
+        return []
+    events = {e["id"]: e for e in get("bootstrap-static/")["events"]}
+    history = None
     rows = []
     for name in sorted(os.listdir(folder)):
+        if not name.endswith(".json"):
+            continue
         with open(os.path.join(folder, name)) as f:
             entry = json.load(f)
         gw = entry["gameweek"]
-        if not events.get(gw, {}).get("finished"):
-            rows.append((gw, None, None, None, None))
-            continue
-        live = fpl(f"event/{gw}/live/")["elements"]
-        points = {e["id"]: e["stats"]["total_points"] for e in live}
-        minutes = {e["id"]: e["stats"]["minutes"] for e in live}
-        mine = history.get(gw)
-        you = mine["points"] - mine["event_transfers_cost"] if mine else None
-        rows.append((gw, lineup_points(entry, points, minutes), you,
-                     events[gw]["average_entry_score"], events[gw]["highest_score"]))
+        captain = next((p for p in entry["starting_xi"] if p["id"] == entry["captain_id"]), None)
+        row = {"gameweek": gw, "projected": entry["expected_points"], "recorded_at": entry.get("recorded_at"),
+               "captain": captain["name"] if captain else None, "chip": entry.get("chip"),
+               "transfers_in": entry.get("transfers_in", []), "transfers_out": entry.get("transfers_out", []),
+               "hits": entry.get("hits", 0), "finished": bool(events.get(gw, {}).get("finished"))}
+        if row["finished"]:
+            if history is None:
+                history = {h["event"]: h for h in get(f"entry/{manager_id}/history/")["current"]}
+            live = get(f"event/{gw}/live/")["elements"]
+            points = {e["id"]: e["stats"]["total_points"] for e in live}
+            minutes = {e["id"]: e["stats"]["minutes"] for e in live}
+            mine = history.get(gw)
+            row.update({
+                "advice": lineup_points(entry, points, minutes),
+                "you": mine["points"] - mine["event_transfers_cost"] if mine else None,
+                "average": events[gw]["average_entry_score"],
+                "best": events[gw]["highest_score"],
+                "captain_points": points.get(entry["captain_id"]),
+            })
+        rows.append(row)
+    return rows
 
+
+def score(manager_id):
+    rows = scored_weeks(manager_id)
+    if not rows:
+        raise SystemExit(f"No records for manager {manager_id}")
     print(f"{'GW':>3} {'advice':>7} {'you':>5} {'average':>8} {'best':>5}")
     totals = [0, 0, 0]
-    for gw, advice, you, average, best in rows:
-        if advice is None:
-            print(f"{gw:>3}   (not finished)")
+    for r in rows:
+        if not r["finished"]:
+            print(f"{r['gameweek']:>3}   (not finished)")
             continue
-        totals = [totals[0] + advice, totals[1] + (you or 0), totals[2] + average]
-        print(f"{gw:>3} {advice:>7} {you if you is not None else '-':>5} {average:>8} {best:>5}")
+        you = r["you"]
+        totals = [totals[0] + r["advice"], totals[1] + (you or 0), totals[2] + r["average"]]
+        print(f"{r['gameweek']:>3} {r['advice']:>7} {you if you is not None else '-':>5} {r['average']:>8} {r['best']:>5}")
     print(f"{'all':>3} {totals[0]:>7} {totals[1]:>5} {totals[2]:>8}")
 
 

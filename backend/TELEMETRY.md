@@ -36,13 +36,18 @@ sessionStorage), `t_ms` (ms since the page loaded), `props`.
 | `page_view` | `tab`, `mobile` (width under 768px), `returning` (a manager ID was remembered) |
 | `tab_view` | `tab` |
 | `manager_entered` | `source`: `stored` or `typed` |
-| `manager_loaded` | `ok`, `synced` (false: FPL had no squad for the ID, often a typo), `kind` on failure |
-| `plan_requested` | `view` (planner, quick), `horizon`, `strategy`, `robust`, `forced_chip`, `linked`, `auto` (ran on load) |
+| `manager_loaded` | `ok`, `synced`, `named` (FPL sent the team name), `kind` on failure (`not_found` for an unknown ID) |
+| `plan_requested` | `view` (planner), `horizon`, `strategy`, `robust`, `forced_chip`, `linked`, `auto` (ran on load), `kept`, `banned` (player counts) |
 | `plan_shown` | the above plus `ms` (click to result), `best`, `proven_optimal`, `partial`, `transfers`, `hits`, `chip_advice` (play, save, hold, none) |
 | `error_shown` | `where` (planner, quick, dream, backtest, app), `kind` (`http_504`, `network`, `unsolved`...), `message`, `ms` |
 | `strategy_switched`, `gameweek_viewed`, `view_toggled` | `to`, `index`, `view` |
 | `transfer_why_opened`, `chip_selected`, `chip_suggestion_applied` | `chip` where relevant |
 | `dream_team_requested`, `backtest_requested`, `backtest_shown` | `weeks`, `horizon`, `ms` |
+| `plan_cancelled` | `horizon`, `ms` (how long they waited), `auto` |
+| `plan_retry_shorter` | `from` (the horizon that timed out) |
+| `plan_restored` | `age_min`: a remembered plan was shown instead of planning again |
+| `plan_copied` | the deadline checklist was copied |
+| `player_pref_set` | `kind` (`keep`, `ban`), `source` (`sheet`, `transfer`) |
 
 The endpoint accepts at most 8 KB and 20 events per post, only the events above,
 and only flat string, number, boolean or null props (strings cut to 120 chars,

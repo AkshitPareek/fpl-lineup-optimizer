@@ -128,6 +128,11 @@ def recent_minutes(elements, lives, rounds=4):
     return elements
 
 
+def is_not_found(exc) -> bool:
+    response = getattr(exc, "response", None)
+    return response is not None and response.status_code == 404
+
+
 class FPLService:
     BASE_URL = "https://fantasy.premierleague.com/api"
     
@@ -165,7 +170,8 @@ class FPLService:
                 return response.json()
             except requests.RequestException as exc:
                 last_error = exc
-                if attempt == 2:
+                # A 404 is an answer (no such team), not a hiccup worth retrying.
+                if attempt == 2 or is_not_found(exc):
                     raise
                 time.sleep(0.4 * (attempt + 1))
         raise last_error
@@ -232,6 +238,38 @@ class FPLService:
                 last_error = e
                 print(f"Error fetching manager team: {e}")
         raise last_error
+
+    def get_manager_entry(self, manager_id: int):
+        """
+        The team name, manager name and overall rank, so the site can confirm whose
+        team it is planning. None when FPL has no team with this ID.
+        """
+        try:
+            entry = self._get_json(f"{self.BASE_URL}/entry/{manager_id}/")
+        except requests.RequestException as e:
+            if is_not_found(e):
+                return None
+            raise
+        first = entry.get("player_first_name") or ""
+        last = entry.get("player_last_name") or ""
+        return {
+            "name": entry.get("name"),
+            "player_name": f"{first} {last}".strip() or None,
+            "overall_rank": entry.get("summary_overall_rank"),
+            "overall_points": entry.get("summary_overall_points"),
+        }
+
+    def get_cached_json(self, path: str):
+        """An FPL API path (e.g. "event/9/live/"), kept for the usual cache time."""
+        key = f"path:{path}"
+        if not self._is_cache_valid(key):
+            self._update_cache(key, self._get_json(f"{self.BASE_URL}/{path}"))
+        return self._cache[key]
+
+    def fetched_at(self):
+        """When the cached FPL player data was fetched (epoch seconds), or None."""
+        expiry = self._cache_expiry.get("bootstrap-static")
+        return expiry - self.CACHE_DURATION if expiry else None
 
     def get_manager_squad_state(self, manager_id: int, history=None):
         """Squad, bank, selling prices and free transfers for the next deadline (see manager_squad_state)."""

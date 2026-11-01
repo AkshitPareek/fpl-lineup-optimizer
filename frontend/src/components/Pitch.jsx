@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { cx } from '../lib/cx'
 import { num, positionOf, price, shirtUrl } from '../lib/format'
+import { availabilityNote } from '../lib/plan'
 
 const ROWS = [1, 2, 3, 4] // GKP, DEF, MID, FWD
 
@@ -25,10 +26,23 @@ function Shirt({ player, small }) {
   )
 }
 
-function PlayerToken({ player, small = false, benchIndex }) {
+function PlayerToken({ player, small = false, benchIndex, fixture, onSelect, kept }) {
   const xp = player.expected_points
+  const doubt = availabilityNote(player)
+  const Tag = onSelect ? 'button' : 'div'
   return (
-    <div className={cx('group relative flex flex-col items-center', small ? 'w-[68px] sm:w-20' : 'w-[62px] sm:w-[88px]')}>
+    <Tag
+      {...(onSelect ? {
+        type: 'button',
+        onClick: () => onSelect(player),
+        'aria-label': `${player.web_name}, ${num(xp, 1)} points${fixture ? `, ${fixture}` : ''}${doubt ? `, ${doubt}` : ''}. Details`,
+      } : {})}
+      className={cx(
+        'group relative flex flex-col items-center rounded-lg',
+        onSelect && 'cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-fpl-green',
+        small ? 'w-[68px] sm:w-20' : 'w-[62px] sm:w-[88px]',
+      )}
+    >
       {benchIndex != null && (
         <span className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-fg-3">{benchIndex === 0 ? 'GK' : `Sub ${benchIndex}`}</span>
       )}
@@ -45,20 +59,35 @@ function PlayerToken({ player, small = false, benchIndex }) {
             {player.is_captain ? 'C' : 'V'}
           </span>
         )}
+        {doubt && (
+          <span
+            className="absolute -left-2 -top-1 grid h-5 w-5 place-items-center rounded-full bg-warn text-[11px] font-bold text-ink-950 ring-2 ring-ink-950"
+            title={doubt}
+            aria-hidden="true"
+          >
+            !
+          </span>
+        )}
+        {kept && (
+          <span className="absolute -left-2 bottom-0 grid h-4 w-4 place-items-center rounded-full bg-fg text-[9px] font-bold text-ink-950 ring-2 ring-ink-950" title="Kept" aria-hidden="true">K</span>
+        )}
       </div>
 
       <div className="mt-1 w-full overflow-hidden rounded-md shadow-[0_6px_14px_-6px_rgb(0_0_0/0.6)]">
         <div className="truncate bg-fg px-1 py-[3px] text-center text-[10px] sm:text-[11px] font-semibold leading-tight text-ink-950">
           {player.web_name}
         </div>
+        {fixture && (
+          <div className="truncate bg-ink-900/90 px-1 py-[2px] text-center text-[9px] sm:text-[10px] text-fg-2">{fixture}</div>
+        )}
         <div className="flex items-center justify-center gap-1 bg-fpl-purple px-1 py-[2px] text-[10px] sm:text-[11px] text-fg tabular">
           <span className="font-semibold">{num(xp, 1)}</span>
           <span className="text-[9px] text-fg-3">xP</span>
         </div>
       </div>
 
-      {/* Hover card */}
-      <div className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-2 w-44 -translate-x-1/2 rounded-xl bg-ink-950/95 p-3 text-left opacity-0 shadow-xl ring-1 ring-ink-700 transition group-hover:opacity-100">
+      {/* Hover card for mouse users; touch users tap for the sheet */}
+      <div className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-2 hidden w-44 -translate-x-1/2 rounded-xl bg-ink-950/95 p-3 text-left opacity-0 shadow-xl ring-1 ring-ink-700 transition group-hover:opacity-100 lg:[@media(hover:hover)]:block">
         <div className="text-sm font-semibold text-fg">{player.web_name}</div>
         <div className="text-[11px] text-fg-3">{[player.team_name, positionOf(player)].filter(Boolean).join(' · ')}</div>
         <dl className="mt-2 grid grid-cols-2 gap-y-1 text-[11px] tabular">
@@ -67,8 +96,9 @@ function PlayerToken({ player, small = false, benchIndex }) {
           {player.analytics?.ownership_pct != null && (<><dt className="text-fg-3">Owned</dt><dd className="text-right text-fg">{player.analytics.ownership_pct}%</dd></>)}
           {player.analytics?.ceiling != null && (<><dt className="text-fg-3">Ceiling</dt><dd className="text-right text-fg">{num(player.analytics.ceiling)}</dd></>)}
         </dl>
+        {onSelect && <div className="mt-2 text-[10px] text-fg-3">Click for details</div>}
       </div>
-    </div>
+    </Tag>
   )
 }
 
@@ -90,7 +120,7 @@ function PitchMarkings() {
   )
 }
 
-const Pitch = ({ lineup }) => {
+const Pitch = ({ lineup, fixtures, onSelect, kept }) => {
   if (!lineup) return null
 
   const starters = lineup.filter(p => p.is_starter)
@@ -116,7 +146,7 @@ const Pitch = ({ lineup }) => {
             const row = starters.filter(p => p.element_type === type)
             return (
               <div key={type} className="flex justify-evenly items-start">
-                {row.map(p => <PlayerToken key={p.id} player={p} />)}
+                {row.map(p => <PlayerToken key={p.id} player={p} fixture={fixtures?.[p.team]} onSelect={onSelect} kept={kept?.has(p.id)} />)}
               </div>
             )
           })}
@@ -127,7 +157,7 @@ const Pitch = ({ lineup }) => {
         <div className="mt-3 rounded-2xl bg-ink-900/70 ring-1 ring-inset ring-ink-700 px-3 pt-3 pb-4">
           <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-fg-3 mb-3 px-1">Bench</div>
           <div className="flex justify-evenly">
-            {orderedBench.map((p, i) => <PlayerToken key={p.id} player={p} small benchIndex={i} />)}
+            {orderedBench.map((p, i) => <PlayerToken key={p.id} player={p} small benchIndex={i} fixture={fixtures?.[p.team]} onSelect={onSelect} kept={kept?.has(p.id)} />)}
           </div>
         </div>
       )}

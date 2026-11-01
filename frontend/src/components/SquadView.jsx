@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import Pitch from './Pitch'
 import PlayerList from './PlayerList'
+import PlayerSheet from './PlayerSheet'
 import { Segmented } from './ui'
 import { IconList, IconPitch } from './icons'
 
@@ -19,9 +20,18 @@ export function ViewToggle({ value, onChange }) {
   )
 }
 
-export default function SquadView({ squad, view: controlledView, title, actions }) {
+/**
+ * Pitch or list of a squad. Tapping a player opens his details; `playerActions`
+ * adds buttons there, `fixtures` maps team id to this week's opponents.
+ */
+export default function SquadView({ squad, view: controlledView, title, actions, gameweek, fixtures, playerActions, kept }) {
   const [localView, setLocalView] = useState('pitch')
+  const [selectedId, setSelectedId] = useState(null)
   const view = controlledView ?? localView
+  const selected = squad?.find(p => p.id === selectedId) || null
+  const onSelect = useCallback(p => setSelectedId(p.id), [])
+  const onClose = useCallback(() => setSelectedId(null), [])
+  const props = { fixtures, onSelect, kept }
 
   return (
     <div>
@@ -34,7 +44,8 @@ export default function SquadView({ squad, view: controlledView, title, actions 
           </div>
         </div>
       )}
-      {view === 'pitch' ? <Pitch lineup={squad} /> : <PlayerList squad={squad} />}
+      {view === 'pitch' ? <Pitch lineup={squad} {...props} /> : <PlayerList squad={squad} {...props} />}
+      <PlayerSheet player={selected} gameweek={gameweek} fixture={selected && fixtures?.[selected.team]} onClose={onClose} actions={playerActions} />
     </div>
   )
 }

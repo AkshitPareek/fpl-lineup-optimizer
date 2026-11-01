@@ -77,3 +77,21 @@ export const IconPound = p => (
 export const IconPlay = p => (
   <Icon {...p}><path d="M7 4.5v15l12-7.5-12-7.5Z" /></Icon>
 )
+export const IconCopy = p => (
+  <Icon {...p}><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a2 2 0 0 1 2-2h9" /></Icon>
+)
+export const IconCheck = p => (
+  <Icon {...p}><path d="m5 12.5 4.5 4.5L19 7.5" /></Icon>
+)
+export const IconLock = p => (
+  <Icon {...p}><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></Icon>
+)
+export const IconBan = p => (
+  <Icon {...p}><circle cx="12" cy="12" r="8.5" /><path d="m6 6 12 12" /></Icon>
+)
+export const IconClock = p => (
+  <Icon {...p}><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" /></Icon>
+)
+export const IconTrophy = p => (
+  <Icon {...p}><path d="M8 4h8v5a4 4 0 0 1-8 0V4Z" /><path d="M8 6H5a3 3 0 0 0 3 4M16 6h3a3 3 0 0 1-3 4M12 13v4M8.5 20h7" /></Icon>
+)

@@ -1,6 +1,7 @@
 import { Badge } from './ui'
 import { cx } from '../lib/cx'
 import { num, positionOf, price } from '../lib/format'
+import { availabilityNote } from '../lib/plan'
 
 const GROUPS = [
   { type: 1, label: 'Goalkeepers' },
@@ -9,21 +10,30 @@ const GROUPS = [
   { type: 4, label: 'Forwards' },
 ]
 
-function Row({ player }) {
+function Row({ player, fixture, onSelect, kept }) {
   const a = player.analytics
   const cost = player.now_cost != null ? (player.now_cost > 20 ? player.now_cost / 10 : player.now_cost) : null
+  const doubt = availabilityNote(player)
   return (
-    <tr className={cx('border-t border-ink-700/60', player.is_starter === false && 'text-fg-3')}>
+    <tr className={cx('border-t border-ink-700/60', player.is_starter === false && 'text-fg-3', onSelect && 'hover:bg-ink-800/60')}>
       <td className="py-2.5 pl-4 pr-2">
         <div className="flex items-center gap-2">
-          <span className={cx('font-medium', player.is_starter === false ? 'text-fg-2' : 'text-fg')}>{player.web_name}</span>
+          {onSelect ? (
+            <button type="button" onClick={() => onSelect(player)} className={cx('font-medium text-left hover:underline cursor-pointer rounded focus-visible:outline-2 focus-visible:outline-fpl-green', player.is_starter === false ? 'text-fg-2' : 'text-fg')}>
+              {player.web_name}
+            </button>
+          ) : (
+            <span className={cx('font-medium', player.is_starter === false ? 'text-fg-2' : 'text-fg')}>{player.web_name}</span>
+          )}
+          {doubt && <Badge tone="warn" title={doubt}>Doubt</Badge>}
+          {kept && <Badge>Kept</Badge>}
           {player.is_captain && <Badge tone="green">C</Badge>}
           {player.is_vice_captain && <Badge>V</Badge>}
           {player.is_starter === false && <Badge>Bench</Badge>}
           {a?.is_differential && <Badge tone="violet">Diff</Badge>}
           {a?.is_template && <Badge tone="pink">Template</Badge>}
         </div>
-        <div className="text-[11px] text-fg-3 mt-0.5">{[player.team_name, positionOf(player)].filter(Boolean).join(' · ')}</div>
+        <div className="text-[11px] text-fg-3 mt-0.5">{[player.team_name, positionOf(player), fixture].filter(Boolean).join(' · ')}</div>
       </td>
       <td className="py-2.5 px-2 text-right text-fg-2 hidden sm:table-cell">{cost != null ? price(cost) : '–'}</td>
       <td className="py-2.5 px-2 text-right text-fg-2 hidden md:table-cell">{a?.ownership_pct != null ? `${a.ownership_pct}%` : '–'}</td>
@@ -33,7 +43,7 @@ function Row({ player }) {
   )
 }
 
-export default function PlayerList({ squad }) {
+export default function PlayerList({ squad, fixtures, onSelect, kept }) {
   if (!squad?.length) return null
   return (
     <div className="overflow-hidden rounded-2xl ring-1 ring-inset ring-ink-700">
@@ -57,7 +67,7 @@ export default function PlayerList({ squad }) {
               <tr className="bg-ink-900/50">
                 <td colSpan={5} className="py-1.5 pl-4 text-[10px] font-semibold uppercase tracking-[0.14em] text-fg-3">{g.label}</td>
               </tr>
-              {players.map(p => <Row key={p.id} player={p} />)}
+              {players.map(p => <Row key={p.id} player={p} fixture={fixtures?.[p.team]} onSelect={onSelect} kept={kept?.has(p.id)} />)}
             </tbody>
           )
         })}

@@ -39,7 +39,8 @@ class RequestLogTests(unittest.TestCase):
         self.assertEqual(line["commit"], telemetry.COMMIT)
 
     def test_a_manager_in_the_path_is_logged_as_a_hash_under_the_route_template(self):
-        with mock.patch.object(fpl_service, "get_manager_chips", return_value={"available": []}):
+        with mock.patch.object(fpl_service, "get_manager_chips", return_value={"available": []}), \
+                mock.patch.object(fpl_service, "get_manager_entry", return_value={"name": "krAne"}):
             _, line = self.request("get", "/api/manager-chips/7706676")
         self.assertEqual(line["endpoint"], "/api/manager-chips/{manager_id}")
         self.assertEqual(line["manager"], telemetry.manager_hash(7706676))
@@ -47,7 +48,8 @@ class RequestLogTests(unittest.TestCase):
 
     def test_a_failed_request_logs_the_original_exception_type_without_the_manager_id(self):
         error = KeyError("https://fantasy.premierleague.com/api/entry/7706676/")
-        with mock.patch.object(fpl_service, "get_manager_chips", side_effect=error):
+        with mock.patch.object(fpl_service, "get_manager_chips", side_effect=error), \
+                mock.patch.object(fpl_service, "get_manager_entry", return_value={"name": "krAne"}):
             response, line = self.request("get", "/api/manager-chips/7706676")
         self.assertEqual(response.status_code, 500)
         self.assertEqual(line["severity"], "ERROR")

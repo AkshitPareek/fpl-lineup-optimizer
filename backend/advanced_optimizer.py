@@ -403,11 +403,22 @@ class MultiPeriodFPLOptimizer:
             if chip == 'wildcard':
                 kept = max(kept, self.WILDCARD_FLOOR)
             if gp and gp.gameweek in w['weeks']:
-                if w['weeks_after'] > 0:
-                    why = f"keeping it is worth about {kept:.1f} points later in the half"
+                # What the chip adds that week, where the plan shows it directly.
+                gain = None
+                if chip == 'triple_captain':
+                    gain = next((p['expected_points'] for p in gp.starting_xi if p['id'] == gp.captain_id), None)
+                elif chip == 'bench_boost':
+                    gain = sum(p['expected_points'] for p in gp.bench)
+                if w['weeks_after'] == 0:
+                    later = f"It expires after GW{w['weeks'][-1]}, so the plan uses it now."
+                elif gain is not None:
+                    later = f"The best week after the plan would add about {kept:.1f}."
                 else:
-                    why = f"it expires after GW{w['weeks'][-1]}"
-                reason = f"The plan plays {name} in GW{gp.gameweek}; {why}."
+                    later = f"It gains more there than the about {kept:.1f} points saving it for later is worth."
+                if gain is not None:
+                    reason = f"{name} in GW{gp.gameweek} adds about {gain:.1f} points. {later}"
+                else:
+                    reason = f"The plan plays {name} in GW{gp.gameweek}. {later}"
                 if suggestion is None or gp.gameweek < suggestion['recommended_gameweek']:
                     if suggestion:
                         held.append({'chip': suggestion['chip'], 'reason': suggestion['reason']})
@@ -676,6 +687,7 @@ class MultiPeriodFPLOptimizer:
                                gameweeks: int = 5,
                                current_squad_ids: List[int] = [],
                                excluded_players: List[int] = [],
+                               locked_players: List[int] = [],
                                banked_transfers: int = 1,
                                chips_used: List[str] = [],
                                chip_to_use: Optional[Tuple[str, int]] = None,  # (chip_name, gameweek)
@@ -698,6 +710,7 @@ class MultiPeriodFPLOptimizer:
             gameweeks: Planning horizon (3-15, stopping at the last gameweek)
             current_squad_ids: Current squad (if any)
             excluded_players: Players to exclude
+            locked_players: Players to keep in the squad in every week (bought if not owned)
             banked_transfers: Currently banked free transfers
             chips_used: Already used chips
             robust: Use robust optimization
@@ -739,8 +752,10 @@ class MultiPeriodFPLOptimizer:
             for col in [c for c in predictions.columns if c.startswith('xp_gw')]:
                 predictions[col] = predictions[col] + adjustment * (predictions[col] > 0)
         
+        # A player both kept and banned is banned.
+        locked = [j for j in dict.fromkeys(locked_players or []) if j not in set(excluded_players or [])]
         available = self._filter_available_players(excluded_ids=excluded_players,
-                                                   keep_ids=current_squad_ids or [])
+                                                   keep_ids=list(current_squad_ids or []) + locked)
         
         # Merge predictions
         gw_cols = [f'xp_gw{gw}' for gw in horizon]
@@ -759,8 +774,8 @@ class MultiPeriodFPLOptimizer:
         # ===== OPTIMIZATION: Pre-filter to top players per position =====
         # This reduces problem size from ~700 players to ~120, dramatically speeding up solve
         
-        # Always include current squad players
-        current_squad_set = set(current_squad_ids) if current_squad_ids else set()
+        # Always include current squad players, and anyone kept
+        current_squad_set = set(current_squad_ids or []) | set(locked)
         
         # Select top players per position
         filtered_players = []
@@ -992,6 +1007,10 @@ class MultiPeriodFPLOptimizer:
             
             # Squad = 15
             prob += pulp.lpSum([squad[(j, t)] for j in player_ids]) == 15
+
+            for j in locked:
+                if (j, t) in squad:
+                    prob += squad[(j, t)] == 1
             
             # Starters = 11
             prob += pulp.lpSum([starter[(j, t)] for j in player_ids]) == 11
@@ -1095,7 +1114,8 @@ class MultiPeriodFPLOptimizer:
                 print(f"Plan with chip weeks not solved ({pulp.LpStatus[prob.status]}); planning without them")
                 return self.optimize_multi_period(
                     budget=budget, gameweeks=gameweeks, current_squad_ids=current_squad_ids,
-                    excluded_players=excluded_players, banked_transfers=banked_transfers,
+                    excluded_players=excluded_players, locked_players=locked_players,
+                    banked_transfers=banked_transfers,
                     chips_used=chips_used, chip_to_use=chip_to_use, robust=robust,
                     uncertainty_budget=uncertainty_budget, strategy=strategy, max_hits=max_hits,
                     selling_prices=selling_prices, plan_chips=False,
@@ -1306,7 +1326,8 @@ class MultiPeriodFPLOptimizer:
         if windows and not chip_to_use and not free_hit_week:
             resolve = dict(
                 budget=budget, gameweeks=gameweeks, current_squad_ids=current_squad_ids,
-                excluded_players=excluded_players, banked_transfers=banked_transfers,
+                excluded_players=excluded_players, locked_players=locked_players,
+                banked_transfers=banked_transfers,
                 chips_used=chips_used, robust=robust, uncertainty_budget=uncertainty_budget,
                 strategy=strategy, max_hits=max_hits, selling_prices=selling_prices, plan_chips=True,
             )

@@ -1,49 +1,11 @@
 import { Badge, Card, CardHeader, SectionLabel } from './ui'
 import { IconSwap } from './icons'
 import { num, POSITION_SHORT, price, signed } from '../lib/format'
+import { pairTransfers } from '../lib/plan'
+import { parseBlocks } from '../lib/explain'
 import { track } from '../lib/telemetry'
 
-const clean = s => s.replace(/\*\*/g, '').trim()
-
-/**
- * Split the explainer's markdown into per-transfer blocks so each block's reasoning
- * can sit under the structured in/out row it describes.
- */
-function parseBlocks(explanation) {
-  const blocks = []
-  let block = null
-  let side = null
-  for (const raw of (explanation || '').split('\n')) {
-    const line = raw.trim()
-    if (line.startsWith('### Transfer')) {
-      block = { sell: null, buy: null }
-      blocks.push(block)
-      side = null
-    } else if (block && line.includes('**SELL:**')) {
-      side = block.sell = { summary: clean(line.replace('**SELL:**', '')), details: [] }
-    } else if (block && line.includes('**BUY:**')) {
-      side = block.buy = { summary: clean(line.replace('**BUY:**', '')), details: [] }
-    } else if (side && line.startsWith('└')) {
-      side.details.push(clean(line.replace(/^└\s*/, '')))
-    } else if (line.startsWith('---')) {
-      block = side = null
-    }
-  }
-  return blocks
-}
-
-/** Pair each incoming player with an outgoing one in the same position, as the explainer does. */
-function pairTransfers(ins, outs) {
-  const remaining = [...outs]
-  const pairs = ins.map(inn => {
-    const idx = remaining.findIndex(o => o.element_type === inn.element_type)
-    const out = idx >= 0 ? remaining.splice(idx, 1)[0] : null
-    return [out, inn]
-  })
-  return [...pairs, ...remaining.map(o => [o, null])]
-}
-
-function PlayerChip({ player, direction }) {
+function PlayerChip({ player, direction, action }) {
   const isIn = direction === 'in'
   return (
     <div className="flex min-w-0 flex-1 items-center gap-3 rounded-xl bg-ink-900/70 px-3 py-2.5 ring-1 ring-inset ring-ink-700/70">
@@ -53,15 +15,19 @@ function PlayerChip({ player, direction }) {
       <div className="min-w-0">
         <div className="truncate text-sm font-medium text-fg">{player.name}</div>
         <div className="text-[11px] text-fg-3 tabular">
-          {[POSITION_SHORT[player.element_type], player.cost != null && price(player.cost), isIn && player.expected_points != null && `${num(player.expected_points)} xP`].filter(Boolean).join(' · ')}
+          {[POSITION_SHORT[player.element_type], player.cost != null && price(player.cost), player.expected_points != null && `${num(player.expected_points)} xP this week`].filter(Boolean).join(' · ')}
         </div>
       </div>
+      {action && <div className="ml-auto shrink-0">{action}</div>}
     </div>
   )
 }
 
-/** Multi-period plan transfers: structured in/out pairs with reasoning and alternatives. */
-export default function TransferPanel({ transfers, summary, explainOpen = false }) {
+/**
+ * Multi-period plan transfers. `playerAction(player, 'in' | 'out')` may add a
+ * small button to each row (e.g. keep the player sold, or never buy the one bought).
+ */
+export default function TransferPanel({ transfers, summary, explainOpen = false, playerAction }) {
   const ins = transfers?.in || []
   const outs = transfers?.out || []
   const hits = transfers?.hits || 0
@@ -98,10 +64,10 @@ export default function TransferPanel({ transfers, summary, explainOpen = false 
           const block = inn && blocks.find(b => b.buy?.summary.startsWith(inn.name))
           return (
             <div key={i}>
-              <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                {out ? <PlayerChip player={out} direction="out" /> : <div className="flex-1" />}
-                <span className="hidden sm:block text-fg-3" aria-hidden="true">→</span>
-                {inn ? <PlayerChip player={inn} direction="in" /> : <div className="flex-1" />}
+              <div className="flex flex-col md:flex-row md:items-center xl:flex-col xl:items-stretch gap-2">
+                {out ? <PlayerChip player={out} direction="out" action={playerAction?.(out, 'out')} /> : <div className="flex-1" />}
+                <span className="hidden md:block xl:hidden text-fg-3" aria-hidden="true">→</span>
+                {inn ? <PlayerChip player={inn} direction="in" action={playerAction?.(inn, 'in')} /> : <div className="flex-1" />}
               </div>
               {block?.buy && (
                 <details open={explainOpen} className="group mt-1.5 ml-1 text-xs">
