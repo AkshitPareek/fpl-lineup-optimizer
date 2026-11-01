@@ -5,7 +5,7 @@ from unittest import mock
 
 import pulp
 
-from advanced_optimizer import Chip, MultiPeriodFPLOptimizer, best_xi_points, expected_max_normal
+from advanced_optimizer import Chip, HiGHSFromPlan, MultiPeriodFPLOptimizer, best_xi_points, expected_max_normal
 from season_sim import autosub_score
 from test_long_horizon import cheapest_top_squad, synthetic_league
 
@@ -124,6 +124,38 @@ class ChipPlanningTests(unittest.TestCase):
             if gp.chip_used == Chip.BENCH_BOOST:
                 expected += bench
             self.assertAlmostEqual(gp.expected_points, expected, places=6)
+
+
+class SolverStartTests(unittest.TestCase):
+    def starts(self, **kwargs):
+        """The plan and the start handed to the solver for each planner MILP."""
+        starts = []
+        solve = HiGHSFromPlan.callSolver
+
+        def record(solver, lp):
+            if lp.name == 'FPL_Multi_Period':
+                starts.append(dict(solver.start))
+            return solve(solver, lp)
+
+        with mock.patch.object(HiGHSFromPlan, 'callSolver', record):
+            squad, solution = plan(5, **kwargs)
+        return squad, solution, starts
+
+    def test_the_solver_starts_from_keeping_the_squad(self):
+        squad, _, starts = self.starts()
+        kept = {name for name, value in starts[0].items() if value == 1}
+        self.assertEqual(kept, {f"squad_({j},_{t})" for j in squad for t in range(5, 10)})
+
+    def test_a_free_hit_re_solve_starts_from_the_plan_without_it(self):
+        def blank(predictions, squad):
+            predictions.loc[predictions.id.isin(squad), 'xp_gw7'] = 0.0
+
+        squad, solution, starts = self.starts(adjust=blank, chips_used=['wildcard'])
+        self.assertEqual(chips(solution).get(7), Chip.FREE_HIT)
+        weeks = {int(name.rstrip(')').rsplit('_', 1)[1]) for name in starts[-1]}
+        self.assertEqual(weeks, {5, 6, 8, 9})
+        owned = {name for name, value in starts[-1].items() if value == 1}
+        self.assertEqual(len(owned), 15 * 4)
 
 
 class SolverTimeoutTests(unittest.TestCase):

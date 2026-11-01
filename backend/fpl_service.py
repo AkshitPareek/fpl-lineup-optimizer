@@ -1,3 +1,4 @@
+import copy
 import requests
 import time
 
@@ -139,7 +140,23 @@ class FPLService:
         self._cache = {}
         self._cache_expiry = {}
         self.CACHE_DURATION = 3600  # 1 hour
+        self._manager_cache = {}
         self.prior_season = PriorSeasonStats()
+
+    # One plan request reads a manager's history, transfers and picks several
+    # times, and the site reads their chips just before it plans.
+    MANAGER_CACHE_SECONDS = 60
+
+    def _get_manager_json(self, url):
+        """A manager's FPL data, reused for a minute."""
+        now = time.time()
+        hit = self._manager_cache.get(url)
+        if hit and now < hit[0]:
+            return copy.deepcopy(hit[1])
+        data = self._get_json(url)
+        self._manager_cache = {u: v for u, v in self._manager_cache.items() if now < v[0]}
+        self._manager_cache[url] = (now + self.MANAGER_CACHE_SECONDS, data)
+        return copy.deepcopy(data)
 
     def _get_json(self, url):
         last_error = None
@@ -216,7 +233,7 @@ class FPLService:
         last_error = None
         for url in urls:
             try:
-                return self._get_json(url)
+                return self._get_manager_json(url)
             except requests.RequestException as e:
                 last_error = e
                 print(f"Error fetching manager team: {e}")
@@ -257,8 +274,8 @@ class FPLService:
     def get_manager_squad_state(self, manager_id: int, history=None):
         """Squad, bank, selling prices and free transfers for the next deadline (see manager_squad_state)."""
         base = f"{self.BASE_URL}/entry/{manager_id}"
-        history = history or self._get_json(f"{base}/history/")
-        transfers = self._get_json(f"{base}/transfers/")
+        history = history or self._get_manager_json(f"{base}/history/")
+        transfers = self._get_manager_json(f"{base}/transfers/")
         elements = self.get_latest_data()["static"]["elements"]
         events = history.get("current") or []
         initial_price = None
@@ -266,7 +283,7 @@ class FPLService:
             first_gw = events[0]["event"]
 
             def initial_price(pid):
-                summary = self._get_json(f"{self.BASE_URL}/element-summary/{pid}/")
+                summary = self._get_manager_json(f"{self.BASE_URL}/element-summary/{pid}/")
                 for match in summary.get("history", []):
                     if match.get("round") == first_gw:
                         return int(match["value"])
@@ -275,7 +292,7 @@ class FPLService:
         return manager_squad_state(
             history,
             transfers,
-            lambda gw: self._get_json(f"{base}/event/{gw}/picks/"),
+            lambda gw: self._get_manager_json(f"{base}/event/{gw}/picks/"),
             elements,
             initial_price,
         )
@@ -295,7 +312,7 @@ class FPLService:
         all_chips = ['wildcard', 'freehit', 'bboost', '3xc']
         
         try:
-            data = self._get_json(f"{self.BASE_URL}/entry/{manager_id}/history/")
+            data = self._get_manager_json(f"{self.BASE_URL}/entry/{manager_id}/history/")
             
             # 'chips' field contains list of used chips with 'name' and 'event' (GW)
             used_chips = []

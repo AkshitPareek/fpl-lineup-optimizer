@@ -313,6 +313,43 @@ class OwnershipTracker:
         
         return result
     
+    def captain_options(self, starting_xi: List[Dict], multiplier: int = 2, top_n: int = 4) -> List[Dict]:
+        """
+        The XI's best captain picks, with how far each one moves you against the field.
+
+        Expected points still pick the captain. Rivals choose without seeing your
+        pick, so captaining A rather than B changes your expected lead on an average
+        rival by xp(A) - xp(B) whatever their ownership. Ownership changes the risk:
+        `swing` is how far each point he scores moves you against an average rival
+        when you captain him (the multiplier less his effective ownership). A low
+        swing protects a rank, a high one chases it. Captaincy share is an estimate;
+        FPL does not publish it before the deadline.
+        """
+        rows = self.players.set_index('id')
+        picks = sorted(starting_xi, key=lambda p: -float(p.get('expected_points') or 0))[:top_n]
+        best = float(picks[0].get('expected_points') or 0) if picks else 0.0
+        options = []
+        for p in picks:
+            pid = p.get('id')
+            if pid not in rows.index:
+                continue
+            player = rows.loc[pid]
+            ownership = float(player.get('selected_by_percent', 0) or 0)
+            captain_pct = self._estimate_captain_pct(player)
+            eo = self._calculate_eo(ownership, captain_pct)
+            xp = float(p.get('expected_points') or 0)
+            options.append({
+                'id': int(pid),
+                'web_name': player['web_name'],
+                'expected_points': round(xp, 2),
+                'behind_best': round(best - xp, 2),
+                'ownership_pct': ownership,
+                'captain_pct_estimate': round(captain_pct, 1),
+                'effective_ownership': round(eo, 1),
+                'swing': round(multiplier - eo / 100.0, 2),
+            })
+        return options
+
     def calculate_rank_impact(self, player_id: int, points_scored: int) -> Dict:
         """
         Calculate how a player's score affects rank.

@@ -179,6 +179,27 @@ class ManagerBankTests(unittest.TestCase):
             self.assertIsNone(service.get_manager_chips(1)["bank"])
 
 
+class ManagerCacheTests(unittest.TestCase):
+    def test_a_plan_reads_each_manager_page_once(self):
+        service = FPLService()
+        history = {"current": [{"event": 5, "event_transfers": 0, "bank": 3}], "chips": []}
+        with mock.patch.object(service, "_get_json", return_value=history) as get:
+            first = service.get_manager_chips(1)
+            first["used"].append("edited by the caller")
+            again = service.get_manager_chips(1)
+        urls = [c.args[0] for c in get.call_args_list]
+        self.assertEqual(len(urls), len(set(urls)))
+        self.assertEqual(again["used"], [])
+
+    def test_a_manager_page_is_read_again_after_a_minute(self):
+        service = FPLService()
+        with mock.patch.object(service, "_get_json", return_value={"current": [], "chips": []}) as get, \
+                mock.patch("fpl_service.time.time", side_effect=[0, 30, 61, 61]):
+            for _ in range(3):
+                service._get_manager_json("history")
+        self.assertEqual(get.call_count, 2)
+
+
 class ManagerChipTests(unittest.TestCase):
     def chips(self, last_gw, played):
         service = FPLService()
