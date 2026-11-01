@@ -103,7 +103,8 @@ def run(season, variant, start, end, horizon, chips="none"):
         budget = 100.0 if not squad else sum(price[j] for j in squad) + bank
         if gw == ao.MultiPeriodFPLOptimizer.FIRST_HALF_END + 1:
             used = []
-        spent = ["wildcard"] + (CHIPS if chips == "none" else used)
+        plan_wildcard = chips == "planner" and ao.MultiPeriodFPLOptimizer.PLAN_WILDCARD
+        spent = ([] if plan_wildcard else ["wildcard"]) + (CHIPS if chips == "none" else used)
         args = dict(budget=budget, gameweeks=k, current_squad_ids=squad, banked_transfers=ft,
                     chips_used=spent, max_hits=4, selling_prices={j: price[j] for j in squad})
         sol = opt.optimize_multi_period(**args, plan_chips=chips == "planner" and bool(squad))
@@ -129,7 +130,10 @@ def run(season, variant, start, end, horizon, chips="none"):
         total += week
         hits_total += hits
         spent_ft = plan.transfers.free_transfers_used if (plan.transfers and squad) else 0
-        if chip != "free_hit":  # a Free Hit squad and bank go back afterwards; saved transfers are kept
+        if chip == "wildcard":  # saved transfers are kept, and the week grants none
+            squad = [p["id"] for p in plan.starting_xi + plan.bench]
+            bank = plan.bank
+        elif chip != "free_hit":  # a Free Hit squad and bank go back afterwards; saved transfers are kept
             ft = 1 if not squad else min(5, max(0, ft - spent_ft) + 1)
             squad = [p["id"] for p in plan.starting_xi + plan.bench]
             bank = plan.bank

@@ -209,8 +209,8 @@ class MultiPeriodFPLOptimizer:
     # order. Replaying 2024/25 and 2025/26 this beat a flat 0.1 by 40 points.
     BENCH_GK_WEIGHT = 0.03
     BENCH_WEIGHTS = (0.25, 0.08, 0.03)
-    # Chips the planner places itself, each once per half of the season. A
-    # Wildcard is only played when asked for.
+    # Chips the planner places itself, each once per half of the season, along
+    # with the Wildcard when PLAN_WILDCARD is set.
     PLANNED_CHIPS = ("triple_captain", "bench_boost", "free_hit")
     FIRST_HALF_END = 19
     CHIP_MARGIN = 0.1  # points a chip must beat keeping it by
@@ -218,6 +218,16 @@ class MultiPeriodFPLOptimizer:
     # cannot see coming, and its projected gain in an ordinary week is a point or
     # two. While it can wait, it waits for a week that gains at least this much.
     FREE_HIT_FLOOR = 6.0
+    # The planner places the Wildcard too, and while it can wait it waits for a
+    # week where rebuilding gains at least this much. Replaying 2023/24-2025/26,
+    # a floor of 15 beat never planning it by 173 points and a floor of 25 by 92.
+    PLAN_WILDCARD = True
+    WILDCARD_FLOOR = 15.0
+    # A hit scores -4, but a plan counts it as costing this much. The player bought
+    # is the one projections rate highest, so they tend to overrate that player, and a hit
+    # that only just pays on paper often does not.
+    # With the Wildcard planned, 5 beat 4 by 56 points over the same three seasons.
+    HIT_PLAN_COST = 5
 
     def __init__(self, 
                  players_df: pd.DataFrame,
@@ -320,7 +330,7 @@ class MultiPeriodFPLOptimizer:
             if not weeks:
                 continue
             this_half = first <= self.current_gw <= last
-            for chip in self.PLANNED_CHIPS:
+            for chip in self.PLANNED_CHIPS + (('wildcard',) if self.PLAN_WILDCARD else ()):
                 if this_half and chip in used:
                     continue
                 windows.append({'chip': chip, 'weeks': weeks, 'weeks_after': max(0, last - horizon[-1])})
@@ -361,7 +371,8 @@ class MultiPeriodFPLOptimizer:
 
     def _planned_chip_advice(self, windows, hold_values, gameweek_plans):
         """The chip the plan plays first, and why each other chip is planned for later or kept."""
-        names = {'triple_captain': 'Triple Captain', 'bench_boost': 'Bench Boost', 'free_hit': 'Free Hit'}
+        names = {'triple_captain': 'Triple Captain', 'bench_boost': 'Bench Boost', 'free_hit': 'Free Hit',
+                 'wildcard': 'Wildcard'}
         played = {}
         for gp in gameweek_plans:
             if gp.chip_used:
@@ -373,6 +384,8 @@ class MultiPeriodFPLOptimizer:
             kept = hold_values.get(chip, 0.0)
             if chip == 'free_hit':
                 kept = max(kept, self.FREE_HIT_FLOOR)
+            if chip == 'wildcard':
+                kept = max(kept, self.WILDCARD_FLOOR)
             if gp and gp.gameweek in w['weeks']:
                 if w['weeks_after'] > 0:
                     why = f"keeping it is worth about {kept:.1f} points later in the half"
@@ -450,7 +463,7 @@ class MultiPeriodFPLOptimizer:
         the plan's chip weeks would change.
         """
         for w in windows:
-            if w['chip'] == 'free_hit':
+            if w['chip'] in ('free_hit', 'wildcard'):
                 continue
             chip = {'triple_captain': Chip.TRIPLE_CAPTAIN, 'bench_boost': Chip.BENCH_BOOST}[w['chip']]
             weeks = [gp for gp in gameweek_plans if gp.gameweek in w['weeks']]
@@ -894,13 +907,15 @@ class MultiPeriodFPLOptimizer:
                 objective_terms.append(extra)
 
             # Hits; a Wildcard or Free Hit week takes none
-            objective_terms.append(-weight * self.TRANSFER_PENALTY * hits[t])
+            objective_terms.append(-weight * self.HIT_PLAN_COST * hits[t])
 
         # A chip played now gives up what it would earn later in its half, and must
         # beat that by a little so a tie keeps it.
         for w in windows:
             if w['chip'] != 'free_hit' and w['weeks_after'] > 0:
                 cost = hold_values.get(w['chip'], 0.0) + self.CHIP_MARGIN
+                if w['chip'] == 'wildcard':
+                    cost = max(cost, self.WILDCARD_FLOOR + self.CHIP_MARGIN)
                 objective_terms.append(-cost * pulp.lpSum(on(w['chip'], t) for t in w['weeks']))
 
         prob += pulp.lpSum(objective_terms)

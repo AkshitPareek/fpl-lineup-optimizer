@@ -139,6 +139,22 @@ class ChipTransferTests(unittest.TestCase):
         self.assertEqual(solution.banked_transfers_after, min(5, 2 + 2 - later_moves))
 
 
+class HitPlanCostTests(unittest.TestCase):
+    def test_a_hit_that_only_breaks_even_is_not_taken(self):
+        # Here three more upgrades gain exactly the 12 points their hits score.
+        _, _, solution = plan_from_squad(15.0, gameweeks=4, banked_transfers=1, max_hits=4)
+        self.assertEqual(sum(gp.transfers.hits_taken for gp in solution.gameweek_plans), 0)
+
+    def test_hits_taken_still_score_four(self):
+        _, _, solution = plan_from_squad(30.0, gameweeks=6, banked_transfers=1, max_hits=4)
+        hits = sum(gp.transfers.hits_taken for gp in solution.gameweek_plans)
+        self.assertGreater(hits, 0)
+        for gp in solution.gameweek_plans:
+            self.assertEqual(gp.transfers.hit_cost, 4 * gp.transfers.hits_taken)
+        weeks = sum(gp.expected_points for gp in solution.gameweek_plans)
+        self.assertAlmostEqual(solution.total_expected_points, weeks - 4 * hits, places=6)
+
+
 class LongHorizonTests(unittest.TestCase):
     def test_plans_up_to_fifteen_gameweeks(self):
         _, solution = plan(current_gw=5, gameweeks=15)
