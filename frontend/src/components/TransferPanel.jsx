@@ -1,6 +1,7 @@
 import { Badge, Card, CardHeader, SectionLabel } from './ui'
 import { IconSwap } from './icons'
 import { num, POSITION_SHORT, price, signed } from '../lib/format'
+import { track } from '../lib/telemetry'
 
 const clean = s => s.replace(/\*\*/g, '').trim()
 
@@ -104,7 +105,11 @@ export default function TransferPanel({ transfers, summary, explainOpen = false 
               </div>
               {block?.buy && (
                 <details open={explainOpen} className="group mt-1.5 ml-1 text-xs">
-                  <summary className="cursor-pointer list-none text-fg-3 hover:text-fg-2 select-none">
+                  <summary
+                    className="cursor-pointer list-none text-fg-3 hover:text-fg-2 select-none"
+                    // Count openings only; the click toggles the details after this runs.
+                    onClick={e => { if (!e.currentTarget.parentElement.open) track('transfer_why_opened') }}
+                  >
                     <span className="inline-block transition group-open:rotate-90">›</span> Why this move
                   </summary>
                   <div className="mt-1.5 border-l border-ink-700 pl-3">

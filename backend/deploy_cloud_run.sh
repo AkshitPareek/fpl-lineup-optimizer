@@ -22,6 +22,8 @@ if [ -z "${GIT_COMMIT:-}" ]; then
 fi
 echo "Deploying $SERVICE at commit $GIT_COMMIT to $PROJECT ($REGION)"
 
+# --update-env-vars keeps variables set on the service by hand, such as
+# TELEMETRY_SALT (see TELEMETRY.md), which --set-env-vars would wipe.
 gcloud run deploy "$SERVICE" \
   --project "$PROJECT" \
   --region "$REGION" \
@@ -35,4 +37,4 @@ gcloud run deploy "$SERVICE" \
   --min-instances 0 \
   --max-instances 2 \
   --cpu-boost \
-  --set-env-vars "FRONTEND_URL=https://fploptimize.netlify.app,GIT_COMMIT=$GIT_COMMIT"
+  --update-env-vars "FRONTEND_URL=https://fploptimize.netlify.app,GIT_COMMIT=$GIT_COMMIT"

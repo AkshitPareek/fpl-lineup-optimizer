@@ -10,7 +10,7 @@ Provides endpoints for:
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import StreamingResponse, JSONResponse, Response
 from typing import List, Optional, Dict
 from pydantic import BaseModel, Field
 import pandas as pd
@@ -26,6 +26,7 @@ from transfer_explainer import TransferExplainer
 from backtest_engine import BacktestEngine
 from fixture_analyzer import FixtureAnalyzer
 from chip_advisor import ChipAdvisor
+import telemetry
 
 
 def get_active_gameweek(events: list) -> int:
@@ -106,6 +107,9 @@ app.add_middleware(
     max_age=600,  # Cache preflight requests for 10 minutes
 )
 
+# One structured log line per request. Added after CORS, so it wraps it and sees every response.
+app.middleware("http")(telemetry.log_request)
+
 
 # Startup event to log CORS configuration
 @app.on_event("startup")
@@ -142,6 +146,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
     """Handle HTTP exceptions and ensure CORS headers are included."""
+    telemetry.note_error(exc)
     origin = request.headers.get("origin", "")
     
     response = JSONResponse(
@@ -393,6 +398,8 @@ async def optimize_multi_period(request: MultiPeriodRequest):
             fixtures=fixtures_data,
             current_gameweek=current_gw
         )
+        telemetry.note_plan_request(request)
+        telemetry.count_solves(optimizer, request.plan_chips)
         
         # Run optimization
         solution = optimizer.optimize_multi_period(
@@ -408,6 +415,7 @@ async def optimize_multi_period(request: MultiPeriodRequest):
             selling_prices=selling_prices,
             plan_chips=request.plan_chips
         )
+        telemetry.note(plan=telemetry.plan_summary(solution))
         
         # Generate transfer explanations
         if solution.status == "Optimal" and solution.transfer_summary:
@@ -507,6 +515,8 @@ async def optimize_compare(request: MultiPeriodRequest):
             fixtures=fixtures_data,
             current_gameweek=current_gw
         )
+        telemetry.note_plan_request(request)
+        telemetry.count_solves(optimizer, request.plan_chips)
         
         # Parse chip_to_use from request
         chip_to_use = None
@@ -561,10 +571,12 @@ async def optimize_compare(request: MultiPeriodRequest):
             )
         except asyncio.TimeoutError:
             print("With-hits optimization timed out")
+            telemetry.note(timed_out="with_hits")
             raise HTTPException(
                 status_code=504,
                 detail="Optimization timed out. Try reducing the gameweek horizon."
             )
+        telemetry.note(with_hits=telemetry.plan_summary(solution_with_hits))
         
         if solution_with_hits.status != "Optimal":
             return {
@@ -614,6 +626,7 @@ async def optimize_compare(request: MultiPeriodRequest):
         except asyncio.TimeoutError:
             # If no-hits times out, return with-hits only with estimate
             print("No-hits optimization timed out, returning with-hits only")
+            telemetry.note(timed_out="no_hits")
             with_hits_net = solution_with_hits.total_expected_points  # already after hits
             return {
                 "current_gw": current_gw,
@@ -640,6 +653,8 @@ async def optimize_compare(request: MultiPeriodRequest):
                 "partial_result": True
             }
         
+        telemetry.note(no_hits=telemetry.plan_summary(solution_no_hits))
+
         # Calculate net points for comparison
         with_hits_net = solution_with_hits.total_expected_points  # already after hits
         no_hits_feasible = solution_no_hits.status == "Optimal"
@@ -1302,6 +1317,22 @@ async def get_manager_chips(manager_id: int):
     except Exception as e:
         print(f"Error fetching manager chips: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/telemetry")
+async def record_telemetry(request: Request):
+    """
+    Log a batch of frontend events. The site posts text/plain so the browser skips
+    the CORS preflight; the body is JSON either way.
+    """
+    if int(request.headers.get("content-length") or 0) > telemetry.MAX_BODY_BYTES:
+        return JSONResponse(status_code=413, content={"detail": "too large"})
+    try:
+        events = telemetry.parse_client_events(await request.body())
+    except telemetry.TelemetryRejected as e:
+        return JSONResponse(status_code=e.status, content={"detail": str(e)})
+    telemetry.log_client_events(events)
+    return Response(status_code=204)
 
 
 @app.get("/health")

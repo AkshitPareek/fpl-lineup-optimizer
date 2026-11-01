@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { streamEvents } from '../lib/api'
+import { track } from '../lib/telemetry'
 import { cx } from '../lib/cx'
 import { num, signed } from '../lib/format'
 import { Button, Card, CardHeader, EmptyState, ErrorNote, Field, LoadingState, Spinner, Stat, Stepper } from '../components/ui'
@@ -36,6 +37,8 @@ export default function BacktestView({ season }) {
     setSelectedGw(null)
     setProgress({ progress: 0, message: 'Initialising…' })
     let finished = false
+    const started = performance.now()
+    track('backtest_requested', { weeks: endGw - startGw + 1, horizon })
     try {
       await streamEvents('/api/backtest/stream', {
         start_gw: parseInt(startGw),
@@ -45,6 +48,7 @@ export default function BacktestView({ season }) {
       }, event => {
         if (event.result) {
           finished = true
+          track('backtest_shown', { ms: Math.round(performance.now() - started) })
           setResults(event.result)
           const weeks = event.result.weekly_results
           const withTransfers = weeks.find(w => w.transfers?.in?.length || w.transfers?.out?.length)
@@ -53,8 +57,12 @@ export default function BacktestView({ season }) {
           setProgress({ progress: event.progress, message: event.message })
         }
       })
-      if (!finished) setError('Backtest stopped before it finished. Check the server logs and try a shorter range.')
+      if (!finished) {
+        track('error_shown', { where: 'backtest', kind: 'stopped' })
+        setError('Backtest stopped before it finished. Check the server logs and try a shorter range.')
+      }
     } catch (err) {
+      track('error_shown', { where: 'backtest', kind: err?.name || 'error', message: err?.message })
       setError('Backtest failed: ' + err.message)
     } finally {
       setRunning(false)

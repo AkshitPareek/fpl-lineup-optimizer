@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { api, errorMessage } from '../lib/api'
+import { errorKind, track } from '../lib/telemetry'
 import { cx } from '../lib/cx'
 import { chipLabel, CHIP_LABELS, num, price, signed } from '../lib/format'
 import {
@@ -53,6 +54,7 @@ function ChipPicker({ season, horizon, available, recs, selected, onChange }) {
   const rec = selected && recs?.recommendations?.[selected.chip]
 
   const pick = chip => {
+    track('chip_selected', { chip: chip || 'none' })
     if (!chip) return onChange(null)
     const suggested = recs?.recommendations?.[chip]?.recommended_gw
     const gw = suggested >= startGw && suggested <= endGw ? suggested : startGw
@@ -65,7 +67,10 @@ function ChipPicker({ season, horizon, available, recs, selected, onChange }) {
       aside={recs?.best_chip && selected?.chip !== recs.best_chip.chip && (!Array.isArray(available) || available.includes(recs.best_chip.chip)) && (
         <button
           type="button"
-          onClick={() => onChange({ chip: recs.best_chip.chip, gw: recs.best_chip.gw ?? recs.best_chip.recommended_gameweek })}
+          onClick={() => {
+            track('chip_suggestion_applied', { chip: recs.best_chip.chip })
+            onChange({ chip: recs.best_chip.chip, gw: recs.best_chip.gw ?? recs.best_chip.recommended_gameweek })
+          }}
           className="text-[11px] text-fpl-green hover:underline cursor-pointer"
         >
           Apply suggested: {chipLabel(recs.best_chip.chip)}
@@ -213,6 +218,13 @@ function ChipAdviceCard({ suggestion, hold, remaining, deadlineGw }) {
   )
 }
 
+/** What the chip card tells the manager: play a chip this week, save one for a week, or hold. */
+function chipAdviceKind(plan) {
+  const suggestion = plan?.chip_suggestion
+  if (suggestion) return suggestion.recommended_gameweek === plan.gameweek_plans?.[0]?.gameweek ? 'play' : 'save'
+  return plan?.chip_hold?.length ? 'hold' : 'none'
+}
+
 function benchOrder(bench) {
   const gk = (bench || []).filter(p => p.element_type === 1)
   const outfield = (bench || []).filter(p => p.element_type !== 1)
@@ -257,11 +269,14 @@ export default function PlannerView({
     }
   }, [managerChips, selectedChip])
 
-  const generate = async () => {
+  const generate = async ({ auto = false } = {}) => {
     setLoading(true)
     setError(null)
     setCompare(null)
     setGwIndex(0)
+    const started = performance.now()
+    const asked = { view: 'planner', horizon, strategy, robust: useRobust, forced_chip: selectedChip?.chip || null, linked: Boolean(validManagerId), auto }
+    track('plan_requested', asked)
     try {
       const res = await api.post('/api/optimize/compare', {
         budget: parseFloat(budget),
@@ -275,13 +290,27 @@ export default function PlannerView({
       })
       const { with_hits: withHits, no_hits: noHits, note } = res.data.comparison
       if (withHits?.feasible === false && noHits?.feasible === false) {
+        track('error_shown', { where: 'planner', kind: 'unsolved' })
         setError(note || 'Neither plan could be solved.')
         return
       }
+      const best = recommendedStrategy(res.data)
+      const shown = res.data[best]
+      track('plan_shown', {
+        ...asked,
+        ms: Math.round(performance.now() - started),
+        best,
+        proven_optimal: shown?.proven_optimal ?? null,
+        partial: Boolean(res.data.partial_result),
+        transfers: shown?.gameweek_plans?.[0]?.transfers?.in?.length ?? 0,
+        hits: res.data.comparison?.[best]?.total_hits ?? 0,
+        chip_advice: chipAdviceKind(shown),
+      })
       setCompare(res.data)
-      setHitStrategy(recommendedStrategy(res.data))
+      setHitStrategy(best)
     } catch (err) {
       console.error(err)
+      track('error_shown', { where: 'planner', kind: errorKind(err), message: errorMessage(err), ms: Math.round(performance.now() - started) })
       setError(errorMessage(err))
     } finally {
       setLoading(false)
@@ -296,7 +325,7 @@ export default function PlannerView({
     const key = `${validManagerId}:${managerChips.bank}:${managerChips.banked_transfers}`
     if (autoKey.current === key) return
     autoKey.current = key
-    generateRef.current()
+    generateRef.current({ auto: true })
   }, [validManagerId, managerChips])
 
   const plan = compare?.[hitStrategy]
@@ -349,7 +378,7 @@ export default function PlannerView({
         <Toggle checked={useRobust} onChange={setUseRobust} label="Robust optimisation" description="Prefer a nailed player over the same points from rotation or an injury doubt." />
       </div>
 
-      <Button size="lg" className="w-full" onClick={generate} disabled={loading || (Boolean(validManagerId) && !managerChips)}>
+      <Button size="lg" className="w-full" onClick={() => generate()} disabled={loading || (Boolean(validManagerId) && !managerChips)}>
         {loading ? <><Spinner /> Solving…</> : (validManagerId && !managerChips) ? 'Loading your squad…' : 'Generate plan'}
       </Button>
       <ErrorNote>{error}</ErrorNote>
@@ -396,7 +425,7 @@ export default function PlannerView({
               </div>
             </div>
             <div className="flex-1">
-              <StrategyCompare compare={compare} selected={hitStrategy} onSelect={k => { setHitStrategy(k); setGwIndex(0) }} />
+              <StrategyCompare compare={compare} selected={hitStrategy} onSelect={k => { track('strategy_switched', { to: k }); setHitStrategy(k); setGwIndex(0) }} />
             </div>
           </div>
         </Card>
@@ -410,7 +439,7 @@ export default function PlannerView({
                 key={p.gameweek}
                 role="tab"
                 aria-selected={gwIndex === idx}
-                onClick={() => setGwIndex(idx)}
+                onClick={() => { track('gameweek_viewed', { index: idx }); setGwIndex(idx) }}
                 className={cx(
                   'min-w-[112px] flex-1 rounded-xl px-3.5 py-2.5 text-left transition cursor-pointer ring-1 ring-inset',
                   gwIndex === idx ? 'bg-ink-800 ring-fpl-pink/70 shadow-[inset_0_-2px_0_0] shadow-fpl-pink' : 'bg-ink-850/80 ring-ink-700 hover:ring-ink-600',
@@ -447,7 +476,7 @@ export default function PlannerView({
                     {typeof gwPlan.bank === 'number' && <> · {price(gwPlan.bank)} in the bank after transfers</>}
                   </p>
                 </div>
-                <ViewToggle value={view} onChange={setView} />
+                <ViewToggle value={view} onChange={v => { track('view_toggled', { view: v }); setView(v) }} />
               </div>
               {!onDeadline && (
                 <button type="button" onClick={() => setGwIndex(0)} className="mb-4 text-xs font-semibold text-fpl-green hover:underline cursor-pointer">
