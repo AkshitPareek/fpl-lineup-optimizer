@@ -651,8 +651,8 @@ async def optimize_compare(request: MultiPeriodRequest):
                     "difference": 0,
                     "note": "No hits required - both strategies produce identical results"
                 },
-                "with_hits": _enrich_with_analytics(with_hits_data, players_df, teams_df, static_data.get("total_players")),
-                "no_hits": _enrich_with_analytics(with_hits_data, players_df, teams_df, static_data.get("total_players"))  # Same as with_hits
+                "with_hits": with_hits_data,
+                "no_hits": with_hits_data,  # Same as with_hits
             }
         
         # Hits were taken - need to run no-hits optimization for comparison
