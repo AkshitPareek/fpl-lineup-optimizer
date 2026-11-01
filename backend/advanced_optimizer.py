@@ -214,6 +214,10 @@ class MultiPeriodFPLOptimizer:
     PLANNED_CHIPS = ("triple_captain", "bench_boost", "free_hit")
     FIRST_HALF_END = 19
     CHIP_MARGIN = 0.1  # points a chip must beat keeping it by
+    # A Free Hit's worth comes from blanks, doubles and injury crises that a plan
+    # cannot see coming, and its projected gain in an ordinary week is a point or
+    # two. While it can wait, it waits for a week that gains at least this much.
+    FREE_HIT_FLOOR = 6.0
 
     def __init__(self, 
                  players_df: pd.DataFrame,
@@ -366,9 +370,12 @@ class MultiPeriodFPLOptimizer:
         for w in windows:
             chip, name = w['chip'], names[w['chip']]
             gp = played.get(chip)
+            kept = hold_values.get(chip, 0.0)
+            if chip == 'free_hit':
+                kept = max(kept, self.FREE_HIT_FLOOR)
             if gp and gp.gameweek in w['weeks']:
                 if w['weeks_after'] > 0:
-                    why = f"keeping it is worth about {hold_values.get(chip, 0):.1f} points later in the half"
+                    why = f"keeping it is worth about {kept:.1f} points later in the half"
                 else:
                     why = f"it expires after GW{w['weeks'][-1]}"
                 reason = f"The plan plays {name} in GW{gp.gameweek}; {why}."
@@ -381,7 +388,7 @@ class MultiPeriodFPLOptimizer:
                     held.append({'chip': chip, 'reason': reason})
             else:
                 held.append({'chip': chip, 'reason': (
-                    f"Hold {name}. No week in this plan beats the {hold_values.get(chip, 0):.1f} points "
+                    f"Hold {name}. No week in this plan beats the {kept:.1f} points "
                     f"it is likely to earn in the {w['weeks_after']} weeks of its half after the plan."
                 )})
         return suggestion, held
@@ -436,6 +443,31 @@ class MultiPeriodFPLOptimizer:
                 gains['free_hit'].append(max(0.0, free_hit_points[gp.gameweek] - gp.expected_points))
         return {chip: hold_value(g, later[chip]) for chip, g in gains.items() if g}
 
+    def _chip_weeks_change(self, windows, hold_values, gameweek_plans) -> bool:
+        """Whether these hold values would move a Triple Captain or Bench Boost week.
+
+        Each week's gain is read from the plan, so a re-solve is only paid for when
+        the plan's chip weeks would change.
+        """
+        for w in windows:
+            if w['chip'] == 'free_hit':
+                continue
+            chip = {'triple_captain': Chip.TRIPLE_CAPTAIN, 'bench_boost': Chip.BENCH_BOOST}[w['chip']]
+            weeks = [gp for gp in gameweek_plans if gp.gameweek in w['weeks']]
+            played = next((gp.gameweek for gp in weeks if gp.chip_used == chip), None)
+            gains = {}
+            for gp in weeks:
+                if w['chip'] == 'triple_captain':
+                    gains[gp.gameweek] = next((p['expected_points'] for p in gp.starting_xi if p['id'] == gp.captain_id), 0.0)
+                else:
+                    gains[gp.gameweek] = sum(p['expected_points'] for p in gp.bench)
+            hold = hold_values.get(w['chip'], 0.0) + self.CHIP_MARGIN if w['weeks_after'] > 0 else 0.0
+            best = max(gains, key=gains.get, default=None)
+            wanted = best if best is not None and gains[best] > hold else None
+            if (wanted is None) != (played is None) or (played and gains[played] <= hold):
+                return True
+        return False
+
     def _free_hit_week(self, windows, hold_values, free_hit_points, gameweek_plans) -> Optional[int]:
         """The week where a Free Hit XI beats the planned XI by more than keeping the chip is worth.
 
@@ -446,7 +478,9 @@ class MultiPeriodFPLOptimizer:
         for w in windows:
             if w['chip'] != 'free_hit':
                 continue
-            hold = hold_values.get('free_hit', 0.0) + self.CHIP_MARGIN if w['weeks_after'] > 0 else 0.0
+            hold = 0.0
+            if w['weeks_after'] > 0:
+                hold = max(hold_values.get('free_hit', 0.0), self.FREE_HIT_FLOOR) + self.CHIP_MARGIN
             for gp in gameweek_plans:
                 if gp.gameweek not in w['weeks'] or gp.chip_used or gp.gameweek not in free_hit_points:
                     continue
@@ -1220,9 +1254,10 @@ class MultiPeriodFPLOptimizer:
                 strategy=strategy, max_hits=max_hits, selling_prices=selling_prices, plan_chips=True,
             )
             if hold_override is None:
-                planned = self._planned_hold_values(windows, gameweek_plans, free_hit_points)
-                if any(abs(planned[c] - hold_values.get(c, 0.0)) > 0.05 for c in planned):
-                    return self.optimize_multi_period(**resolve, hold_override={**hold_values, **planned})
+                planned = {**hold_values, **self._planned_hold_values(windows, gameweek_plans, free_hit_points)}
+                if self._chip_weeks_change(windows, planned, gameweek_plans):
+                    return self.optimize_multi_period(**resolve, hold_override=planned)
+                hold_values = planned
             week = self._free_hit_week(windows, hold_values, free_hit_points, gameweek_plans)
             if week:
                 return self.optimize_multi_period(**resolve, free_hit_week=week, hold_override=hold_values)
