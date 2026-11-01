@@ -189,6 +189,7 @@ CLIENT_EVENTS = {
     "strategy_switched", "gameweek_viewed", "view_toggled", "transfer_why_opened",
     "chip_selected", "chip_suggestion_applied",
     "dream_team_requested", "backtest_requested", "backtest_shown",
+    "plan_cancelled", "plan_retry_shorter", "plan_restored", "plan_copied", "player_pref_set",
 }
 MAX_BODY_BYTES = 8192
 MAX_EVENTS = 20
