@@ -184,6 +184,7 @@ class MultiPeriodRequest(BaseModel):
     robust: bool = Field(default=False, description="Use robust optimization")
     uncertainty_budget: float = Field(default=0.3, ge=0, le=1, description="Robustness parameter Γ")
     strategy: str = Field(default="standard", description="Strategy: standard, differential, template")
+    plan_chips: bool = Field(default=True, description="Let the plan choose weeks for Triple Captain, Bench Boost and Free Hit")
 
 
 class RobustRequest(BaseModel):
@@ -404,7 +405,8 @@ async def optimize_multi_period(request: MultiPeriodRequest):
             robust=request.robust,
             uncertainty_budget=request.uncertainty_budget,
             strategy=request.strategy,
-            selling_prices=selling_prices
+            selling_prices=selling_prices,
+            plan_chips=request.plan_chips
         )
         
         # Generate transfer explanations
@@ -522,7 +524,8 @@ async def optimize_compare(request: MultiPeriodRequest):
                 uncertainty_budget=request.uncertainty_budget,
                 strategy=request.strategy,
                 max_hits=10,  # Allow hits
-                selling_prices=selling_prices
+                selling_prices=selling_prices,
+                plan_chips=request.plan_chips
             )
         
         def run_no_hits():
@@ -538,7 +541,8 @@ async def optimize_compare(request: MultiPeriodRequest):
                 uncertainty_budget=request.uncertainty_budget,
                 strategy=request.strategy,
                 max_hits=0,  # No hits allowed
-                selling_prices=selling_prices
+                selling_prices=selling_prices,
+                plan_chips=request.plan_chips
             )
         
         # Run optimizations - smart strategy to minimize runtime
