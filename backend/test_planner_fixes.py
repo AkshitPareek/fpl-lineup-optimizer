@@ -232,6 +232,15 @@ class ComparisonSummaryTests(unittest.TestCase):
         self.assertIsNone(summary["net_xp"])
         self.assertFalse(summary["recommended"])
 
+    def test_hits_are_taken_off_once(self):
+        class Solution:
+            status = "Optimal"
+            total_expected_points = 517.0  # a plan's total is already after its hits
+
+        summary = _comparison_entry(Solution(), Solution.total_expected_points, 1, 4, True)
+        self.assertEqual(summary["net_xp"], 517.0)
+        self.assertEqual(summary["total_xp"], 521.0)
+
 
 class PredictionPoolTests(unittest.TestCase):
     def test_the_squad_stays_in_and_the_pool_is_capped(self):

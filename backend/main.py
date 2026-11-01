@@ -439,7 +439,11 @@ async def optimize_multi_period(request: MultiPeriodRequest):
 
 
 def _comparison_entry(solution, net_xp, total_hits, hit_cost, recommended):
-    """Summarize one strategy. An unsolved plan is not scored as zero."""
+    """Summarize one strategy. An unsolved plan is not scored as zero.
+
+    `net_xp` is after hits, as a plan's total_expected_points already is;
+    `total_xp` adds the hits back.
+    """
     if getattr(solution, "status", None) != "Optimal":
         return {
             "status": getattr(solution, "status", "Unknown"),
@@ -453,7 +457,7 @@ def _comparison_entry(solution, net_xp, total_hits, hit_cost, recommended):
     return {
         "status": "Optimal",
         "feasible": True,
-        "total_xp": round(solution.total_expected_points, 1),
+        "total_xp": round(net_xp + (hit_cost or 0), 1),
         "total_hits": total_hits,
         "hit_cost": hit_cost,
         "net_xp": round(net_xp, 1),
@@ -610,9 +614,7 @@ async def optimize_compare(request: MultiPeriodRequest):
         except asyncio.TimeoutError:
             # If no-hits times out, return with-hits only with estimate
             print("No-hits optimization timed out, returning with-hits only")
-            with_hits_net = solution_with_hits.total_expected_points - sum(
-                tp.hit_cost for tp in solution_with_hits.transfer_summary
-            )
+            with_hits_net = solution_with_hits.total_expected_points  # already after hits
             return {
                 "current_gw": current_gw,
                 "strategy": request.strategy,
@@ -639,9 +641,7 @@ async def optimize_compare(request: MultiPeriodRequest):
             }
         
         # Calculate net points for comparison
-        with_hits_net = solution_with_hits.total_expected_points - sum(
-            tp.hit_cost for tp in solution_with_hits.transfer_summary
-        )
+        with_hits_net = solution_with_hits.total_expected_points  # already after hits
         no_hits_feasible = solution_no_hits.status == "Optimal"
         no_hits_net = solution_no_hits.total_expected_points if no_hits_feasible else None
         hit_cost = sum(tp.hit_cost for tp in solution_with_hits.transfer_summary)
