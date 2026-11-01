@@ -70,6 +70,22 @@ def get_planning_gameweek(events: list) -> int:
         return next_gw["id"]
     return get_active_gameweek(events)
 
+
+def season_info(events: list) -> dict:
+    """What the site shows about the season: the gameweek being planned and the chip half."""
+    planning = get_planning_gameweek(events)
+    first_deadline = events[0].get("deadline_time", "") if events else ""
+    year = int(first_deadline[:4]) if first_deadline[:4].isdigit() else None
+    split = MultiPeriodFPLOptimizer.FIRST_HALF_END
+    return {
+        "label": f"{year}/{(year + 1) % 100:02d}" if year else None,
+        "active_gameweek": planning,
+        "finished_gameweeks": sum(1 for e in events if e.get("finished")),
+        "chip_half": 1 if planning <= split else 2,
+        "chip_half_split_gw": split,
+        "max_banked_transfers": MultiPeriodFPLOptimizer.MAX_BANKED_TRANSFERS,
+    }
+
 app = FastAPI(
     title="FPL Optimizer API",
     description="Advanced FPL lineup optimization with multi-period planning and robust optimization",
@@ -303,7 +319,8 @@ async def get_data():
     """Fetches and returns the latest FPL data."""
     try:
         data = fpl_service.get_latest_data()
-        return data
+        # A new dict, so the cached data is left as it was.
+        return {**data, "season": season_info(data["static"]["events"])}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

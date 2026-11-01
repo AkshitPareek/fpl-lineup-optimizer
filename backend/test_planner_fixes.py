@@ -220,6 +220,17 @@ class PlanningGameweekTests(unittest.TestCase):
         self.assertEqual(get_planning_gameweek([{"id": 38, "is_current": True, "is_next": False, "finished": False}]), 38)
         self.assertEqual(get_planning_gameweek([{"id": 1, "is_current": False, "is_next": True, "finished": False}]), 1)
 
+    def test_season_info_tells_the_site_which_gameweek_and_chip_half(self):
+        from main import season_info
+        events = [{"id": gw, "deadline_time": f"2026-08-{gw + 10}T17:30:00Z", "finished": gw < 9,
+                   "is_current": gw == 9, "is_next": gw == 10} for gw in range(1, 39)]
+        info = season_info(events)
+        self.assertEqual(info["label"], "2026/27")
+        self.assertEqual(info["active_gameweek"], 10)
+        self.assertEqual(info["finished_gameweeks"], 8)
+        self.assertEqual((info["chip_half"], info["chip_half_split_gw"]), (1, 19))
+        self.assertEqual(season_info([{**e, "is_next": e["id"] == 20} for e in events])["chip_half"], 2)
+
 
 class ComparisonSummaryTests(unittest.TestCase):
     def test_infeasible_plan_is_not_scored_as_zero(self):
