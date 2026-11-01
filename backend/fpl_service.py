@@ -242,6 +242,13 @@ class FPLService:
             "overall_points": entry.get("summary_overall_points"),
         }
 
+    def get_cached_json(self, path: str):
+        """An FPL API path (e.g. "event/9/live/"), kept for the usual cache time."""
+        key = f"path:{path}"
+        if not self._is_cache_valid(key):
+            self._update_cache(key, self._get_json(f"{self.BASE_URL}/{path}"))
+        return self._cache[key]
+
     def fetched_at(self):
         """When the cached FPL player data was fetched (epoch seconds), or None."""
         expiry = self._cache_expiry.get("bootstrap-static")

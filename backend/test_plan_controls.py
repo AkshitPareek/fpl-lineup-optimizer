@@ -126,5 +126,35 @@ class ManagerEntryTests(unittest.TestCase):
         self.assertEqual(response.json(), {'synced': True, 'entry': None})
 
 
+class TrackRecordTests(unittest.TestCase):
+    def test_finished_weeks_are_scored_and_open_ones_only_listed(self):
+        import json, os, tempfile
+        import scorecard
+        player = lambda pid, pos: {'id': pid, 'name': f'P{pid}', 'element_type': pos, 'xp': 5.0}
+        xi = [player(1, 1)] + [player(i, 2) for i in range(2, 6)] + [player(i, 3) for i in range(6, 10)] + [player(10, 4), player(11, 4)]
+        entry = {'gameweek': 8, 'expected_points': 60.0, 'starting_xi': xi, 'bench': [player(12, 1)],
+                 'captain_id': 10, 'vice_captain_id': 11, 'chip': None, 'transfers_in': ['P10'],
+                 'transfers_out': ['P99'], 'hits': 0}
+        api = {
+            'bootstrap-static/': {'events': [{'id': 8, 'finished': True, 'average_entry_score': 45, 'highest_score': 110},
+                                             {'id': 9, 'finished': False}]},
+            'entry/5/history/': {'current': [{'event': 8, 'points': 50, 'event_transfers_cost': 4}]},
+            'event/8/live/': {'elements': [{'id': i, 'stats': {'total_points': 2, 'minutes': 90}} for i in range(1, 13)]},
+        }
+        with tempfile.TemporaryDirectory() as root:
+            os.makedirs(os.path.join(root, '5'))
+            for gw in (8, 9):
+                with open(os.path.join(root, '5', f'gw{gw:02d}.json'), 'w') as f:
+                    json.dump({**entry, 'gameweek': gw}, f)
+            with mock.patch.object(scorecard, 'RECORDS_DIR', root):
+                weeks = scorecard.scored_weeks(5, api.__getitem__)
+        self.assertEqual([w['gameweek'] for w in weeks], [8, 9])
+        # Eleven starters at 2 points and the captain's 2 again
+        self.assertEqual((weeks[0]['advice'], weeks[0]['you'], weeks[0]['average']), (24, 46, 45))
+        self.assertEqual(weeks[0]['captain'], 'P10')
+        self.assertFalse(weeks[1]['finished'])
+        self.assertNotIn('advice', weeks[1])
+
+
 if __name__ == '__main__':
     unittest.main()

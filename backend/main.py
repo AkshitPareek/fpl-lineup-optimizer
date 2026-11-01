@@ -1353,6 +1353,28 @@ async def get_manager_chips(manager_id: int):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/track-record")
+async def get_track_record():
+    """
+    The live planner's advice for each tracked team, recorded before each deadline
+    by scorecard.py and scored once the gameweek is finished.
+    """
+    import scorecard
+    managers = sorted(d for d in os.listdir(scorecard.RECORDS_DIR) if d.isdigit()) \
+        if os.path.isdir(scorecard.RECORDS_DIR) else []
+
+    def get(path):
+        if path == "bootstrap-static/":
+            return fpl_service.get_latest_data()["static"]
+        return fpl_service.get_cached_json(path)
+
+    try:
+        return {"teams": [{"weeks": scorecard.scored_weeks(int(m), get)} for m in managers]}
+    except Exception as e:
+        print(f"Track record error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/telemetry")
 async def record_telemetry(request: Request):
     """
