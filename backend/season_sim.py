@@ -121,6 +121,11 @@ def run(season, variant, start, end, horizon, chips="none"):
         if chip:
             used.append(chip)
         week = autosub_score(plan.starting_xi, plan.bench, plan.captain_id, plan.vice_captain_id, pts, mins, chip) - 4 * hits
+        # What Triple Captain or Bench Boost added that week; a Free Hit's gain has no counterpart to score.
+        chip_points = None
+        if chip in ("triple_captain", "bench_boost"):
+            chip_points = week + 4 * hits - autosub_score(plan.starting_xi, plan.bench, plan.captain_id,
+                                                          plan.vice_captain_id, pts, mins)
         total += week
         hits_total += hits
         spent_ft = plan.transfers.free_transfers_used if (plan.transfers and squad) else 0
@@ -128,7 +133,7 @@ def run(season, variant, start, end, horizon, chips="none"):
             ft = 1 if not squad else min(5, max(0, ft - spent_ft) + 1)
             squad = [p["id"] for p in plan.starting_xi + plan.bench]
             bank = plan.bank
-        log.append(dict(gw=gw, points=week, hits=hits, chip=chip, xp=round(plan.expected_points, 1),
+        log.append(dict(gw=gw, points=week, hits=hits, chip=chip, chip_points=chip_points, xp=round(plan.expected_points, 1),
                         secs=round(time.time() - t0, 1)))
         print(f"{variant}/{chips} GW{gw}: {week:5.1f} pts (hits {hits}{', ' + chip if chip else ''}) "
               f"total {total:6.1f}  [{time.time() - t0:.1f}s]", flush=True)
