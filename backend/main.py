@@ -247,9 +247,40 @@ def _chips_used(manager_id: Optional[int], requested: List[str]) -> List[str]:
         return []
 
 
+def _deadline_advice(response_dict: Dict, players_df: pd.DataFrame, teams_df: pd.DataFrame,
+                     total_players: Optional[int]) -> None:
+    """Captain picks with their ownership swing, and price moves to beat, for the next deadline.
+
+    Both are information only; the plan itself is unchanged.
+    """
+    plans = response_dict.get("gameweek_plans") or []
+    if not plans:
+        return
+    first = plans[0]
+    try:
+        from ownership_tracker import OwnershipTracker
+        multiplier = 3 if first.get("chip_used") == "triple_captain" else 2
+        response_dict["captain_options"] = OwnershipTracker(players_df, teams_df).captain_options(
+            first.get("starting_xi", []), multiplier=multiplier)
+    except Exception as e:
+        print(f"Captain options error: {e}")
+    try:
+        from price_forecast import price_alerts
+        transfers = first.get("transfers") or {}
+        buys = [t["id"] for t in transfers.get("in", [])]
+        sells = [t["id"] for t in transfers.get("out", [])]
+        planned = [p["id"] for p in first.get("starting_xi", []) + first.get("bench", [])]
+        squad = [j for j in planned if j not in buys] + sells
+        response_dict["price_alerts"] = price_alerts(players_df, total_players, squad, buys)
+    except Exception as e:
+        print(f"Price alerts error: {e}")
+
+
 # Helper for analytics enrichment
-def _enrich_with_analytics(response_dict: Dict, players_df: pd.DataFrame, teams_df: pd.DataFrame):
+def _enrich_with_analytics(response_dict: Dict, players_df: pd.DataFrame, teams_df: pd.DataFrame,
+                           total_players: Optional[int] = None):
     """Enrich optimization result with EV and ownership analytics."""
+    _deadline_advice(response_dict, players_df, teams_df, total_players)
     try:
         from ev_calculator import EVCalculator
         from ownership_tracker import OwnershipTracker
@@ -449,7 +480,7 @@ async def optimize_multi_period(request: MultiPeriodRequest):
                     transfer_plan.explanation = enhanced_explanation
         
         response = optimizer.to_dict(solution)
-        return _enrich_with_analytics(response, players_df, teams_df)
+        return _enrich_with_analytics(response, players_df, teams_df, static_data.get("total_players"))
         
     except Exception as e:
         print(f"Multi-period optimization error: {e}")
@@ -596,7 +627,7 @@ async def optimize_compare(request: MultiPeriodRequest):
                     "difference": None,
                     "note": "The hit plan could not be solved for this squad."
                 },
-                "with_hits": _enrich_with_analytics(optimizer.to_dict(solution_with_hits), players_df, teams_df),
+                "with_hits": _enrich_with_analytics(optimizer.to_dict(solution_with_hits), players_df, teams_df, static_data.get("total_players")),
                 "no_hits": None,
             }
 
@@ -606,7 +637,7 @@ async def optimize_compare(request: MultiPeriodRequest):
         # If no hits taken, the no-hits solution would be identical
         if total_hits == 0:
             print("No hits taken - skipping no-hits optimization (results would be identical)")
-            with_hits_data = _enrich_with_analytics(optimizer.to_dict(solution_with_hits), players_df, teams_df)
+            with_hits_data = _enrich_with_analytics(optimizer.to_dict(solution_with_hits), players_df, teams_df, static_data.get("total_players"))
             return {
                 "current_gw": current_gw,
                 "strategy": request.strategy,
@@ -655,7 +686,7 @@ async def optimize_compare(request: MultiPeriodRequest):
                     "difference": None,
                     "note": "The free-transfer plan timed out, so it is not scored as zero."
                 },
-                "with_hits": _enrich_with_analytics(optimizer.to_dict(solution_with_hits), players_df, teams_df),
+                "with_hits": _enrich_with_analytics(optimizer.to_dict(solution_with_hits), players_df, teams_df, static_data.get("total_players")),
                 "no_hits": None,
                 "partial_result": True
             }
@@ -688,8 +719,8 @@ async def optimize_compare(request: MultiPeriodRequest):
                 "difference": difference,
                 "note": None if no_hits_feasible else "Free-transfer plan could not be solved. It needs more moves than the free-transfer bank allows, so it is not scored as zero."
             },
-            "with_hits": _enrich_with_analytics(optimizer.to_dict(solution_with_hits), players_df, teams_df),
-            "no_hits": _enrich_with_analytics(optimizer.to_dict(solution_no_hits), players_df, teams_df)
+            "with_hits": _enrich_with_analytics(optimizer.to_dict(solution_with_hits), players_df, teams_df, static_data.get("total_players")),
+            "no_hits": _enrich_with_analytics(optimizer.to_dict(solution_no_hits), players_df, teams_df, static_data.get("total_players"))
         }
         
     except asyncio.TimeoutError:
