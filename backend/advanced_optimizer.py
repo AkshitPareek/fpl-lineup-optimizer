@@ -1039,6 +1039,17 @@ class MultiPeriodFPLOptimizer:
         end_time = time.time()
         
         if prob.status != 1:  # Not optimal
+            if windows:
+                # Chip weeks make the model harder; a busy host can run out of time
+                # before any plan is found. A plan without them beats no plan.
+                print(f"Plan with chip weeks not solved ({pulp.LpStatus[prob.status]}); planning without them")
+                return self.optimize_multi_period(
+                    budget=budget, gameweeks=gameweeks, current_squad_ids=current_squad_ids,
+                    excluded_players=excluded_players, banked_transfers=banked_transfers,
+                    chips_used=chips_used, chip_to_use=chip_to_use, robust=robust,
+                    uncertainty_budget=uncertainty_budget, strategy=strategy, max_hits=max_hits,
+                    selling_prices=selling_prices, plan_chips=False,
+                )
             return MultiPeriodSolution(
                 status=pulp.LpStatus[prob.status],
                 squad=[],

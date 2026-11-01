@@ -3,6 +3,8 @@ import io
 import unittest
 from unittest import mock
 
+import pulp
+
 from advanced_optimizer import Chip, MultiPeriodFPLOptimizer, best_xi_points, expected_max_normal
 from season_sim import autosub_score
 from test_long_horizon import cheapest_top_squad, synthetic_league
@@ -111,6 +113,25 @@ class ChipPlanningTests(unittest.TestCase):
             if gp.chip_used == Chip.BENCH_BOOST:
                 expected += bench
             self.assertAlmostEqual(gp.expected_points, expected, places=6)
+
+
+class SolverTimeoutTests(unittest.TestCase):
+    def test_a_plan_without_chips_when_chip_weeks_run_out_of_time(self):
+        solver = MultiPeriodFPLOptimizer._multi_period_solver()
+
+        class OutOfTimeWithChips(type(solver)):
+            def actualSolve(self, lp, **kwargs):
+                if any(v.name.startswith('chip_') for v in lp.variables()):
+                    lp.assignStatus(pulp.LpStatusNotSolved)
+                    return lp.status
+                return super().actualSolve(lp, **kwargs)
+
+        out_of_time = OutOfTimeWithChips(msg=False)
+        with mock.patch.object(MultiPeriodFPLOptimizer, '_multi_period_solver', return_value=out_of_time):
+            _, solution = plan(15)
+        self.assertEqual(solution.status, 'Optimal')
+        self.assertEqual(len(solution.gameweek_plans), 5)
+        self.assertEqual(chips(solution), {})
 
 
 class ChipScoringTests(unittest.TestCase):
