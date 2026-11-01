@@ -158,6 +158,22 @@ def best_xi_points(players: List[Dict[str, Any]]) -> Tuple[float, float]:
     return xi_points, sum(p['xp'] for p in bench)
 
 
+class HiGHSFromPlan(pulp.HiGHS):
+    """HiGHS started from a known plan, {variable name: value}; it completes what is left out.
+
+    A re-solve differs from the solve before it by a hold value or a Free Hit week,
+    so the last plan is nearly as good and the solver need not search from scratch.
+    """
+    start: Dict[str, float] = {}
+
+    def callSolver(self, lp):
+        given = [(v.index, self.start[v.name]) for v in lp.variables() if v.name in self.start]
+        if given:
+            index, value = zip(*given)
+            lp.solverModel.setSolution(len(given), np.array(index, dtype=np.int32), np.array(value, dtype=float))
+        super().callSolver(lp)
+
+
 def prediction_pool(players: pd.DataFrame, keep_ids: Optional[List[int]], per_position: int) -> pd.DataFrame:
     """Top points-per-game players in each position, plus anyone already in the squad."""
     ppg = pd.to_numeric(players.get('points_per_game'), errors='coerce').fillna(0)
@@ -283,7 +299,7 @@ class MultiPeriodFPLOptimizer:
     def _multi_period_solver(cls):
         """HiGHS proves 12-15 week plans in seconds where CBC runs out of time."""
         options = dict(timeLimit=cls.SOLVER_TIME_LIMIT, gapRel=cls.SOLVER_GAP, threads=1)
-        highs = pulp.HiGHS(msg=False, **options)
+        highs = HiGHSFromPlan(msg=False, **options)
         if highs.available():
             return highs
         return pulp.PULP_CBC_CMD(msg=0, **options)
@@ -670,7 +686,8 @@ class MultiPeriodFPLOptimizer:
                                selling_prices: Optional[Dict[int, float]] = None,
                                plan_chips: bool = False,
                                free_hit_week: Optional[int] = None,
-                               hold_override: Optional[Dict[str, float]] = None) -> MultiPeriodSolution:
+                               hold_override: Optional[Dict[str, float]] = None,
+                               start: Optional[Dict[str, float]] = None) -> MultiPeriodSolution:
         """
         Multi-period optimization over rolling horizon.
         
@@ -695,6 +712,8 @@ class MultiPeriodFPLOptimizer:
                 its later weeks are likely to earn more
             free_hit_week: Play the Free Hit in this week (set when the plan places it)
             hold_override: Hold values to use instead of estimating them (set on a re-solve)
+            start: Squad variables of a plan to start from (set on a re-solve); otherwise
+                the solver starts from keeping the current squad
 
         Returns:
             MultiPeriodSolution with complete plan
@@ -779,15 +798,16 @@ class MultiPeriodFPLOptimizer:
                                        [(j, t) for j in player_ids for t in horizon],
                                        cat='Binary')
         
-        # starter[j,t] = 1 if player j starts at GW t
+        # starter[j,t] = 1 if player j starts at GW t, captain[j,t] = 1 if he is captain.
+        # Continuous is enough: once the squad is whole, choosing the XI, bench order
+        # and captain is a flow problem whose best answer is whole too, and the
+        # solver no longer branches on them. 8-15 week plans solve about a quarter faster.
         starter = pulp.LpVariable.dicts("starter",
                                          [(j, t) for j in player_ids for t in horizon],
-                                         cat='Binary')
-        
-        # captain[j,t] = 1 if player j is captain at GW t
+                                         lowBound=0, upBound=1)
         captain = pulp.LpVariable.dicts("captain",
                                          [(j, t) for j in player_ids for t in horizon],
-                                         cat='Binary')
+                                         lowBound=0, upBound=1)
         
         # Transfer variables
         # z_in[j,t] = 1 if player j transferred in at start of GW t
@@ -1046,7 +1066,22 @@ class MultiPeriodFPLOptimizer:
             prob += ft_used[t] >= transfers_made - hits[t] - big_m * unlimited
         
         solve_start = time.time()
-        prob.solve(self._multi_period_solver())
+        if start is None and current_set:
+            # Keeping today's squad is always allowed, so the solver holds a plan from its
+            # first second. On a slow host a long plan can run out of time before the
+            # solver finds one of its own, and what it has found by then can be far worse.
+            start = {squad[(j, t)].name: float(j in current_set) for j in player_ids for t in horizon}
+        solver = self._multi_period_solver()
+        if start and isinstance(solver, HiGHSFromPlan):
+            solver.start = start
+        prob.solve(solver)
+        lineups = [*starter.values(), *captain.values()]
+        if prob.status == 1 and not all(abs((v.value() or 0) - round(v.value() or 0)) < 1e-4 for v in lineups):
+            # Only a solution the solver stopped short of a vertex can split a place in the XI.
+            print("Lineups came back fractional; solving again with whole lineups")
+            for var in lineups:
+                var.cat = pulp.LpInteger
+            prob.solve(self._multi_period_solver())
         solve_time = time.time() - solve_start
         proven = prob.sol_status == pulp.LpSolutionOptimal
         print(f"MILP Solve time: {solve_time:.1f}s, Status: {pulp.LpStatus[prob.status]}, proven optimal: {proven}")
@@ -1081,6 +1116,12 @@ class MultiPeriodFPLOptimizer:
         transfer_summary = []
         final_squad = []
         
+        # Each chosen player's row, with NaN as None for JSON.
+        records = {
+            r['id']: {k: (None if isinstance(v, float) and v != v else v) for k, v in r.items()}
+            for r in available.to_dict('records')
+        }
+
         for idx, t in enumerate(horizon):
             gw_squad = []
             gw_starters = []
@@ -1091,17 +1132,7 @@ class MultiPeriodFPLOptimizer:
             
             for j in player_ids:
                 if self._chosen(squad[(j, t)]):
-                    player_data = available[available['id'] == j].to_dict('records')[0]
-                    
-                    # Clean up for JSON (NaN -> None)
-                    cleaned_data = {}
-                    for k, v in player_data.items():
-                        if isinstance(v, float) and (v != v):  # NaN check
-                           cleaned_data[k] = None
-                        else:
-                           cleaned_data[k] = v
-                    player_data = cleaned_data
-
+                    player_data = dict(records[j])
                     player_data['is_starter'] = self._chosen(starter[(j, t)])
                     player_data['is_captain'] = self._chosen(captain[(j, t)])
                     player_data['expected_points'] = get_attr(j, f'xp_gw{t}')
@@ -1279,14 +1310,19 @@ class MultiPeriodFPLOptimizer:
                 chips_used=chips_used, robust=robust, uncertainty_budget=uncertainty_budget,
                 strategy=strategy, max_hits=max_hits, selling_prices=selling_prices, plan_chips=True,
             )
+            # A re-solve starts from this plan's squads; a Free Hit week's squad is left to the solver.
+            def squads(skip=None):
+                return {squad[(j, t)].name: float(self._chosen(squad[(j, t)]))
+                        for j in player_ids for t in horizon if t != skip}
             if hold_override is None:
                 planned = {**hold_values, **self._planned_hold_values(windows, gameweek_plans, free_hit_points)}
                 if self._chip_weeks_change(windows, planned, gameweek_plans):
-                    return self.optimize_multi_period(**resolve, hold_override=planned)
+                    return self.optimize_multi_period(**resolve, hold_override=planned, start=squads())
                 hold_values = planned
             week = self._free_hit_week(windows, hold_values, free_hit_points, gameweek_plans)
             if week:
-                return self.optimize_multi_period(**resolve, free_hit_week=week, hold_override=hold_values)
+                return self.optimize_multi_period(**resolve, free_hit_week=week, hold_override=hold_values,
+                                                  start=squads(skip=week))
         if windows:
             chip_suggestion, chip_hold = self._planned_chip_advice(windows, hold_values, gameweek_plans)
 
