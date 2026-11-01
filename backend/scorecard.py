@@ -76,7 +76,8 @@ def record(manager_id, gameweeks=8, within_hours=None):
         return
 
     account = requests.get(f"{API_URL}/api/manager-chips/{manager_id}", timeout=60).json()
-    body = {"manager_id": manager_id, "gameweeks": gameweeks,
+    # `budget` is the bank here: without it the planner takes 100.0 as the whole budget.
+    body = {"manager_id": manager_id, "gameweeks": gameweeks, "budget": account.get("bank", 0.0),
             "banked_transfers": account.get("banked_transfers", 1)}
     plan = requests.post(f"{API_URL}/api/optimize/multi-period", json=body, timeout=300)
     plan.raise_for_status()
