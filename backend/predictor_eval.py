@@ -20,10 +20,37 @@ import pandas as pd
 ARCHIVE_URL = "https://raw.githubusercontent.com/vaastav/Fantasy-Premier-League/master/data"
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "cache", "seasons")
 
+# FPL's injury and suspension flags as they stood each week. FPL overwrites them, and the
+# archive above only keeps the end of season, so these come from a dataset refreshed twice a
+# day (github.com/olbauday/FPL-Core-Insights). Row `gw` N is the last refresh while N was the
+# current gameweek, which is up to half a day before the next deadline.
+FLAGS_URL = "https://raw.githubusercontent.com/olbauday/FPL-Core-Insights/main/data"
+FLAGS_FILES = {"2024-25": "2024-2025/playerstats/playerstats.csv", "2025-26": "2025-2026/playerstats.csv"}
+FLAGS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "cache", "flags")
+# Before GW12 of 2025/26 the flags look rebuilt after the fact: a fifth of players
+# flagged out went on to play, against 1-3% in every later week.
+FLAGS_FIRST_DEADLINE = {"2025-26": 12}
+
 
 def previous_season(season: str) -> str:
     start = int(season[:4]) - 1
     return f"{start}-{str(start + 1)[2:]}"
+
+
+def deadline_flags(season: str) -> Optional[pd.DataFrame]:
+    """Status, chance of playing and news before each deadline, indexed by (deadline gameweek, player id)."""
+    if season not in FLAGS_FILES:
+        return None
+    path = os.path.join(FLAGS_DIR, f"{season}.csv")
+    if not os.path.exists(path):
+        os.makedirs(FLAGS_DIR, exist_ok=True)
+        pd.read_csv(f"{FLAGS_URL}/{FLAGS_FILES[season]}", low_memory=False).to_csv(path, index=False)
+    flags = pd.read_csv(path, low_memory=False)
+    flags["news"] = flags["news"] if "news" in flags.columns else ""
+    flags["deadline"] = flags["gw"] + 1
+    flags = flags[flags["deadline"] >= FLAGS_FIRST_DEADLINE.get(season, 1)]
+    flags = flags.drop_duplicates(["deadline", "id"], keep="last")
+    return flags.set_index(["deadline", "id"])[["status", "chance_of_playing_next_round", "news"]]
 
 
 def _read(season: str, name: str) -> pd.DataFrame:
@@ -37,8 +64,9 @@ def _read(season: str, name: str) -> pd.DataFrame:
 class SeasonArchive:
     """One completed season, able to reproduce the pre-deadline state of any gameweek."""
 
-    def __init__(self, season: str):
+    def __init__(self, season: str, flags: bool = False):
         self.season = season
+        self.flags = deadline_flags(season) if flags else None
         self.gws = _read(season, "gws/merged_gw.csv")
         self.players = _read(season, "players_raw.csv")
         self.teams = _read(season, "teams.csv")
@@ -50,6 +78,7 @@ class SeasonArchive:
                 "team_a": int(f.team_a),
                 "team_h_difficulty": int(f.team_h_difficulty),
                 "team_a_difficulty": int(f.team_a_difficulty),
+                "kickoff_time": f.kickoff_time,  # dates a "Expected back 20 Jan" return
             }
             for f in fixtures.itertuples()
             if not pd.isna(f.event)
@@ -98,6 +127,13 @@ class SeasonArchive:
         ].copy()
         state["status"] = "a"
         state["chance_of_playing_next_round"] = None
+        state["news"] = ""
+        if self.flags is not None and gameweek in self.flags.index.get_level_values(0):
+            known = self.flags.loc[gameweek].reindex(state.index)
+            flagged = known["status"].notna() & (known["status"] != "a")
+            state.loc[flagged, "status"] = known.loc[flagged, "status"]
+            state.loc[flagged, "chance_of_playing_next_round"] = known.loc[flagged, "chance_of_playing_next_round"].fillna(0)
+            state.loc[flagged, "news"] = known.loc[flagged, "news"].fillna("")
         for col in stats.columns:
             if col in state.columns:
                 state[col] = stats[col].combine_first(state[col]).astype(int)
