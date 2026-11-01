@@ -139,7 +139,7 @@ class FPLService:
         self.prior_season = PriorSeasonStats()
 
     # One plan request reads a manager's history, transfers and picks several
-    # times, and the site reads his chips just before it plans.
+    # times, and the site reads their chips just before it plans.
     MANAGER_CACHE_SECONDS = 60
 
     def _get_manager_json(self, url):

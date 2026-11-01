@@ -798,7 +798,7 @@ class MultiPeriodFPLOptimizer:
                                        [(j, t) for j in player_ids for t in horizon],
                                        cat='Binary')
         
-        # starter[j,t] = 1 if player j starts at GW t, captain[j,t] = 1 if he is captain.
+        # starter[j,t] = 1 if player j starts at GW t, captain[j,t] = 1 if j is captain.
         # Continuous is enough: once the squad is whole, choosing the XI, bench order
         # and captain is a flow problem whose best answer is whole too, and the
         # solver no longer branches on them. 8-15 week plans solve about a quarter faster.
