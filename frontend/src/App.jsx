@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { api } from './lib/api'
+import { api, withRetry } from './lib/api'
 import { errorKind, track } from './lib/telemetry'
 import { cx } from './lib/cx'
-import { IconBolt, IconChart, IconHistory, IconRoute, IconStar } from './components/icons'
+import { clockTime, countdown, parseManagerId } from './lib/format'
+import { IconChart, IconHistory, IconRoute, IconStar, IconTrophy } from './components/icons'
 import PlannerView from './views/PlannerView'
-import QuickPickView from './views/QuickPickView'
+import TrackRecordView from './views/TrackRecordView'
 import DreamTeamView from './views/DreamTeamView'
 import BacktestView from './views/BacktestView'
 import AnalyticsDashboard from './components/analytics/AnalyticsDashboard'
 
 const TABS = [
   { id: 'planner', label: 'Planner', icon: IconRoute, blurb: 'The team to set for the next deadline' },
-  { id: 'quick', label: 'Quick Pick', icon: IconBolt, blurb: 'This gameweek only, on the same projections' },
+  { id: 'record', label: 'Track record', icon: IconTrophy, blurb: 'What following the advice scored, week by week' },
   { id: 'dream', label: 'Dream Team', icon: IconStar, blurb: 'Best XI, no budget' },
   { id: 'backtest', label: 'Backtest', icon: IconHistory, blurb: 'Replay past gameweeks' },
   { id: 'analytics', label: 'Analytics', icon: IconChart, blurb: 'Market, EV & ownership' },
@@ -33,6 +34,19 @@ function useDebounced(value, delay) {
 
 const MANAGER_KEY = 'fpl-manager-id'
 
+// Storage can be blocked (private windows, strict settings); the page works without it.
+function readStorage(key) {
+  try { return localStorage.getItem(key) } catch { return null }
+}
+function writeStorage(key, value) {
+  try {
+    if (value == null) localStorage.removeItem(key)
+    else localStorage.setItem(key, value)
+  } catch {
+    // Not remembered this time.
+  }
+}
+
 function App() {
   const [data, setData] = useState(null)
   const [dataError, setDataError] = useState(false)
@@ -41,13 +55,21 @@ function App() {
   const [visited, setVisited] = useState(() => new Set([tabFromHash()]))
 
   // Settings shared by the Planner and Quick Pick views
-  const [managerId, setManagerId] = useState(() => localStorage.getItem(MANAGER_KEY) || '')
+  const [managerId, setManagerId] = useState(() => readStorage(MANAGER_KEY) || '')
   const [budget, setBudget] = useState(100.0)
   const [bankedTransfers, setBankedTransfers] = useState(1)
   const [loadedChips, setLoadedChips] = useState(null)
+  const [accountAttempt, setAccountAttempt] = useState(0)
   const debouncedManagerId = useDebounced(managerId.trim(), 500)
-  const validManagerId = /^\d+$/.test(debouncedManagerId) ? debouncedManagerId : ''
-  const managerChips = loadedChips?.id === validManagerId ? loadedChips.data : null
+  const validManagerId = parseManagerId(debouncedManagerId)
+  const loadedNow = loadedChips?.id === validManagerId ? loadedChips : null
+  // Only a confirmed account feeds the plan; an unknown or unreadable ID does not.
+  const managerChips = loadedNow?.data?.synced ? loadedNow.data : null
+  const account = validManagerId ? {
+    status: !loadedNow ? 'loading' : loadedNow.status,
+    entry: loadedNow?.data?.entry || null,
+    retry: () => setAccountAttempt(n => n + 1),
+  } : null
 
   const setManagerIdValue = value => {
     setManagerId(value)
@@ -55,9 +77,9 @@ function App() {
   }
 
   useEffect(() => {
-    const id = managerId.trim()
-    if (/^\d+$/.test(id)) localStorage.setItem(MANAGER_KEY, id)
-    else if (!id) localStorage.removeItem(MANAGER_KEY)
+    const id = parseManagerId(managerId)
+    if (id) writeStorage(MANAGER_KEY, id)
+    else if (!managerId.trim()) writeStorage(MANAGER_KEY, null)
   }, [managerId])
 
   // The first linked ID is either remembered from a past visit or typed now.
@@ -79,33 +101,36 @@ function App() {
   useEffect(() => {
     if (!validManagerId) return
     let cancelled = false
-    api.get(`/api/manager-chips/${validManagerId}`)
+    withRetry(() => api.get(`/api/manager-chips/${validManagerId}`))
       .then(res => {
         if (cancelled) return
-        // synced is false when FPL had no squad for this ID, often a mistyped one.
-        track('manager_loaded', { ok: true, synced: Boolean(res.data.synced) })
-        setLoadedChips({ id: validManagerId, data: res.data })
+        // synced is false when FPL could not be read; the ID itself was found.
+        const synced = Boolean(res.data.synced)
+        track('manager_loaded', { ok: true, synced, named: Boolean(res.data.entry?.name) })
+        setLoadedChips({ id: validManagerId, data: res.data, status: synced ? 'ok' : 'error' })
+        if (!synced) return
         if (Number.isInteger(res.data.banked_transfers)) setBankedTransfers(res.data.banked_transfers)
         if (typeof res.data.bank === 'number') setBudget(res.data.bank)
       })
       .catch(err => {
         console.error('Error fetching manager chips', err)
-        // The UI does not show this failure; the plan just runs without the squad.
-        track('manager_loaded', { ok: false, kind: errorKind(err) })
-        if (!cancelled) setLoadedChips({ id: validManagerId, data: { error: true } })
+        const notFound = err?.response?.status === 404
+        track('manager_loaded', { ok: false, synced: false, kind: notFound ? 'not_found' : errorKind(err) })
+        if (!cancelled) setLoadedChips({ id: validManagerId, data: null, status: notFound ? 'not_found' : 'error' })
       })
     return () => { cancelled = true }
-  }, [validManagerId])
+  }, [validManagerId, accountAttempt])
 
+  const [dataAttempt, setDataAttempt] = useState(0)
   useEffect(() => {
-    api.get('/api/data')
-      .then(res => setData(res.data))
+    withRetry(() => api.get('/api/data'))
+      .then(res => { setData(res.data); setDataError(false) })
       .catch(err => {
         console.error('Error fetching data', err)
         track('error_shown', { where: 'app', kind: errorKind(err) })
         setDataError(true)
       })
-  }, [])
+  }, [dataAttempt])
 
   useEffect(() => {
     const onHash = () => {
@@ -128,12 +153,12 @@ function App() {
   const seasonLabel = season?.label || '2026/27'
   const shared = {
     season, managerId, setManagerId: setManagerIdValue, validManagerId, budget, setBudget, teamCodes,
-    managerChips, bankedTransfers, setBankedTransfers,
+    managerChips, account, bankedTransfers, setBankedTransfers,
   }
 
   const views = {
-    planner: <PlannerView {...shared} />,
-    quick: <QuickPickView {...shared} />,
+    planner: <PlannerView {...shared} fplData={data} />,
+    record: <TrackRecordView />,
     dream: <DreamTeamView {...shared} />,
     backtest: <BacktestView {...shared} />,
     analytics: <AnalyticsDashboard />,
@@ -167,7 +192,7 @@ function App() {
             ))}
           </nav>
 
-          <SeasonStatus season={season} loaded={data != null} error={dataError} />
+          <SeasonStatus season={season} loaded={data != null} error={dataError} onRetry={() => { setDataError(false); setDataAttempt(n => n + 1) }} />
         </div>
 
         {/* Mobile nav */}
@@ -207,11 +232,22 @@ function App() {
   )
 }
 
-function SeasonStatus({ season, loaded, error }) {
+function useNow(intervalMs) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), intervalMs)
+    return () => clearInterval(t)
+  }, [intervalMs])
+  return now
+}
+
+function SeasonStatus({ season, loaded, error, onRetry }) {
+  const now = useNow(30000)
   if (error) {
     return (
       <div className="ml-auto md:ml-0 flex items-center gap-2 rounded-full bg-bad/10 px-3 py-1 text-xs text-[#ffb3ba] ring-1 ring-inset ring-bad/30">
-        <span className="h-1.5 w-1.5 rounded-full bg-bad" /> API offline
+        <span className="h-1.5 w-1.5 rounded-full bg-bad" /> Can't reach the server
+        <button type="button" onClick={onRetry} className="font-semibold text-fg hover:underline cursor-pointer">Retry</button>
       </div>
     )
   }
@@ -220,13 +256,23 @@ function SeasonStatus({ season, loaded, error }) {
   }
   // Older backends don't send season metadata; keep the header slot empty.
   if (!season) return <div className="ml-auto md:ml-0 w-32" />
+  const left = season.deadline_time ? countdown(season.deadline_time, now) : null
+  const deadline = season.deadline_time ? new Date(season.deadline_time) : null
+  const deadlineLabel = deadline && deadline.toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
   return (
     <div className="ml-auto md:ml-0 flex items-center gap-3 text-xs shrink-0">
       {season.active_gameweek && (
-        <div className="flex items-center gap-2 rounded-full bg-ink-900 px-3 py-1 ring-1 ring-inset ring-ink-700">
+        <div
+          className="flex items-center gap-2 rounded-full bg-ink-900 px-3 py-1 ring-1 ring-inset ring-ink-700"
+          title={[deadlineLabel && `GW${season.active_gameweek} deadline ${deadlineLabel}`, season.data_as_of && `FPL data from ${clockTime(season.data_as_of * 1000)}`].filter(Boolean).join(' · ')}
+        >
           <span className="h-1.5 w-1.5 rounded-full bg-fpl-green shadow-[0_0_8px] shadow-fpl-green" />
-          <span className="text-fg-2">Planning</span>
           <span className="font-semibold text-fg tabular">GW{season.active_gameweek}</span>
+          {left ? (
+            <span className="text-fg-2 tabular"><span className="hidden sm:inline">deadline in </span>{left}</span>
+          ) : (
+            <span className="text-fg-2">Planning</span>
+          )}
         </div>
       )}
       {season.chip_half && (

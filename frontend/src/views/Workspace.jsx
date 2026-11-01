@@ -1,11 +1,15 @@
 import { Card } from '../components/ui'
 
-/** Two-column layout: a sticky settings panel beside the results canvas. */
-export function Workspace({ settings, children }) {
+/**
+ * Two-column layout: a sticky settings panel beside the results canvas.
+ * On small screens, `summary` replaces the settings while `collapsed`, so results come first.
+ */
+export function Workspace({ settings, children, collapsed = false, summary = null }) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[300px_minmax(0,1fr)] xl:grid-cols-[320px_minmax(0,1fr)] gap-6 items-start">
       <aside className="lg:sticky lg:top-24">
-        <Card className="p-5 space-y-5">{settings}</Card>
+        {collapsed && summary && <div className="lg:hidden">{summary}</div>}
+        <Card className={`p-5 space-y-5 ${collapsed && summary ? 'hidden lg:block' : ''}`}>{settings}</Card>
       </aside>
       <div className="min-w-0 animate-fade-in">{children}</div>
     </div>
