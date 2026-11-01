@@ -64,7 +64,8 @@ class ChipPlanningTests(unittest.TestCase):
             star = best_in_squad(predictions, squad, 7)
             predictions.loc[predictions.id == star, 'xp_gw7'] = 15.0
 
-        _, solution = plan(5, adjust=spike)
+        # No money to upgrade, so no other week ties with keeping a chip.
+        _, solution = plan(5, adjust=spike, bank=0.0)
         self.assertEqual(chips(solution).get(7), Chip.TRIPLE_CAPTAIN)
         self.assertEqual(solution.chip_suggestion['chip'], 'triple_captain')
         self.assertEqual(solution.chip_suggestion['recommended_gameweek'], 7)
