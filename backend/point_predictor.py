@@ -27,6 +27,10 @@ except ImportError:
     UNDERSTAT_AVAILABLE = False
     logging.info("Understat service not available")
 
+# One Understat service per process, so its day-long cache of the league's
+# xG table lasts between plans instead of being fetched for each one.
+_understat = None
+
 
 @dataclass
 class PointPrediction:
@@ -102,8 +106,10 @@ class PointPredictor:
         This provides more accurate per-90 rates than FPL's ep_next.
         """
         try:
-            from understat_service import UnderstatService
-            service = UnderstatService()
+            global _understat
+            if _understat is None:
+                _understat = UnderstatService()
+            service = _understat
             
             # Enrich players DataFrame
             self.players = service.sync_with_fpl(

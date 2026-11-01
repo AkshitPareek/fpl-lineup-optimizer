@@ -10,6 +10,7 @@ Provides endpoints for:
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
 from typing import List, Optional, Dict
 from pydantic import BaseModel, Field
@@ -105,6 +106,8 @@ app.add_middleware(
     expose_headers=["*"],
     max_age=600,  # Cache preflight requests for 10 minutes
 )
+# A plan is about 1 MB of JSON and /api/data over 2 MB; gzipped they are a seventh of that.
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
 # Startup event to log CORS configuration
@@ -586,7 +589,7 @@ async def optimize_compare(request: MultiPeriodRequest):
         # If no hits taken, the no-hits solution would be identical
         if total_hits == 0:
             print("No hits taken - skipping no-hits optimization (results would be identical)")
-            with_hits_data = optimizer.to_dict(solution_with_hits)
+            with_hits_data = _enrich_with_analytics(optimizer.to_dict(solution_with_hits), players_df, teams_df)
             return {
                 "current_gw": current_gw,
                 "strategy": request.strategy,
@@ -600,8 +603,8 @@ async def optimize_compare(request: MultiPeriodRequest):
                     "difference": 0,
                     "note": "No hits required - both strategies produce identical results"
                 },
-                "with_hits": _enrich_with_analytics(with_hits_data, players_df, teams_df),
-                "no_hits": _enrich_with_analytics(with_hits_data, players_df, teams_df)  # Same as with_hits
+                "with_hits": with_hits_data,
+                "no_hits": with_hits_data,  # Same as with_hits
             }
         
         # Hits were taken - need to run no-hits optimization for comparison
