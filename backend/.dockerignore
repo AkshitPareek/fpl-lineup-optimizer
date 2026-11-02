@@ -1,6 +1,10 @@
 __pycache__
 *.pyc
 .venv
-data/cache/seasons
+# Caches written by local runs (season archives, Understat, injury flags) stay out of
+# the image, so a deploy runs on the data it fetches itself. The player history is
+# committed on purpose.
+data/cache/*
+!data/cache/all_player_history.json
 *.log
 .pytest_cache
