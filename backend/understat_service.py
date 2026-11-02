@@ -69,6 +69,7 @@ class UnderstatService:
     
     CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "cache", "understat")
     CACHE_DURATION = 86400  # 24 hours
+    RETRY_AFTER_FAILURE = 3600  # 1 hour
     
     # Team name mappings between FPL and Understat
     TEAM_MAPPINGS = {
@@ -171,14 +172,19 @@ class UnderstatService:
             
         except Exception as e:
             logging.error(f"Failed to fetch Understat data: {e}")
-            
+
             # Try loading from disk cache
+            players = []
             cache_file = os.path.join(self.CACHE_DIR, f"epl_players_{season}.json")
             if os.path.exists(cache_file):
                 with open(cache_file, 'r') as f:
-                    return json.load(f)
-            
-            return []
+                    players = json.load(f)
+
+            # A failed fetch takes seconds to time out, and every plan asks for this
+            # table, so the fallback stands in for a while before trying again.
+            self._cache[cache_key] = players
+            self._cache_expiry[cache_key] = time.time() + self.RETRY_AFTER_FAILURE
+            return players
     
     def get_player_matches(self, understat_id: int) -> List[Dict]:
         """
