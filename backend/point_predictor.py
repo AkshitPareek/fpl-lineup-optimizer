@@ -2,8 +2,8 @@
 Point Predictor Module for FPL 2025/26 Season
 
 Calculates expected points using:
-- xG (expected goals) - enhanced with Understat data when available
-- xA (expected assists) - enhanced with Understat data when available
+- xG (expected goals), from FPL (Opta); Understat only when asked for
+- xA (expected assists), likewise
 - xGI (expected goal involvement)
 - ICT Index components
 - CBIT/CBIRT defensive bonus scoring (2025/26 rules)
@@ -71,7 +71,7 @@ class PointPredictor:
     
     def __init__(self, players_df: pd.DataFrame, teams_df: pd.DataFrame, 
                  fixtures: List[Dict], current_gameweek: int,
-                 use_understat: bool = True):
+                 use_understat: bool = False):
         """
         Initialize predictor with FPL data.
         
@@ -80,7 +80,9 @@ class PointPredictor:
             teams_df: DataFrame of all teams
             fixtures: List of fixture dicts from FPL API
             current_gameweek: Current or next gameweek number
-            use_understat: Whether to use Understat xG/xA data (default: True)
+            use_understat: Whether to prefer Understat xG/xA over FPL's own. Off by default:
+                every replay and accuracy check ran on FPL's xG, and Understat can't be
+                replayed (it serves only today's season totals)
         """
         self.players = players_df.copy()
         self.teams = teams_df.copy()
