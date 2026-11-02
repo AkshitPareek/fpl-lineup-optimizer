@@ -155,6 +155,19 @@ class HitPlanCostTests(unittest.TestCase):
         self.assertAlmostEqual(solution.total_expected_points, weeks - 4 * hits, places=6)
 
 
+class PredictionCacheTests(unittest.TestCase):
+    def test_plans_from_the_same_data_project_points_once(self):
+        players, teams, predictions = synthetic_league(5)
+        shared = {}
+        with mock.patch('point_predictor.PointPredictor.predict_all_players', return_value=predictions) as project:
+            for _ in range(2):
+                optimizer = MultiPeriodFPLOptimizer(players, teams, [], 5, prediction_cache=shared)
+                with contextlib.redirect_stdout(io.StringIO()):
+                    solution = optimizer.optimize_multi_period(budget=100.0, gameweeks=3)
+                self.assertEqual(solution.status, 'Optimal')
+        self.assertEqual(project.call_count, 1)
+
+
 class LongHorizonTests(unittest.TestCase):
     def test_plans_up_to_fifteen_gameweeks(self):
         _, solution = plan(current_gw=5, gameweeks=15)

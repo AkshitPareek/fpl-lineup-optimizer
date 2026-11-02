@@ -250,7 +250,8 @@ class MultiPeriodFPLOptimizer:
                  teams_df: pd.DataFrame,
                  fixtures: List[Dict],
                  current_gameweek: int,
-                 predictions_df: Optional[pd.DataFrame] = None):
+                 predictions_df: Optional[pd.DataFrame] = None,
+                 prediction_cache: Optional[Dict] = None):
         """
         Initialize the multi-period optimizer.
         
@@ -260,12 +261,15 @@ class MultiPeriodFPLOptimizer:
             fixtures: Fixture list
             current_gameweek: Starting gameweek
             predictions_df: Pre-computed predictions (optional)
+            prediction_cache: Predictions by (gameweek, horizon), shared by optimizers
+                built from the same FPL data (optional)
         """
         self.players = players_df.copy()
         self.teams = teams_df.copy()
         self.fixtures = fixtures
         self.current_gw = current_gameweek
         self._free_hit_cache = {}
+        self.prediction_cache = {} if prediction_cache is None else prediction_cache
         
         # Build team name map
         self.team_names = dict(zip(self.teams['id'], self.teams['name']))
@@ -532,7 +536,10 @@ class MultiPeriodFPLOptimizer:
     def _get_predictions(self, gameweeks: int) -> pd.DataFrame:
         """Get or compute predictions for the planning horizon."""
         if self.predictions is None:
-            self.predictions = self.predictor.predict_all_players(gameweeks=gameweeks)
+            key = (self.current_gw, gameweeks)
+            if key not in self.prediction_cache:
+                self.prediction_cache[key] = self.predictor.predict_all_players(gameweeks=gameweeks)
+            self.predictions = self.prediction_cache[key]
         return self.predictions
     
     def _filter_available_players(self, 
