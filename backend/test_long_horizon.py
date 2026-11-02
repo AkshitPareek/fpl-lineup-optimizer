@@ -183,9 +183,9 @@ class LongHorizonTests(unittest.TestCase):
     def test_lineups_survive_solver_tolerance(self):
         solver = MultiPeriodFPLOptimizer._multi_period_solver
 
-        def near_integer_solver():
+        def near_integer_solver(*args):
             # The same solver, so both plans pick the same optimum among ties.
-            nudged = solver()
+            nudged = solver(*args)
             solve = nudged.actualSolve
 
             def actual_solve(lp, **kwargs):

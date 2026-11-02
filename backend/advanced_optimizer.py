@@ -216,6 +216,10 @@ class MultiPeriodFPLOptimizer:
     MAX_HORIZON = 15
     POOL_PER_POSITION = 30
     SOLVER_TIME_LIMIT = 15
+    # A re-solve for new chip weeks starts from the plan before it. Planning 15 weeks for
+    # three managers, it found the same plan with the full limit as with an eighth of it,
+    # and long plans spent the full limit twice, once on the solve and once on the re-solve.
+    RESOLVE_TIME_SHARE = 1 / 3
     SOLVER_GAP = 0.01
     # Week k of the plan counts HORIZON_DECAY ** k. Replaying 2024/25 and 2025/26,
     # 0.9 and 0.8 both scored fewer real points than weighting every week equally.
@@ -300,9 +304,9 @@ class MultiPeriodFPLOptimizer:
         )
             
     @classmethod
-    def _multi_period_solver(cls):
+    def _multi_period_solver(cls, time_share: float = 1.0):
         """HiGHS proves 12-15 week plans in seconds where CBC runs out of time."""
-        options = dict(timeLimit=cls.SOLVER_TIME_LIMIT, gapRel=cls.SOLVER_GAP, threads=1)
+        options = dict(timeLimit=cls.SOLVER_TIME_LIMIT * time_share, gapRel=cls.SOLVER_GAP, threads=1)
         highs = HiGHSFromPlan(msg=False, **options)
         if highs.available():
             return highs
@@ -1097,7 +1101,8 @@ class MultiPeriodFPLOptimizer:
             # first second. On a slow host a long plan can run out of time before the
             # solver finds one of its own, and what it has found by then can be far worse.
             start = {squad[(j, t)].name: float(j in current_set) for j in player_ids for t in horizon}
-        solver = self._multi_period_solver()
+        resolving = hold_override is not None or free_hit_week is not None
+        solver = self._multi_period_solver(self.RESOLVE_TIME_SHARE if resolving else 1.0)
         if start and isinstance(solver, HiGHSFromPlan):
             solver.start = start
         prob.solve(solver)
