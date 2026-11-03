@@ -284,6 +284,23 @@ def _deadline_advice(response_dict: Dict, players_df: pd.DataFrame, teams_df: pd
         print(f"Price alerts error: {e}")
 
 
+# Projections and points distributions depend only on FPL's data, so plans made
+# from the same fetch share them. Each took a second or two of every plan request.
+_snapshot_cache: Dict = {}
+
+
+def _from_snapshot(name: str, compute):
+    """compute(), kept until FPL's data is fetched again."""
+    fetched = fpl_service.fetched_at()
+    if fetched is None:
+        return compute()
+    for key in [k for k in _snapshot_cache if k[0] != fetched]:
+        del _snapshot_cache[key]
+    if (fetched, name) not in _snapshot_cache:
+        _snapshot_cache[(fetched, name)] = compute()
+    return _snapshot_cache[(fetched, name)]
+
+
 # Helper for analytics enrichment
 def _enrich_with_analytics(response_dict: Dict, players_df: pd.DataFrame, teams_df: pd.DataFrame,
                            total_players: Optional[int] = None):
@@ -297,7 +314,7 @@ def _enrich_with_analytics(response_dict: Dict, players_df: pd.DataFrame, teams_
         own_tracker = OwnershipTracker(players_df, teams_df)
         
         # Get all distributions once
-        ev_dists = ev_calc.get_all_distributions()
+        ev_dists = _from_snapshot("ev_distributions", ev_calc.get_all_distributions)
         own_frame = own_tracker.get_all_ownership()
         if ev_dists.empty or "id" not in ev_dists.columns or own_frame.empty or "id" not in own_frame.columns:
             return response_dict
@@ -451,7 +468,8 @@ async def optimize_multi_period(request: MultiPeriodRequest):
             players_df=players_df,
             teams_df=teams_df,
             fixtures=fixtures_data,
-            current_gameweek=current_gw
+            current_gameweek=current_gw,
+            prediction_cache=_from_snapshot("predictions", dict),
         )
         telemetry.note_plan_request(request)
         telemetry.count_solves(optimizer, request.plan_chips)
@@ -569,7 +587,8 @@ async def optimize_compare(request: MultiPeriodRequest):
             players_df=players_df,
             teams_df=teams_df,
             fixtures=fixtures_data,
-            current_gameweek=current_gw
+            current_gameweek=current_gw,
+            prediction_cache=_from_snapshot("predictions", dict),
         )
         telemetry.note_plan_request(request)
         telemetry.count_solves(optimizer, request.plan_chips)
@@ -1111,7 +1130,8 @@ async def analyze_transfers(request: TransferAnalysisRequest):
             players_df=players_df,
             teams_df=teams_df,
             fixtures=fixtures_data,
-            current_gameweek=current_gw
+            current_gameweek=current_gw,
+            prediction_cache=_from_snapshot("predictions", dict),
         )
         
         # Run scenarios

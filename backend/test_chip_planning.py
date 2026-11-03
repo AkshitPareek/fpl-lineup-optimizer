@@ -157,6 +157,26 @@ class SolverStartTests(unittest.TestCase):
         owned = {name for name, value in starts[-1].items() if value == 1}
         self.assertEqual(len(owned), 15 * 4)
 
+    def test_a_re_solve_gets_a_third_of_the_time(self):
+        def blank(predictions, squad):
+            predictions.loc[predictions.id.isin(squad), 'xp_gw7'] = 0.0
+
+        limits = []
+        solve = HiGHSFromPlan.callSolver
+
+        def record(solver, lp):
+            if lp.name == 'FPL_Multi_Period':
+                limits.append(solver.timeLimit)
+            return solve(solver, lp)
+
+        with mock.patch.object(HiGHSFromPlan, 'callSolver', record):
+            plan(5, adjust=blank, chips_used=['wildcard'])
+        full = MultiPeriodFPLOptimizer.SOLVER_TIME_LIMIT
+        self.assertGreater(len(limits), 1)
+        self.assertEqual(limits[0], full)
+        for limit in limits[1:]:
+            self.assertAlmostEqual(limit, full / 3)
+
 
 class SolverTimeoutTests(unittest.TestCase):
     def test_a_plan_without_chips_when_chip_weeks_run_out_of_time(self):

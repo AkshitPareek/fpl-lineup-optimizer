@@ -216,6 +216,10 @@ class MultiPeriodFPLOptimizer:
     MAX_HORIZON = 15
     POOL_PER_POSITION = 30
     SOLVER_TIME_LIMIT = 15
+    # A re-solve for new chip weeks starts from the plan before it. Planning 15 weeks for
+    # three managers, it found the same plan with the full limit as with an eighth of it,
+    # and long plans spent the full limit twice, once on the solve and once on the re-solve.
+    RESOLVE_TIME_SHARE = 1 / 3
     SOLVER_GAP = 0.01
     # Week k of the plan counts HORIZON_DECAY ** k. Replaying 2024/25 and 2025/26,
     # 0.9 and 0.8 both scored fewer real points than weighting every week equally.
@@ -250,7 +254,8 @@ class MultiPeriodFPLOptimizer:
                  teams_df: pd.DataFrame,
                  fixtures: List[Dict],
                  current_gameweek: int,
-                 predictions_df: Optional[pd.DataFrame] = None):
+                 predictions_df: Optional[pd.DataFrame] = None,
+                 prediction_cache: Optional[Dict] = None):
         """
         Initialize the multi-period optimizer.
         
@@ -260,12 +265,15 @@ class MultiPeriodFPLOptimizer:
             fixtures: Fixture list
             current_gameweek: Starting gameweek
             predictions_df: Pre-computed predictions (optional)
+            prediction_cache: Predictions by (gameweek, horizon), shared by optimizers
+                built from the same FPL data (optional)
         """
         self.players = players_df.copy()
         self.teams = teams_df.copy()
         self.fixtures = fixtures
         self.current_gw = current_gameweek
         self._free_hit_cache = {}
+        self.prediction_cache = {} if prediction_cache is None else prediction_cache
         
         # Build team name map
         self.team_names = dict(zip(self.teams['id'], self.teams['name']))
@@ -296,9 +304,9 @@ class MultiPeriodFPLOptimizer:
         )
             
     @classmethod
-    def _multi_period_solver(cls):
+    def _multi_period_solver(cls, time_share: float = 1.0):
         """HiGHS proves 12-15 week plans in seconds where CBC runs out of time."""
-        options = dict(timeLimit=cls.SOLVER_TIME_LIMIT, gapRel=cls.SOLVER_GAP, threads=1)
+        options = dict(timeLimit=cls.SOLVER_TIME_LIMIT * time_share, gapRel=cls.SOLVER_GAP, threads=1)
         highs = HiGHSFromPlan(msg=False, **options)
         if highs.available():
             return highs
@@ -532,7 +540,10 @@ class MultiPeriodFPLOptimizer:
     def _get_predictions(self, gameweeks: int) -> pd.DataFrame:
         """Get or compute predictions for the planning horizon."""
         if self.predictions is None:
-            self.predictions = self.predictor.predict_all_players(gameweeks=gameweeks)
+            key = (self.current_gw, gameweeks)
+            if key not in self.prediction_cache:
+                self.prediction_cache[key] = self.predictor.predict_all_players(gameweeks=gameweeks)
+            self.predictions = self.prediction_cache[key]
         return self.predictions
     
     def _filter_available_players(self, 
@@ -1090,7 +1101,8 @@ class MultiPeriodFPLOptimizer:
             # first second. On a slow host a long plan can run out of time before the
             # solver finds one of its own, and what it has found by then can be far worse.
             start = {squad[(j, t)].name: float(j in current_set) for j in player_ids for t in horizon}
-        solver = self._multi_period_solver()
+        resolving = hold_override is not None or free_hit_week is not None
+        solver = self._multi_period_solver(self.RESOLVE_TIME_SHARE if resolving else 1.0)
         if start and isinstance(solver, HiGHSFromPlan):
             solver.start = start
         prob.solve(solver)
